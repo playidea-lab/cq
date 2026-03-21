@@ -1,6 +1,5 @@
 #!/bin/bash
 # c9-notify.sh: C9 Research Loop 알림 발송
-#   - Dooray incoming webhook (state.yaml notify.dooray_webhook)
 #   - cq mail (state.yaml notify.session)
 #
 # Usage:
@@ -28,31 +27,26 @@ n = s.get('notify', {})
 r = os.environ.get('ROUND_ARG') or str(s.get('round', 0))
 t = n.get('templates', {})
 print(json.dumps({
-    'dooray_webhook': n.get('dooray_webhook', ''),
     'session': n.get('session', ''),
     'bot_name': n.get('bot_name', 'C9 Lab'),
     'server_id': n.get('server_id', socket.gethostname()),
     'round': r,
-    'tmpl_dooray': t.get('dooray', '{emoji} **[C9 R{round} · {phase}]** [{server}] {message}'),
     'tmpl_mail': t.get('mail', '[C9-{phase}] Round={round} server={server} {message}'),
 }))
 PYEOF
 ) 2>/dev/null
 
 # JSON에서 키별 추출 (다줄 값 및 특수문자 안전 처리)
-DOORAY_WEBHOOK=$(echo "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('dooray_webhook',''))")
 SESSION_NAME=$(echo  "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('session',''))")
 BOT_NAME=$(echo      "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('bot_name','C9 Lab'))")
 SERVER_ID=$(echo     "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('server_id',''))")
 ROUND=$(echo         "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('round','0'))")
-TMPL_DOORAY=$(echo   "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tmpl_dooray',''))")
 TMPL_MAIL=$(echo     "$_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin).get('tmpl_mail',''))")
 
 # fallback defaults
 ROUND="${ROUND:-0}"
 BOT_NAME="${BOT_NAME:-C9 Lab}"
 SERVER_ID="${SERVER_ID:-$(hostname)}"
-TMPL_DOORAY="${TMPL_DOORAY:-{emoji} **[C9 R{round} · {phase}]** [{server}] {message}}"
 TMPL_MAIL="${TMPL_MAIL:-[C9-{phase}] Round={round} server={server} {message}}"
 
 # ── 단계별 이모지 ─────────────────────────────────────────────
@@ -88,27 +82,6 @@ for k, v in [
 print(tmpl, end='')
 "
 }
-
-# ── Dooray 발송 ──────────────────────────────────────────────
-if [[ -n "$DOORAY_WEBHOOK" ]]; then
-    DOORAY_TEXT=$(render_template "$TMPL_DOORAY")
-    if [[ -n "$METRICS" ]]; then
-        DOORAY_TEXT="${DOORAY_TEXT}\n\`\`\`\n${METRICS}\n\`\`\`"
-    fi
-    DOORAY_TEXT="${DOORAY_TEXT}\n_${TIMESTAMP}_"
-
-    DOORAY_PAYLOAD=$(C9_TEXT="$DOORAY_TEXT" C9_BOT="$BOT_NAME" python3 -c "
-import json, os
-print(json.dumps({'botName': os.environ['C9_BOT'], 'text': os.environ['C9_TEXT']}))
-")
-
-    curl -s --max-time 10 --connect-timeout 5 -X POST "$DOORAY_WEBHOOK" \
-        -H "Content-Type: application/json" \
-        -d "$DOORAY_PAYLOAD" \
-        -o /dev/null \
-        && echo "[c9-notify] Dooray OK" \
-        || echo "[c9-notify] Dooray failed (non-critical)"
-fi
 
 # ── cq mail (named session으로) ───────────────────────────────
 if [[ -n "$SESSION_NAME" ]]; then

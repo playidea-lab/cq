@@ -70,7 +70,7 @@ func TestNotifyBridge_DifferentEvents(t *testing.T) {
 
 // TestNotifyBridge_NonFatal: notifier returns error → Emit returns normally, no panic.
 func TestNotifyBridge_NonFatal(t *testing.T) {
-	mn := &mockNotifier{err: errors.New("dooray down")}
+	mn := &mockNotifier{err: errors.New("notify down")}
 	b := NewNotifyBridge(mn, 1*time.Hour)
 
 	// Must not panic.

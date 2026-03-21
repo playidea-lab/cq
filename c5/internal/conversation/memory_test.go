@@ -138,7 +138,7 @@ func TestMemoryStore_EnsureChannel(t *testing.T) {
 	ctx := context.Background()
 	s := NewMemoryStore(20, 30*time.Minute)
 
-	ch := Channel{TenantID: "default", Platform: "dooray", Name: "dooray-123", ChannelType: "bot"}
+	ch := Channel{TenantID: "default", Platform: "telegram", Name: "tg-123", ChannelType: "bot"}
 	id1, err := s.EnsureChannel(ctx, ch)
 	if err != nil {
 		t.Fatalf("ensure channel: %v", err)
@@ -157,7 +157,7 @@ func TestMemoryStore_EnsureChannel(t *testing.T) {
 	}
 
 	// Different channel → different id.
-	ch2 := Channel{TenantID: "default", Platform: "dooray", Name: "dooray-456", ChannelType: "bot"}
+	ch2 := Channel{TenantID: "default", Platform: "telegram", Name: "tg-456", ChannelType: "bot"}
 	id3, _ := s.EnsureChannel(ctx, ch2)
 	if id1 == id3 {
 		t.Errorf("expected different ids for different channels, both got %q", id1)
@@ -169,8 +169,8 @@ func TestMemoryStore_EnsureChannel_DefaultTenant(t *testing.T) {
 	s := NewMemoryStore(20, 30*time.Minute)
 
 	// Empty TenantID should default to "default".
-	ch1 := Channel{TenantID: "", Platform: "dooray", Name: "dooray-999", ChannelType: "bot"}
-	ch2 := Channel{TenantID: "default", Platform: "dooray", Name: "dooray-999", ChannelType: "bot"}
+	ch1 := Channel{TenantID: "", Platform: "telegram", Name: "tg-999", ChannelType: "bot"}
+	ch2 := Channel{TenantID: "default", Platform: "telegram", Name: "tg-999", ChannelType: "bot"}
 	id1, _ := s.EnsureChannel(ctx, ch1)
 	id2, _ := s.EnsureChannel(ctx, ch2)
 	if id1 != id2 {
@@ -182,7 +182,7 @@ func TestMemoryStore_EnsureParticipant(t *testing.T) {
 	ctx := context.Background()
 	s := NewMemoryStore(20, 30*time.Minute)
 
-	p := Participant{TenantID: "default", Platform: "dooray", PlatformID: "user-1", MemberType: "user"}
+	p := Participant{TenantID: "default", Platform: "telegram", PlatformID: "user-1", MemberType: "user"}
 	id1, err := s.EnsureParticipant(ctx, p)
 	if err != nil {
 		t.Fatalf("ensure participant: %v", err)
@@ -198,7 +198,7 @@ func TestMemoryStore_EnsureParticipant(t *testing.T) {
 	}
 
 	// Different platform_id → different id.
-	p2 := Participant{TenantID: "default", Platform: "dooray", PlatformID: "user-2", MemberType: "user"}
+	p2 := Participant{TenantID: "default", Platform: "telegram", PlatformID: "user-2", MemberType: "user"}
 	id3, _ := s.EnsureParticipant(ctx, p2)
 	if id1 == id3 {
 		t.Errorf("expected different ids for different participants")
@@ -223,13 +223,13 @@ func TestMemoryStore_EnsureChannelAndAppendGet(t *testing.T) {
 	s := NewMemoryStore(20, 30*time.Minute)
 
 	// Create channel and use returned ID for Append/Get.
-	ch := Channel{TenantID: "default", Platform: "dooray", Name: "dooray-abc", ChannelType: "bot"}
+	ch := Channel{TenantID: "default", Platform: "telegram", Name: "tg-abc", ChannelType: "bot"}
 	chID, err := s.EnsureChannel(ctx, ch)
 	if err != nil {
 		t.Fatalf("ensure channel: %v", err)
 	}
 
-	_ = s.Append(ctx, chID, "dooray", "", []Message{
+	_ = s.Append(ctx, chID, "telegram", "", []Message{
 		{Role: "user", Content: "ping"},
 		{Role: "assistant", Content: "pong"},
 	})

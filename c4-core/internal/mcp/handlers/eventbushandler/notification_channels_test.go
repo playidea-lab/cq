@@ -30,19 +30,18 @@ func newTestCfgMgr(t *testing.T, yaml string) *config.Manager {
 	return mgr
 }
 
-// TestNotification_ResolveChannelDooray verifies Dooray channel injection.
-func TestNotification_ResolveChannelDooray(t *testing.T) {
+// TestNotification_ResolveChannelSlack verifies Slack channel injection.
+func TestNotification_ResolveChannelSlack(t *testing.T) {
 	cfgYAML := `
 notifications:
   channels:
-    - name: dooray-team
-      type: dooray
-      url: "https://hook.dooray.com/services/123/456"
-      bot_name: C4Bot
+    - name: slack-team
+      type: slack
+      url: "https://hooks.slack.com/services/T00/B00/xxx"
 `
 	mgr := newTestCfgMgr(t, cfgYAML)
 
-	result, err := resolveChannelConfig(`{"channel":"dooray-team"}`, mgr)
+	result, err := resolveChannelConfig(`{"channel":"slack-team"}`, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -54,15 +53,15 @@ notifications:
 	if _, ok := obj["channel"]; ok {
 		t.Error("channel key should have been removed from result")
 	}
-	if obj["url"] != "https://hook.dooray.com/services/123/456" {
-		t.Errorf("expected dooray url, got %v", obj["url"])
+	if obj["url"] != "https://hooks.slack.com/services/T00/B00/xxx" {
+		t.Errorf("expected slack url, got %v", obj["url"])
 	}
 	template, _ := obj["payload_template"].(string)
 	if template == "" {
 		t.Error("expected payload_template to be set")
 	}
-	if !strings.Contains(template, `"botName"`) {
-		t.Errorf("dooray template should contain botName, got: %s", template)
+	if !strings.Contains(template, `"text"`) {
+		t.Errorf("slack template should contain text, got: %s", template)
 	}
 	if obj["payload_content_type"] != "application/json" {
 		t.Errorf("expected application/json content type, got %v", obj["payload_content_type"])
@@ -160,8 +159,8 @@ func TestNotification_MaskURL(t *testing.T) {
 		expected string
 	}{
 		{
-			input:    "https://hook.dooray.com/services/123/456",
-			expected: "https://hook.dooray.com/****",
+			input:    "https://example.com/services/123/456",
+			expected: "https://example.com/****",
 		},
 		{
 			input:    "https://discord.com/api/webhooks/999/abc",

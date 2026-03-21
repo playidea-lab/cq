@@ -17,7 +17,7 @@ type Channel struct {
 	ProjectID   string // optional; empty for system-level bot channels
 	Name        string // unique within (tenant_id, platform) for bot/event channels
 	ChannelType string // "bot", "event", "general", "session", "dm", etc.
-	Platform    string // "" (native CQ), "dooray", "discord", "slack"
+	Platform    string // "" (native CQ), "telegram", "discord", "slack"
 }
 
 // Participant describes a c1_members row for external-platform identities.
@@ -27,8 +27,8 @@ type Participant struct {
 	MemberType  string // "user", "agent", "system"
 	ExternalID  string
 	DisplayName string
-	Platform    string // "" (native), "dooray", "session"
-	PlatformID  string // external platform identifier (e.g. Dooray user ID)
+	Platform    string // "" (native), "telegram", "session"
+	PlatformID  string // external platform identifier (e.g. Telegram user ID)
 }
 
 // Store is the interface for reading and writing conversation history.
