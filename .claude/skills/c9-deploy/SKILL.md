@@ -26,13 +26,7 @@ cat .c9/state.yaml  # finish.best_model_path 확인
 ### Step 2: Edge 배포 Job 제출
 ```bash
 # C5 Hub edge deploy
-curl -X POST https://piqsol-c5.fly.dev/v1/jobs/submit \
-  -H "X-API-Key: $C5_API_KEY" \
-  -d '{
-    "name": "c9-deploy",
-    "command": "...",
-    "tags": ["c9", "deploy", "edge"]
-  }'
+cq hub submit --run "..."
 ```
 
 배포 내용:

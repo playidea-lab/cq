@@ -7,19 +7,6 @@
 
 ---
 
-## 도메인 맵 (Domain Map)
-
-| 도메인 | 서브시스템 |
-|--------|-----------|
-| **Core** | task, state, worker, validation, config |
-| **Data** | knowledge, research, drive |
-| **Infra** | eventbus, guard, observe, gate |
-| **Surface** | hub, notify, botstore, llm, cdp |
-| **Doc** | workspace, persona, webcontent |
-| **Plumbing** | bridge, cloud, mcp, mailbox, serve |
-
----
-
 ## Go Core (c4-core/) — Primary MCP Server
 
 > Go 기반 MCP 서버. ~45.0K LOC(src) + ~38.7K LOC(test). ~1,950개 테스트, 37 패키지.
@@ -32,19 +19,19 @@ Claude Code → Go MCP Server (stdio, 118 base + 26 Hub = 144 tools)
                 ├→ Soul/Persona/Twin (10): soul_evolve, soul_check, soul_sync, persona_learn, persona_analyze, persona_diff, whoami, reflect
                 ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
                 ├→ CDP Runner + WebMCP (5): cdp_run, cdp_list, webmcp_discover, webmcp_call, webmcp_context
-                ├→ WebContent (1): web_fetch (content negotiation, SSRF, HTML→MD) — Doc/webcontent
-                ├→ Telegram Plugin (5): search, mentions, briefing, send_message, update_presence + ContextKeeper
+                ├→ WebContent (1): web_fetch (content negotiation, SSRF, HTML→MD) — c2/webcontent
+                ├→ C1 Messenger (5): search, mentions, briefing, send_message, update_presence + ContextKeeper
                 ├→ Drive (6): upload, download, list, delete, info, mkdir
-                ├→ Go Native — Tier 1 (18): Research (5) + Workspace (7) + GPU (6) + Soul Evolution (1)
+                ├→ Go Native — Tier 1 (18): Research (5) + C2 (7) + GPU (6) + Soul Evolution (1)
                 ├→ Go Native — Tier 2 (13): Knowledge (Store+FTS5+Vector+Embedding+Usage+Ingest+Sync+Publish)
-                ├→ Observe (4, c7_observe 조건부): observe_metrics, observe_logs, observe_config, observe_health
-                ├→ Guard (5, c6_guard 조건부): guard_check, guard_audit, guard_policy_set/list, guard_role_assign
-                ├→ Gate (6, c8_gate 조건부): gate_webhook_register/list/test, gate_schedule_add/list, gate_connector_status
+                ├→ C7 Observe (4, c7_observe 조건부): observe_metrics, observe_logs, observe_config, observe_health
+                ├→ C6 Guard (5, c6_guard 조건부): guard_check, guard_audit, guard_policy_set/list, guard_role_assign
+                ├→ C8 Gate (6, c8_gate 조건부): gate_webhook_register/list/test, gate_schedule_add/list, gate_connector_status
                 ├→ Hub Client (26, 조건부): job, worker, DAG, edge, deploy, artifact
                 ├→ Worker Standby (3, Hub 조건부): standby, complete, shutdown
-                ├→ EventSink (1): HTTP POST /v1/events/publish 수신 → EventBus 전달
-                ├→ HubPoller (1): 30s 간격 Hub RUNNING jobs 상태 감시 → hub.job.completed/failed 발행
-                └→ JSON-RPC proxy (10) → Python Sidecar (LSP 7 + Doc 2 + Onboard 1)
+                ├→ EventSink (1): HTTP POST /v1/events/publish 수신 → C3 EventBus 전달
+                ├→ HubPoller (1): 30s 간격 C5 RUNNING jobs 상태 감시 → hub.job.completed/failed 발행
+                └→ JSON-RPC proxy (10) → Python Sidecar (LSP 7 + C2 Doc 2 + Onboard 1)
 ```
 
 ### 패키지 구조
@@ -63,16 +50,16 @@ c4-core/
 │   ├── cloud/        # Auth (OAuth), CloudStore, HybridStore, TokenProvider (auto-refresh)
 │   ├── hub/          # PiQ Hub REST+WS client (26 tools)
 │   ├── daemon/       # 로컬 작업 스케줄러 (Store+Scheduler+Server+GPU)
-│   ├── eventbus/     # EventBus v4 (gRPC, WS bridge, DLQ, filter v2)
-│   ├── knowledge/    # Knowledge (Store+FTS5+Vector+Embedding+Usage+Chunker+Ingest+Sync)
+│   ├── eventbus/     # C3 EventBus v4 (gRPC, WS bridge, DLQ, filter v2)
+│   ├── knowledge/    # C9 Knowledge (Store+FTS5+Vector+Embedding+Usage+Chunker+Ingest+Sync)
 │   ├── research/     # Research iteration store (paper+experiment loop)
-│   ├── c2/           # Workspace/Profile/Persona + webcontent (fetch, HTML→MD, llms.txt)
-│   ├── drive/        # Drive client (Supabase Storage)
+│   ├── c2/           # C2 Workspace/Profile/Persona + webcontent (fetch, HTML→MD, llms.txt)
+│   ├── drive/        # C0 Drive client (Supabase Storage)
 │   ├── llm/          # LLM Gateway (Anthropic, OpenAI, Gemini, Ollama)
 │   ├── cdp/          # Chrome DevTools Protocol runner + WebMCP + CDP auto-discovery
-│   ├── observe/      # Observe: Logger(slog) + Metrics + Middleware (c7_observe build tag)
-│   ├── guard/        # Guard: RBAC + Audit + Policy + Middleware (c6_guard build tag)
-│   ├── gate/         # Gate: Webhook + Scheduler + Connectors (c8_gate build tag)
+│   ├── observe/      # C7 Observe: Logger(slog) + Metrics + Middleware (c7_observe build tag)
+│   ├── guard/        # C6 Guard: RBAC + Audit + Policy + Middleware (c6_guard build tag)
+│   ├── gate/         # C8 Gate: Webhook + Scheduler + Connectors (c8_gate build tag)
 │   └── worker/       # Worker shutdown signal store (SQLite)
 └── test/benchmark/   # 벤치마크
 ```
@@ -177,7 +164,7 @@ cq doctor --fix        # 자동 수정 가능한 문제 해결 시도
 | CLAUDE.md | 파일 존재 + symlink 유효성 |
 | hooks | hook 파일 존재 + 버전(SHA256) 체크 + settings.json 등록 |
 | Python sidecar | `uv` 존재 + pyproject.toml |
-| Hub | hub 설정 + health 엔드포인트 |
+| C5 Hub | hub 설정 + health 엔드포인트 |
 | Supabase | 클라우드 설정 + 연결 확인 |
 
 - non-CQ 디렉토리에서도 실행 가능 (누락 항목을 FAIL로 표시)
@@ -196,8 +183,8 @@ cq serve --port 4141   # 포트 지정
 | 컴포넌트 | 활성화 조건 | 설명 |
 |----------|------------|------|
 | `GET /health` | 항상 | 전체 컴포넌트 상태 JSON |
-| `eventbus` | `serve.eventbus.enabled: true` | gRPC EventBus |
-| `eventsink` | `serve.eventsink.enabled: true` + `c3_eventbus` 빌드 태그 | Hub→CQ HTTP 이벤트 수신 (:4141) |
+| `eventbus` | `serve.eventbus.enabled: true` | C3 gRPC 이벤트 버스 |
+| `eventsink` | `serve.eventsink.enabled: true` + `c3_eventbus` 빌드 태그 | C5→C4 HTTP 이벤트 수신 (:4141) |
 | `gpu` | `serve.gpu.enabled: true` | GPU/CPU 작업 스케줄러 (daemon 패키지 래핑) |
 | `agent` | `serve.agent.enabled: true` + `cloud.url` + `cloud.anon_key` 설정 | Supabase Realtime @cq mention → claude -p 디스패치; claim 직후 `c1_members.status="typing"` 비동기 알림, 완료 시 `"online"` 복원; `claude -p --dir <projectDir>` |
 | `ssesubscriber` | `serve.ssesubscriber.enabled: true` + `c5_hub && c3_eventbus` 빌드 태그 | Hub SSE 스트림 구독 → EventBus 전달 |
@@ -254,15 +241,15 @@ cq serve status     # OS 서비스 상태 + 수동 실행 PID 확인
 
 | 섹션 | 설명 |
 |------|------|
-| `hub` | Hub 연결 (enabled, url, api_key) |
+| `hub` | C5 Hub 연결 (enabled, url, api_key) |
 | `llm_gateway` | LLM 프로바이더 설정 — API 키는 `cq secret set <provider>.api_key <value>` (config.yaml의 api_key/api_key_env 필드는 deprecated) |
 | `eventsink` | EventSink HTTP 서버 설정 (enabled, port, token) |
 | `worktree` | Worktree 관리 (auto_cleanup: true/false) |
-| `observe` | Observe 관측성 (enabled, log_level, log_format) — c7_observe 빌드 태그 필요 |
-| `guard` | Guard 접근 제어 (default_action: allow/deny, policies[]) — c6_guard 빌드 태그 필요 |
-| `gate` | Gate 외부 연동 (connectors.slack.*, connectors.github.*) — c8_gate 빌드 태그 필요 |
+| `observe` | C7 관측성 (enabled, log_level, log_format) — c7_observe 빌드 태그 필요 |
+| `guard` | C6 접근 제어 (default_action: allow/deny, policies[]) — c6_guard 빌드 태그 필요 |
+| `gate` | C8 외부 연동 (connectors.slack.*, connectors.github.*) — c8_gate 빌드 태그 필요 |
 
-- **`eventsink`**: Hub → CQ Core 이벤트 수신용 HTTP 엔드포인트 (기본 포트 `:4141`). `POST /v1/events/publish`로 수신한 이벤트를 EventBus에 전달.
+- **`eventsink`**: C5 → C4 이벤트 수신용 HTTP 엔드포인트 (기본 포트 `:4141`). `POST /v1/events/publish`로 수신한 이벤트를 C3 EventBus에 전달.
 - **`worktree.auto_cleanup`**: `true`(기본값)이면 `SubmitTask()` 성공 시 worktree를 즉시 자동 제거. Worktree 자동 생성은 AssignTask에서, 자동 제거는 SubmitTask 성공 시 수행.
 
 ---
@@ -278,16 +265,16 @@ Go MCP Server ──JSON-RPC/TCP──→ Python Sidecar (10 tools)
                                   │          insert_before/after, rename, find_refs
                                   │          ※ Python/JS/TS only (Jedi+multilspy)
                                   │          ※ Go/Rust → c4_search_for_pattern 대체
-                                  ├→ Doc (2): parse_document, extract_text
+                                  ├→ C2 Doc (2): parse_document, extract_text
                                   └→ Onboard (1): c4_onboard
 ```
 
 ### 마이그레이션 이력
 | Tier | 도구 수 | 대상 | Go 패키지 |
 |------|---------|------|-----------|
-| Tier 1 | 17 → Go | Research (5) + Workspace (6) + GPU (6) | `research/`, `c2/`, `daemon/` |
+| Tier 1 | 17 → Go | Research (5) + C2 (6) + GPU (6) | `research/`, `c2/`, `daemon/` |
 | Tier 2 | 12 → Go | Knowledge (12) | `knowledge/` |
-| 남은 Proxy | 10 | LSP (7) + Doc (2) + Onboard (1) | — |
+| 남은 Proxy | 10 | LSP (7) + C2 Doc (2) + Onboard (1) | — |
 
 ### 특성
 - **Lazy Start**: 첫 proxy 호출 시에만 sidecar 시작
@@ -296,11 +283,30 @@ Go MCP Server ──JSON-RPC/TCP──→ Python Sidecar (10 tools)
 
 ---
 
-## Telegram (공식 플러그인)
+## C1 Channel Adapter (c1/)
 
-> 외부 접점은 Claude Code 공식 Telegram 플러그인 사용. c1/ 코드 삭제됨 (2026-03).
-> 봇 관리: `cq setup` / `cq ls` / `cq remove`. 봇 선택: `cq` (기본 실행).
-> Go 백엔드: `internal/botstore/` (봇 CRUD), `internal/notify/telegram.go` (알림)
+> 채널 기반 메시징 브릿지. PlatformAdapter 인터페이스로 메신저 → Claude Code 연결.
+> Tauri 데스크톱 앱에서 전환 (2026-03). 기본 진입점은 Telegram 봇으로 이전 예정.
+
+### 아키텍처
+```
+메신저 (Telegram/Dooray/...)
+  ↕ PlatformAdapter
+MCP Channel Server (stdio)
+  ↕
+Claude Code
+```
+
+### 구조
+- `core/` — PlatformAdapter 인터페이스, MCP Channel 서버, auth (allowlist/pairing)
+- `adapters/dooray/` — Dooray Messenger 어댑터 (Hub polling 방식)
+- `index.ts` — 진입점
+- 런타임: Bun
+
+### 빌드/테스트
+```bash
+cd c1 && bun install && bun test
+```
 
 ---
 
@@ -309,8 +315,8 @@ Go MCP Server ──JSON-RPC/TCP──→ Python Sidecar (10 tools)
 > PostgreSQL 마이그레이션 21개 (00001~00021). Supabase 기반 클라우드 레이어.
 
 ### 주요 테이블
-- `c4_tasks`, `c4_documents`, `c4_projects` — CQ Core 핵심 데이터
-- `c1_channels`, `c1_messages`, `c1_participants`, `c1_channel_summaries` — 메시징 (Telegram Plugin)
+- `c4_tasks`, `c4_documents`, `c4_projects` — C4 핵심 데이터
+- `c1_channels`, `c1_messages`, `c1_participants`, `c1_channel_summaries` — C1 메시징
 - `c1_members` — 통합 멤버 모델 (user/agent/system + presence)
 - RLS 정책 (migration 00014: 보안 픽스)
 
@@ -353,7 +359,7 @@ pattern_suggest ← distill ← autoRecordKnowledge ← Worker 완료 (handoff)
 
 ---
 
-## EventBus (internal/eventbus/)
+## C3 EventBus (internal/eventbus/)
 
 > gRPC UDS daemon + WebSocket bridge + DLQ. 78 테스트.
 
@@ -371,8 +377,8 @@ review.changes_requested
 validation.passed, validation.failed
 knowledge.recorded, knowledge.searched
 hub.job.completed, hub.job.failed, hub.worker.started, hub.worker.offline
-tool.called       ← Observe가 발행 (tool name, latency_ms, error bool)
-guard.denied      ← Guard가 발행 (ActionDeny 시)
+tool.called       ← C7 Observe가 발행 (tool name, latency_ms, error bool)
+guard.denied      ← C6 Guard가 발행 (ActionDeny 시)
 ```
 
 ---

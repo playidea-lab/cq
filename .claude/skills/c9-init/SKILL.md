@@ -52,8 +52,9 @@ ls .c9/ 2>/dev/null && echo "EXISTS" || echo "NEW"
 질문:
 ```
 C5 Hub URL을 입력해주세요. (http:// 또는 https:// 형식)
-예시: https://your-c5-hub.fly.dev
+예시: https://your-hub-host:8585
      http://localhost:8585  (로컬 개발용)
+Note: Hub는 Supabase JWT 인증을 사용합니다 (C5_JWT_SECRET 또는 SUPABASE_JWT_SECRET).
 ```
 
 검증:

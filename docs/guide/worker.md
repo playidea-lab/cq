@@ -288,7 +288,6 @@ After=network-online.target
 
 [Service]
 ExecStart=%h/.local/bin/cq hub worker start
-Environment=C5_HUB_URL=https://your-hub.fly.dev
 Environment=C5_API_KEY=YOUR_API_KEY
 Restart=always
 RestartSec=10

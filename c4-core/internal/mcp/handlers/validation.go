@@ -11,6 +11,7 @@ import (
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/standards"
 )
 
 // validationEventPub holds the optional EventBus publisher for validation events.
@@ -71,6 +72,10 @@ func handleRunValidation(rootDir string, rawArgs json.RawMessage) (any, error) {
 
 	// Detect available validations (config-based overrides take priority)
 	available := detectValidationsWithConfig(rootDir)
+
+	// Append manifest-based validation commands from .piki-lock.yaml.
+	manifestCmds := loadManifestValidations(rootDir)
+	available = mergeManifestValidations(available, manifestCmds)
 
 	// Filter if names specified (supports aliases like lint/unit/test).
 	var toRun []validationDef
@@ -280,4 +285,49 @@ func fileExists(rootDir, relPath string) bool {
 	path := rootDir + "/" + relPath
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// loadManifestValidations reads .piki-lock.yaml from rootDir and returns
+// validation commands defined in the standards manifest for the project's
+// team and languages. Returns nil if the lock file is absent or unreadable.
+func loadManifestValidations(rootDir string) []validationDef {
+	lock, err := standards.ReadLock(rootDir)
+	if err != nil {
+		return nil
+	}
+	cmds, err := standards.ValidationCommands(lock.Team, lock.Langs)
+	if err != nil {
+		return nil
+	}
+	var defs []validationDef
+	for _, c := range cmds {
+		parts := strings.Fields(c.Command)
+		if len(parts) == 0 {
+			continue
+		}
+		defs = append(defs, validationDef{
+			Name:    c.Name,
+			Command: parts[0],
+			Args:    parts[1:],
+		})
+	}
+	return defs
+}
+
+// mergeManifestValidations merges manifest-defined validation commands into
+// the existing list. Manifest commands with a name already present are skipped
+// (existing entries — config or auto-detected — take priority).
+func mergeManifestValidations(existing, manifest []validationDef) []validationDef {
+	seen := make(map[string]bool, len(existing))
+	for _, v := range existing {
+		seen[strings.ToLower(v.Name)] = true
+	}
+	result := existing
+	for _, v := range manifest {
+		if !seen[strings.ToLower(v.Name)] {
+			result = append(result, v)
+			seen[strings.ToLower(v.Name)] = true
+		}
+	}
+	return result
 }

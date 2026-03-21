@@ -21,14 +21,7 @@ allowed-tools: Read, Glob, Grep, mcp__cq__*
 
 ### Step 2: C5 Hub Job 제출
 ```bash
-curl -X POST https://piqsol-c5.fly.dev/v1/jobs/submit \
-  -H "X-API-Key: $C5_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "c9-report",
-    "command": "python3 -c \"[메트릭 수집 스크립트]\"",
-    "tags": ["c9", "report"]
-  }'
+cq hub submit --run "python3 -c \"[메트릭 수집 스크립트]\""
 ```
 
 Python 스크립트 패턴:
@@ -76,7 +69,6 @@ for name, mpjpe, pa in results:
 수집된 데이터를 컨텍스트로 `/c9-conference` 자동 실행.
 
 ## API 정보
-- Hub URL: `https://piqsol-c5.fly.dev`
 - API Key: `$C5_API_KEY` (X-API-Key 헤더)
-- 로그 조회: `GET /v1/jobs/{job_id}/logs`
+- 로그 조회: `cq hub log {job_id}`
 - Job 결과 대기: 10-15초 후 조회

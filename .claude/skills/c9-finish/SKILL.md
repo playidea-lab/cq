@@ -22,9 +22,7 @@ cat .c9/state.yaml  # mpjpe_history에서 best round/exp 확인
 ### Step 2: Best checkpoint 저장
 ```bash
 # C5 Hub Job으로 pi 서버에서 best model 복사
-curl -X POST https://piqsol-c5.fly.dev/v1/jobs/submit \
-  -H "X-API-Key: $C5_API_KEY" \
-  -d '{"name":"c9-save-best","command":"cp /home/pi/git/hmr_unified/experiments/paper1/BEST_EXP/best_checkpoint.pt /home/pi/git/hmr_unified/outputs/c9_best_model.pt && echo SAVED"}'
+cq hub submit --run "cp /home/pi/git/hmr_unified/experiments/paper1/BEST_EXP/best_checkpoint.pt /home/pi/git/hmr_unified/outputs/c9_best_model.pt && echo SAVED"
 ```
 
 ### Step 3: 결과 문서 생성
