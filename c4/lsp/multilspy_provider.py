@@ -314,16 +314,20 @@ class MultilspyProvider:
 
             try:
                 server = self._get_server(lang)
-                with server.start_server():
-                    # Use workspace/symbol for global search
-                    symbols = server.request_workspace_symbol(query) or []
-
-                    for sym in symbols:
-                        result = self._convert_workspace_symbol(sym, include_body)
-                        if result:
-                            # Filter by name_path_pattern
-                            if self._matches_pattern(result, name_path_pattern):
-                                results.append(result)
+                lang_results: list[dict] = []
+                try:
+                    with server.start_server():
+                        symbols = server.request_workspace_symbol(query) or []
+                        for sym in symbols:
+                            result = self._convert_workspace_symbol(sym, include_body)
+                            if result and self._matches_pattern(result, name_path_pattern):
+                                lang_results.append(result)
+                except Exception as shutdown_err:
+                    if lang_results:
+                        logger.debug(f"LSP shutdown error (ignored, got {len(lang_results)} symbols): {shutdown_err}")
+                    else:
+                        raise
+                results.extend(lang_results)
 
             except Exception as e:
                 logger.warning(f"LSP workspace/symbol failed for {lang}: {e}")
@@ -355,14 +359,20 @@ class MultilspyProvider:
 
         try:
             server = self._get_server(language)
-            with server.start_server():
-                # Open the document in the LSP server
-                server.open_file(str(file_path))
+            symbols = None
+            try:
+                with server.start_server():
+                    server.open_file(str(file_path))
+                    symbols = server.request_document_symbols(str(file_path))
+            except Exception as shutdown_err:
+                # Ignore psutil/process cleanup errors during server shutdown
+                # if we already got symbols successfully
+                if symbols is not None:
+                    logger.debug(f"LSP server shutdown error (ignored, symbols ok): {shutdown_err}")
+                else:
+                    raise
 
-                # Request document symbols
-                symbols = server.request_document_symbols(str(file_path))
-
-                return self._format_document_symbols(symbols, depth)
+            return self._format_document_symbols(symbols, depth)
 
         except Exception as e:
             logger.error(f"Document symbol request failed: {e}")
@@ -702,9 +712,16 @@ class MultilspyProvider:
             # multilspy expects relative path
             rel_path = str(abs_path.relative_to(self.project_path))
 
-            with server.start_server():
-                server.open_file(rel_path)
-                locations = server.request_references(rel_path, line, column) or []
+            locations = []
+            try:
+                with server.start_server():
+                    server.open_file(rel_path)
+                    locations = server.request_references(rel_path, line, column) or []
+            except Exception as shutdown_err:
+                if locations:
+                    logger.debug(f"LSP shutdown error (ignored, got refs): {shutdown_err}")
+                else:
+                    raise
 
             results: list[dict[str, Any]] = []
             for loc in locations:
