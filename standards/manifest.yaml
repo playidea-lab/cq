@@ -247,6 +247,26 @@ skills:
     src: skills/paper-writing/skill.md
     auto_install: false
 
+  component-design:
+    src: skills/component-design/skill.md
+    auto_install: false
+
+  a11y-audit:
+    src: skills/a11y-audit/skill.md
+    auto_install: false
+
+  db-design:
+    src: skills/db-design/skill.md
+    auto_install: false
+
+  experiment-design:
+    src: skills/experiment-design/skill.md
+    auto_install: false
+
+  model-serving:
+    src: skills/model-serving/skill.md
+    auto_install: false
+
 # 적용 순서 (우선순위: 높은 번호가 낮은 번호를 오버라이드)
 # 1. common (항상)
 # 2. languages (--lang)
