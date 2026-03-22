@@ -1,4 +1,4 @@
-//go:build c5_hub && c3_eventbus
+//go:build hub && c3_eventbus
 
 package main
 
@@ -12,7 +12,7 @@ import (
 )
 
 // registerSSESubscriberServeComponent registers the SSESubscriberComponent when
-// both c5_hub and c3_eventbus build tags are active.
+// both hub and c3_eventbus build tags are active.
 // It connects to the C5 Hub SSE endpoint and forwards events to the local EventBus.
 // If eb is nil (EventBus disabled), events are silently dropped via NoopPublisher.
 // If wakeCh is non-nil, the component will signal it on hub.job.completed/failed events.

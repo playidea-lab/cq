@@ -1,4 +1,4 @@
-//go:build c5_hub
+//go:build hub
 
 package main
 
@@ -13,7 +13,7 @@ import (
 )
 
 // registerHubPollerServeComponent registers the HubPoller component when
-// the c5_hub build tag is active. The HubPoller periodically polls C5 Hub
+// the hub build tag is active. The HubPoller periodically polls Hub
 // for job status changes and publishes hub.job.completed/failed events.
 // eb is reserved for future publisher wiring; events are silently dropped for now.
 // prebuiltClient, if non-nil, is the already-configured hub.Client from initHub

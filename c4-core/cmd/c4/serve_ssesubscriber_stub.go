@@ -1,4 +1,4 @@
-//go:build !(c5_hub && c3_eventbus)
+//go:build !(hub && c3_eventbus)
 
 package main
 
@@ -8,6 +8,6 @@ import (
 )
 
 func registerSSESubscriberServeComponent(mgr *serve.Manager, cfg config.C4Config, eb *serve.EventBusComponent, wakeCh chan struct{}) {
-	// SSESubscriber requires both c5_hub and c3_eventbus build tags.
+	// SSESubscriber requires both hub and c3_eventbus build tags.
 	_, _, _, _ = mgr, cfg, eb, wakeCh
 }

@@ -421,7 +421,7 @@ func newMCPServer() (*mcpServer, error) {
 	}
 
 	// Start HubPoller after EventBus wiring so hubEventPub is populated.
-	// startHubPoller is defined in mcp_init_hub.go (c5_hub) / mcp_init_hub_stub.go (!c5_hub).
+	// startHubPoller is defined in mcp_init_hub.go (hub) / mcp_init_hub_stub.go (!hub).
 	startHubPoller(ctx)
 
 	// Start EventSink HTTP server (config from .c4/config.yaml).

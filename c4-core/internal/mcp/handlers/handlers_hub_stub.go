@@ -1,4 +1,4 @@
-//go:build !c5_hub
+//go:build !hub
 
 package handlers
 
@@ -15,10 +15,10 @@ type HubPoller = hubhandler.HubPoller
 // HubPollerOption is a type alias for hubhandler.HubPollerOption.
 type HubPollerOption = hubhandler.HubPollerOption
 
-// RegisterHubHandlers is a no-op stub when c5_hub build tag is disabled.
+// RegisterHubHandlers is a no-op stub when hub build tag is disabled.
 func RegisterHubHandlers(_ *mcp.Registry, _ any) {}
 
-// SetHubEventBus is a no-op stub when c5_hub build tag is disabled.
+// SetHubEventBus is a no-op stub when hub build tag is disabled.
 func SetHubEventBus(_ eventbus.Publisher, _ string) {}
 
 // GetHubEventPub delegates to hubhandler.GetHubEventPub.
@@ -31,15 +31,15 @@ func GetHubProjectID() string {
 	return hubhandler.GetHubProjectID()
 }
 
-// WorkerDeps is a placeholder type when c5_hub build tag is disabled.
+// WorkerDeps is a placeholder type when hub build tag is disabled.
 type WorkerDeps struct {
 	HubClient     any
 	ShutdownStore any
 	Keeper        *messengerhandler.ContextKeeper
 }
 
-// RegisterWorkerHandlers is a no-op stub when c5_hub build tag is disabled.
+// RegisterWorkerHandlers is a no-op stub when hub build tag is disabled.
 func RegisterWorkerHandlers(_ *mcp.Registry, _ *WorkerDeps) {}
 
-// RegisterDispatchHandler is a no-op stub when c5_hub build tag is disabled.
+// RegisterDispatchHandler is a no-op stub when hub build tag is disabled.
 func RegisterDispatchHandler(_ *mcp.Registry) {}
