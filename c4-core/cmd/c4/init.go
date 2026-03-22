@@ -1437,7 +1437,7 @@ func launchToolNamed(tool, projectDir, name string) error {
 			return fmt.Errorf("start %s: %w", tool, err)
 		}
 
-		// Watch for .reboot file — auto-terminate when detected.
+		// Watch for .reboot file — auto-terminate only if UUID matches this session.
 		rebootDetected := make(chan struct{}, 1)
 		go func() {
 			ticker := time.NewTicker(2 * time.Second)
@@ -1445,16 +1445,22 @@ func launchToolNamed(tool, projectDir, name string) error {
 			for {
 				select {
 				case <-ticker.C:
-					if _, err := os.Stat(rebootFlagFile()); err == nil {
-						select {
-						case rebootDetected <- struct{}{}:
-						default:
-						}
-						if cmd.Process != nil {
-							_ = cmd.Process.Signal(os.Interrupt)
-						}
-						return
+					content, err := os.ReadFile(rebootFlagFile())
+					if err != nil {
+						continue
 					}
+					rebootUUID := strings.TrimSpace(string(content))
+					if rebootUUID != "" && rebootUUID != currentUUID {
+						continue // different session's reboot request — ignore
+					}
+					select {
+					case rebootDetected <- struct{}{}:
+					default:
+					}
+					if cmd.Process != nil {
+						_ = cmd.Process.Signal(os.Interrupt)
+					}
+					return
 				case <-rebootDetected:
 					return
 				}
