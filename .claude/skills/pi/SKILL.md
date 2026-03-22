@@ -125,7 +125,20 @@ AskUserQuestion(questions=[{
 }])
 ```
 
-- **자동 구현** → `Skill("c4-plan", args="--from-pi {slug} --auto-run")`
+- **자동 구현** →
+  ```python
+  Write(
+      path=".c4/pipeline-state.json",
+      content=json.dumps({
+          "steps": ["plan", "run", "finish"],
+          "current": 0,
+          "auto": True,
+          "source": "pi",
+          "idea_slug": slug
+      }, indent=2)
+  )
+  Skill("c4-plan", args="--from-pi {slug} --auto-run")
+  ```
 - **계획만** → `Skill("c4-plan", args="--from-pi {slug}")`
 
 ---
