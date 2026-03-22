@@ -90,6 +90,9 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		checkSidecarHang,
 		checkSkillHealth,
 		checkStandards,
+		checkOntologyL1,
+		checkOntologyL2,
+		checkKnowledgeHealth,
 	}
 
 	results := make([]checkResult, 0, len(checks))
@@ -907,6 +910,162 @@ func parseSkillEvalAccuracy(content string) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// countOntologyNodes counts top-level node keys under "schema:" → "nodes:" in a YAML file.
+// It also counts confidence levels (low/high/verified) for L1 display.
+// Returns nodeCount, low, high, verified counts.
+func countOntologyNodes(data string) (int, int, int, int) {
+	lines := strings.Split(data, "\n")
+	inSchema := false
+	inNodes := false
+	nodeCount := 0
+	var low, high, verified int
+	// Track indentation depth: schema is at depth 0 (no indent), nodes is depth 1 (4 spaces), node entries depth 2 (8 spaces).
+	for _, line := range lines {
+		if line == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		switch {
+		case indent == 0 && trimmed == "schema:":
+			inSchema = true
+			inNodes = false
+		case indent == 0 && trimmed != "schema:":
+			inSchema = false
+			inNodes = false
+		case inSchema && indent == 4 && trimmed == "nodes:":
+			inNodes = true
+		case inSchema && indent == 4 && trimmed != "nodes:":
+			inNodes = false
+		case inNodes && indent == 8 && strings.HasSuffix(trimmed, ":"):
+			nodeCount++
+		case inNodes && indent > 8 && strings.HasPrefix(trimmed, "confidence:"):
+			val := strings.TrimSpace(strings.TrimPrefix(trimmed, "confidence:"))
+			switch strings.ToLower(val) {
+			case "low":
+				low++
+			case "high":
+				high++
+			case "verified":
+				verified++
+			}
+		}
+	}
+	return nodeCount, low, high, verified
+}
+
+// checkOntologyL1 checks the personal ontology file at ~/.c4/personas/$USER/ontology.yaml.
+func checkOntologyL1() checkResult {
+	user := os.Getenv("USER")
+	if user == "" {
+		user = os.Getenv("LOGNAME")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return checkResult{Name: "ontology-l1", Status: checkWarn, Message: "cannot determine home directory"}
+	}
+	path := filepath.Join(home, ".c4", "personas", user, "ontology.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return checkResult{
+			Name:    "ontology-l1",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("not found: %s", path),
+			Fix:     "cq tool c4_persona_learn to build personal ontology",
+		}
+	}
+	nodeCount, low, high, verified := countOntologyNodes(string(data))
+	if nodeCount == 0 {
+		return checkResult{
+			Name:    "ontology-l1",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("file exists (%s) but 0 nodes", path),
+			Fix:     "cq tool c4_persona_learn to populate ontology",
+		}
+	}
+	return checkResult{
+		Name:    "ontology-l1",
+		Status:  checkOK,
+		Message: fmt.Sprintf("%d nodes (LOW=%d HIGH=%d VERIFIED=%d) — %s", nodeCount, low, high, verified, path),
+	}
+}
+
+// checkOntologyL2 checks the project ontology file at .c4/project-ontology.yaml.
+func checkOntologyL2() checkResult {
+	path := filepath.Join(projectDir, ".c4", "project-ontology.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return checkResult{
+			Name:    "ontology-l2",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("not found: %s", path),
+			Fix:     "cq tool c4_collective_sync to generate project ontology",
+		}
+	}
+	nodeCount, _, _, _ := countOntologyNodes(string(data))
+	if nodeCount == 0 {
+		return checkResult{
+			Name:    "ontology-l2",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("file exists (%s) but 0 nodes", path),
+			Fix:     "cq tool c4_collective_sync to populate project ontology",
+		}
+	}
+	return checkResult{
+		Name:    "ontology-l2",
+		Status:  checkOK,
+		Message: fmt.Sprintf("%d nodes — %s", nodeCount, path),
+	}
+}
+
+// checkKnowledgeHealth checks total knowledge docs and search hit_rate.
+// hit_rate = unique docs with at least one search_hit / total docs.
+func checkKnowledgeHealth() checkResult {
+	docsDir := filepath.Join(projectDir, ".c4", "knowledge", "docs")
+	entries, err := os.ReadDir(docsDir)
+	if err != nil {
+		return checkResult{Name: "knowledge-health", Status: checkOK, Message: "knowledge store not found (skipped)"}
+	}
+	totalDocs := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			totalDocs++
+		}
+	}
+	if totalDocs == 0 {
+		return checkResult{
+			Name:    "knowledge-health",
+			Status:  checkWarn,
+			Message: "knowledge/docs/ exists but 0 documents",
+			Fix:     "cq tool c4_knowledge_ingest to add documents",
+		}
+	}
+
+	// Compute hit_rate via doc_usage table (unique docs with search_hit / total docs).
+	dbPath := filepath.Join(projectDir, ".c4", "knowledge", "index.db")
+	hitRate := -1.0
+	if out, qErr := runWithTimeout(3*time.Second, "sqlite3", dbPath,
+		"SELECT COUNT(DISTINCT doc_id) FROM doc_usage WHERE action='search_hit';"); qErr == nil {
+		var hitDocs int
+		if _, scanErr := fmt.Sscanf(strings.TrimSpace(out), "%d", &hitDocs); scanErr == nil && totalDocs > 0 {
+			hitRate = float64(hitDocs) / float64(totalDocs)
+		}
+	}
+
+	if hitRate < 0 {
+		return checkResult{
+			Name:    "knowledge-health",
+			Status:  checkOK,
+			Message: fmt.Sprintf("%d docs (hit_rate: unknown — index.db inaccessible)", totalDocs),
+		}
+	}
+	return checkResult{
+		Name:    "knowledge-health",
+		Status:  checkOK,
+		Message: fmt.Sprintf("%d docs, hit_rate=%.2f (%.0f%% of docs have been search-hit)", totalDocs, hitRate, hitRate*100),
+	}
 }
 
 func checkStandards() checkResult {
