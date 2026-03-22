@@ -107,7 +107,7 @@ func (u *HubUploader) upsert(p AnonPattern) error {
 		return fmt.Errorf("marshal pattern: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", u.baseURL+"/collective_patterns", strings.NewReader(string(data)))
+	req, err := http.NewRequest("POST", u.baseURL+"/rest/v1/collective_patterns", strings.NewReader(string(data)))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
