@@ -102,6 +102,16 @@ type PlanningConfig struct {
 	CritiqueLoop CritiqueLoopConfig `mapstructure:"critique_loop" yaml:"critique_loop"`
 }
 
+// RunConfig controls c4-run / polish behavior.
+type RunConfig struct {
+	// CheckpointMode controls how checkpoint decisions are made.
+	// "auto" = automatic, "interactive" = human-in-the-loop.
+	CheckpointMode string `mapstructure:"checkpoint_mode" yaml:"checkpoint_mode"`
+	// PolishThreshold is the minimum number of trivial (non-code) changes
+	// required to trigger a polish cycle. Default: 5.
+	PolishThreshold int `mapstructure:"polish_threshold" yaml:"polish_threshold"`
+}
+
 // ValidationConfig holds validation command settings.
 type ValidationConfig struct {
 	Lint string `mapstructure:"lint" yaml:"lint"`
@@ -377,6 +387,7 @@ type C4Config struct {
 	ReviewAsTask     bool                       `mapstructure:"review_as_task"       yaml:"review_as_task"`
 	CheckpointAsTask bool                       `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`
 	Planning         PlanningConfig             `mapstructure:"planning"             yaml:"planning"`
+	Run              RunConfig                  `mapstructure:"run"                  yaml:"run"`
 	Gate             GateConfig                 `mapstructure:"gate"                 yaml:"gate"`
 	Observe          ObserveConfig              `mapstructure:"observe"              yaml:"observe"`
 	Guard            GuardConfig                `mapstructure:"guard"                yaml:"guard"`
@@ -451,6 +462,10 @@ func defaultConfig() C4Config {
 				MaxRounds: 3,
 				Mode:      "auto",
 			},
+		},
+		Run: RunConfig{
+			CheckpointMode:  "auto",
+			PolishThreshold: 5,
 		},
 		Observe: ObserveConfig{
 			Enabled:   true,
@@ -544,6 +559,8 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("planning.critique_loop.enabled", true)
 	v.SetDefault("planning.critique_loop.max_rounds", 3)
 	v.SetDefault("planning.critique_loop.mode", "auto")
+	v.SetDefault("run.checkpoint_mode", "auto")
+	v.SetDefault("run.polish_threshold", 5)
 	v.SetDefault("permission_reviewer.model", "haiku")
 	v.SetDefault("permission_reviewer.api_key_env", "ANTHROPIC_API_KEY")
 	v.SetDefault("permission_reviewer.fail_mode", "ask")
