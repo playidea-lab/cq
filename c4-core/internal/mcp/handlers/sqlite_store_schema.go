@@ -101,6 +101,14 @@ func (s *SQLiteStore) initSchema() error {
 			created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
 			updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS c4_gates (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			batch_id     TEXT,
+			gate         TEXT NOT NULL,
+			status       TEXT NOT NULL CHECK(status IN ('done','skipped','override')),
+			reason       TEXT,
+			completed_at TEXT DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 
 	// Best-effort migrations for existing tables

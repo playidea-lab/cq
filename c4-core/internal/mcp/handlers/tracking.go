@@ -8,6 +8,13 @@ import (
 	"github.com/changmin/c4-core/internal/task"
 )
 
+// recordGateArgs is the input for c4_record_gate.
+type recordGateArgs struct {
+	Gate   string `json:"gate"`
+	Status string `json:"status"`
+	Reason string `json:"reason"`
+}
+
 // claimArgs is the input for c4_claim.
 type claimArgs struct {
 	TaskID string `json:"task_id"`
@@ -32,6 +39,33 @@ type checkpointArgs struct {
 
 // RegisterTrackingHandlers registers direct-mode and supervisor tools on the registry.
 func RegisterTrackingHandlers(reg *mcp.Registry, store Store) {
+	// c4_record_gate
+	reg.Register(mcp.ToolSchema{
+		Name:        "c4_record_gate",
+		Description: "Record a workflow gate result into c4_gates table. Use this instead of direct sqlite3 calls.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"gate": map[string]any{
+					"type":        "string",
+					"description": "Gate name (e.g. 'polish', 'review', 'lint')",
+				},
+				"status": map[string]any{
+					"type":        "string",
+					"enum":        []string{"done", "skipped", "override"},
+					"description": "Gate completion status",
+				},
+				"reason": map[string]any{
+					"type":        "string",
+					"description": "Optional reason or note for this gate record",
+				},
+			},
+			"required": []string{"gate", "status"},
+		},
+	}, func(args json.RawMessage) (any, error) {
+		return handleRecordGate(store, args)
+	})
+
 	// c4_claim
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_claim",
@@ -96,6 +130,38 @@ func RegisterTrackingHandlers(reg *mcp.Registry, store Store) {
 	}, func(args json.RawMessage) (any, error) {
 		return handleCheckpoint(store, args)
 	})
+}
+
+func handleRecordGate(store Store, rawArgs json.RawMessage) (any, error) {
+	var args recordGateArgs
+	if err := json.Unmarshal(rawArgs, &args); err != nil {
+		return nil, fmt.Errorf("parsing arguments: %w", err)
+	}
+
+	if args.Gate == "" {
+		return nil, fmt.Errorf("gate is required")
+	}
+	switch args.Status {
+	case "done", "skipped", "override":
+		// valid
+	default:
+		return nil, fmt.Errorf("invalid status: %q (must be done, skipped, or override)", args.Status)
+	}
+
+	ss, ok := store.(*SQLiteStore)
+	if !ok {
+		return nil, fmt.Errorf("c4_record_gate requires SQLiteStore backend")
+	}
+
+	id, err := ss.RecordGate(args.Gate, args.Status, args.Reason)
+	if err != nil {
+		return nil, fmt.Errorf("recording gate: %w", err)
+	}
+
+	return map[string]any{
+		"success": true,
+		"id":      id,
+	}, nil
 }
 
 func handleClaim(store Store, rawArgs json.RawMessage) (any, error) {

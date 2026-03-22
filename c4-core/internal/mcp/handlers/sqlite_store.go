@@ -1162,3 +1162,19 @@ func (s *SQLiteStore) TouchCurrentWorkerHeartbeat() {
 		now, workerID)
 }
 
+// RecordGate inserts a gate record into c4_gates and returns the new row id.
+func (s *SQLiteStore) RecordGate(gate, status, reason string) (int64, error) {
+	result, err := s.db.Exec(
+		`INSERT INTO c4_gates (gate, status, reason) VALUES (?, ?, ?)`,
+		gate, status, reason,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("inserting gate record: %w", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("getting gate id: %w", err)
+	}
+	return id, nil
+}
+
