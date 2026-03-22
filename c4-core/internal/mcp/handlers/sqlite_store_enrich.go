@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/task"
 )
 
@@ -176,5 +177,37 @@ func extractFilesChangedFromHandoff(handoff string) string {
 		return ""
 	}
 	return strings.Join(payload.FilesChanged, ",")
+}
+
+// enrichWithOntology appends project ontology nodes to KnowledgeContext.
+// Filters nodes by scope ("project") or source_role matching the task's domain.
+// Best-effort: errors are silently ignored so task assignment never blocks.
+func (s *SQLiteStore) enrichWithOntology(assignment *TaskAssignment) {
+	if s.projectRoot == "" {
+		return
+	}
+	proj, err := ontology.LoadProject(s.projectRoot)
+	if err != nil || proj == nil || len(proj.Schema.Nodes) == 0 {
+		return
+	}
+
+	domain := assignment.Domain
+
+	var lines []string
+	for path, node := range proj.Schema.Nodes {
+		if node.Scope == "project" || (domain != "" && node.SourceRole == domain) {
+			line := fmt.Sprintf("- %s: %s", path, node.Label)
+			if node.Description != "" {
+				line += " — " + node.Description
+			}
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+
+	section := "\n\n## Project Ontology (auto-injected)\n" + strings.Join(lines, "\n")
+	assignment.KnowledgeContext += section
 }
 
