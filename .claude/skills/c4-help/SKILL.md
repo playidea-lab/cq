@@ -39,11 +39,57 @@ What's the task?
 ├─ Small (1-5 files) → /c4-quick "desc" → /c4-submit
 ├─ Medium (5-15 files) → /c4-add-task → /c4-run  OR  c4_claim → c4_report
 ├─ Large (15+ files) → /c4-plan → /c4-run N  OR  /c4-swarm N
-├─ Research/experiment → /c4-research
-└─ Document work → /c4-review (paper) OR c4_parse_document
+├─ Research/experiment → /c9-loop, /c4-review (paper)
+├─ Document work → c4_parse_document, /proposal-writer, /document-review
+└─ Idea exploration → /pi
 
 Core: /c4-status, /c4-quick, /c4-run, /c4-submit, /c4-validate
-More: /c4-help commands | agents | tools | <keyword>
+More: /c4-help commands | agents | tools | piki | <keyword>
+```
+
+### "piki" → Piki 표준 스킬 안내
+
+```
+🔹 CQ 스킬 (c4-/c9- prefix): CQ MCP 도구 의존. CQ 프로젝트에서만 동작.
+   /c4-plan, /c4-run, /c4-finish, /c4-review (논문), /c9-loop 등 30개
+
+🔸 piki 스킬 (prefix 없음): 범용 워크플로우 가이드. CQ 없이도 활용 가능.
+   cq standards apply로 설치. 24개:
+
+   [auto-install — 모든 프로젝트]
+   /company-review    코드 리뷰 (6축, soul.md 기반)
+   /pr-review         PR 체크리스트 + 리뷰 가이드
+   /incident-response 장애 대응 플로우
+   /claude-md-improver CLAUDE.md 분석/개선
+
+   [문서 작성]
+   /proposal-writer   제안서/입찰서 작성
+   /document-review   사내 문서 리뷰
+   /meeting-notes     회의록 작성
+   /doc-writing       ADR/스펙/README
+   /internal-comms    사내 공지/리포트
+
+   [개발 워크플로우]
+   /feature-dev       7단계 기능 개발
+   /refactor          안전한 리팩토링
+   /migration         DB/API 마이그레이션
+   /deploy            프로덕션 배포
+
+   [품질/보안]
+   /security-audit    보안 감사 체크리스트
+   /perf-audit        성능 감사
+   /webapp-testing    E2E 테스트 (Playwright)
+
+   [기획/관리]
+   /estimation        작업량 추정
+   /postmortem        포스트모템 작성
+
+   [도구/자동화]
+   /mcp-builder       MCP 서버 개발
+   /hookify           커스텀 훅 생성
+   /automation-recommender 자동화 추천
+   /onboarding        프로젝트 온보딩
+   /data-pipeline     ETL 파이프라인
 ```
 
 ### "commands" → See `references/commands.md`
