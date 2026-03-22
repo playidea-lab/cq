@@ -24,14 +24,36 @@ func NewOntologyExtractor(llm LLMClient) *OntologyExtractor {
 
 // ontologyPrompt builds the LLM prompt for extracting ontology nodes.
 func ontologyPrompt(summary string) string {
-	var sb strings.Builder
-	sb.WriteString("Extract ontology concept nodes from the following behavior summary.\n")
-	sb.WriteString("Return a JSON array of objects with fields: label, description, tags (string array).\n")
-	sb.WriteString("Each node should represent a distinct concept, skill, or behavior pattern observed.\n")
-	sb.WriteString("Return only valid JSON. Example: [{\"label\":\"Input Validation\",\"description\":\"Always validates user input.\",\"tags\":[\"reliability\",\"security\"]}]\n\n")
-	sb.WriteString("Behavior summary:\n")
-	sb.WriteString(summary)
-	return sb.String()
+	return `You are analyzing a developer's coding behavior to build their personal ontology profile.
+Extract patterns about HOW this developer thinks, judges, and codes — not WHAT files they changed.
+
+Focus on these 4 axes:
+1. judgment — How they make decisions: what they approve/reject, quality thresholds, tradeoffs
+2. domain — What they know: technologies, frameworks, areas of expertise
+3. style — How they code: error handling patterns, naming conventions, testing approach, function size
+4. workflow — How they work: commit frequency, refactoring approach, review habits
+
+Return a JSON array. Each object must have:
+- "label": short pattern name (e.g. "sentinel_error_handling", "table_driven_tests")
+- "description": what this pattern means about the developer
+- "tags": array containing the axis ("judgment", "domain", "style", or "workflow") + topic tags
+
+Rules:
+- Extract DEVELOPER PATTERNS, not file change summaries
+- Skip generic observations like "added new content" or "modified files"
+- Each node should be actionable: if you saw this developer's code again, you'd recognize this pattern
+- 3-8 nodes per summary is ideal
+- Return ONLY valid JSON array, no other text
+
+Example output:
+[
+  {"label":"small_function_preference","description":"Splits functions over 30 lines into smaller units","tags":["style","refactoring"]},
+  {"label":"error_wrapping","description":"Wraps errors with context using fmt.Errorf with %w verb","tags":["style","error-handling","go"]},
+  {"label":"test_before_implement","description":"Writes test files before or alongside implementation","tags":["workflow","tdd"]}
+]
+
+Behavior summary:
+` + summary
 }
 
 // parseOntologyNodes attempts to unmarshal an LLM JSON response into ontology nodes.
