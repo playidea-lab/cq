@@ -57,6 +57,11 @@ hb_thread.start()
 1. IF task.knowledge_context exists → READ and APPLY relevant lessons
 2. Implement the task (follow DoD, including Rationale)
 3. Run validations, fix issues (max 3 retries)
+3.5. **Polish Loop** (skip if diff < 5 lines):
+   a. Spawn code-reviewer agent: review changes on 6 axes
+      (Correctness, Security, Reliability, Observability, Test Coverage, Readability)
+   b. IF modifications > 0: apply fixes → re-review (repeat max 3 rounds)
+   c. On convergence: `c4_record_gate(gate="polish", status="done", reason="converged round N")`
 4. git commit
 5. stop_event.set()
 6. c4_submit(task_id, ..., handoff={"summary", "files_changed", "discoveries", "concerns", "rationale"})
