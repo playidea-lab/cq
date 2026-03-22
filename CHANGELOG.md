@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.11.0] - 2026-03-23
+
+### ✨ Features
+
+- **ontology**: CrossPositionDetector — 교차 포지션 피드백 감지
+- **ontology**: ProjectExtractor — L1 HIGH 노드를 프로젝트 온톨로지로 승격
+
+### 🐛 Bug Fixes
+
+- **cleanup**: hub_component 잔여 파일 삭제 + archtest allowlist 정리
+
+### ♻️ Refactoring
+
+- **build**: `c5_hub` 빌드 태그를 `hub`로 rename (27개 Go 파일 + Makefile)
+- **build**: `c5_embed` 관련 파일 삭제 (embed_c5*.go + embed/hub/)
+- **hub**: workerYAML/edgeYAML에서 dead Binary 필드 제거
+
+---
+
 ## [v1.10.1] - 2026-03-23
 
 ### ✨ Features
