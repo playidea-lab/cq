@@ -703,6 +703,62 @@ func TestLoginNoBrowser(t *testing.T) {
 	}
 }
 
+// TestRefreshTokenRotationRace verifies that when a refresh fails because another
+// process already rotated the refresh token, the client falls back to the
+// session.json on disk (which the winning process already updated).
+func TestRefreshTokenRotationRace(t *testing.T) {
+	// Mock Supabase that always rejects the refresh (simulating token already rotated).
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(supabaseErrorResponse{
+			Error:            "invalid_grant",
+			ErrorDescription: "Invalid Refresh Token: Already Used",
+		})
+	}))
+	defer mockServer.Close()
+
+	tmpDir := t.TempDir()
+	sessionPath := filepath.Join(tmpDir, "session.json")
+
+	client := NewAuthClient(mockServer.URL, "key")
+	client.SetSessionPath(sessionPath)
+
+	// Save an expired session (triggers refresh attempt).
+	expired := &Session{
+		AccessToken:  "old-access",
+		RefreshToken: "old-refresh",
+		ExpiresAt:    time.Now().Add(-1 * time.Hour).Unix(),
+		User:         User{ID: "u1", Email: "a@b.com"},
+	}
+	if err := client.saveSession(expired); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate another process writing a fresh session to disk.
+	fresh := &Session{
+		AccessToken:  "winner-access",
+		RefreshToken: "winner-refresh",
+		ExpiresAt:    time.Now().Add(1 * time.Hour).Unix(),
+		User:         User{ID: "u1", Email: "a@b.com"},
+	}
+	freshData, _ := json.MarshalIndent(fresh, "", "  ")
+	// We need to write this after the client reads the expired session but before
+	// it checks disk on failure. Since the mock returns immediately, write it now.
+	if err := os.WriteFile(sessionPath, freshData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// RefreshToken should detect the disk session was updated by another process.
+	session, err := client.RefreshToken()
+	if err != nil {
+		t.Fatalf("RefreshToken should have fallen back to disk session: %v", err)
+	}
+	if session.AccessToken != "winner-access" {
+		t.Errorf("AccessToken = %q, want winner-access", session.AccessToken)
+	}
+}
+
 // itoa converts int to string without importing strconv.
 func itoa(n int) string {
 	if n == 0 {

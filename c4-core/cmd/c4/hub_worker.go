@@ -19,6 +19,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/cqdata"
 	"github.com/changmin/c4-core/internal/drive"
 	"github.com/changmin/c4-core/internal/hub"
@@ -612,10 +613,21 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 
 	// Supabase auth: apikey=anon_key (always), Authorization=Bearer JWT.
 	anonKey := supabaseKey
-	jwt := loadCloudSessionJWT()
-	if jwt == "" {
+	authClient := cloud.NewAuthClient(supabaseURL, anonKey)
+	session, sessErr := authClient.GetSession()
+	if sessErr != nil || session == nil {
 		return fmt.Errorf("no auth token — run: cq auth login")
 	}
+	// Auto-refresh if token already expired at startup.
+	if session.ExpiresAt > 0 && time.Now().Unix() >= session.ExpiresAt {
+		if refreshed, refErr := authClient.RefreshToken(); refErr == nil {
+			session = refreshed
+		} else {
+			return fmt.Errorf("auth token expired and refresh failed: %w — run: cq auth login", refErr)
+		}
+	}
+	cloudTP := cloud.NewTokenProvider(session.AccessToken, session.ExpiresAt, authClient)
+	jwt := cloudTP.Token() // initial jwt for registration
 	// For backward compat, apiKey is used in claimAndRun — set to anonKey.
 	apiKey := anonKey
 	_ = apiKey // used in claimAndRun
@@ -701,7 +713,7 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 					fmt.Printf("cq: NOTIFY received: job %s\n", n.Payload)
 				}
 				// Try to claim a job.
-				claimAndRun(ctx, supabaseURL, anonKey, jwt, workerName)
+				claimAndRun(ctx, supabaseURL, anonKey, cloudTP, workerName)
 				return nil
 			})
 			if err != nil && ctx.Err() == nil {
@@ -715,7 +727,7 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 	defer ticker.Stop()
 
 	// Initial poll.
-	claimAndRun(ctx, supabaseURL, anonKey, jwt, workerName)
+	claimAndRun(ctx, supabaseURL, anonKey, cloudTP, workerName)
 
 	for {
 		select {
@@ -723,7 +735,7 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 			fmt.Println("cq: worker stopped")
 			return nil
 		case <-ticker.C:
-			claimAndRun(ctx, supabaseURL, anonKey, jwt, workerName)
+			claimAndRun(ctx, supabaseURL, anonKey, cloudTP, workerName)
 		}
 	}
 }
@@ -769,7 +781,7 @@ func resolveSupabaseConfig() (url, key string) {
 }
 
 // claimAndRun tries to claim a QUEUED job via Supabase RPC and execute it.
-func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string) {
+func claimAndRun(ctx context.Context, supabaseURL, anonKey string, cloudTP *cloud.TokenProvider, workerID string) {
 	claimURL := supabaseURL + "/rest/v1/rpc/claim_job"
 	body, _ := json.Marshal(map[string]any{
 		"p_worker_id":   workerID,
@@ -782,7 +794,7 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("apikey", anonKey)
-	req.Header.Set("Authorization", "Bearer "+jwt)
+	req.Header.Set("Authorization", "Bearer "+cloudTP.Token())
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -818,7 +830,7 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 
 	// Auto-pull datasets referenced in the job before execution.
 	if len(job.Datasets) > 0 {
-		if err := pullJobDatasets(ctx, supabaseURL, anonKey, jwt, job.Workdir, job.Datasets); err != nil {
+		if err := pullJobDatasets(ctx, supabaseURL, anonKey, cloudTP, job.Workdir, job.Datasets); err != nil {
 			fmt.Fprintf(os.Stderr, "cq: dataset pull failed for job %s: %v\n", job.ID, err)
 			// Fail the job — cannot run experiment without data.
 			completeURL := supabaseURL + "/rest/v1/rpc/complete_job"
@@ -831,7 +843,7 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 			completeReq, _ := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(completeBody)))
 			completeReq.Header.Set("Content-Type", "application/json")
 			completeReq.Header.Set("apikey", anonKey)
-			completeReq.Header.Set("Authorization", "Bearer "+jwt)
+			completeReq.Header.Set("Authorization", "Bearer "+cloudTP.Token())
 			if r, e := http.DefaultClient.Do(completeReq); e == nil {
 				io.Copy(io.Discard, r.Body)
 				r.Body.Close()
@@ -856,7 +868,7 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 		var metricWriter *MetricWriter
 		if job.ExperimentID != "" {
 			// io.Discard as underlying: stdout is already in the outer MultiWriter.
-			metricWriter = NewMetricWriter(io.Discard, job.ExperimentID, supabaseURL, anonKey, jwt)
+			metricWriter = NewMetricWriter(io.Discard, job.ExperimentID, supabaseURL, anonKey, cloudTP.Token())
 			cmd.Stdout = io.MultiWriter(os.Stdout, &outputBuf, metricWriter)
 		} else {
 			cmd.Stdout = io.MultiWriter(os.Stdout, &outputBuf)
@@ -903,7 +915,7 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 			logReq, _ := http.NewRequestWithContext(ctx, "POST", logURL, strings.NewReader(string(logBody)))
 			logReq.Header.Set("Content-Type", "application/json")
 			logReq.Header.Set("apikey", anonKey)
-			logReq.Header.Set("Authorization", "Bearer "+jwt)
+			logReq.Header.Set("Authorization", "Bearer "+cloudTP.Token())
 			if r, e := http.DefaultClient.Do(logReq); e == nil {
 				io.Copy(io.Discard, r.Body)
 				r.Body.Close()
@@ -920,7 +932,7 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 		completeReq, _ := http.NewRequestWithContext(ctx, "POST", completeURL, strings.NewReader(string(completeBody)))
 		completeReq.Header.Set("Content-Type", "application/json")
 		completeReq.Header.Set("apikey", anonKey)
-		completeReq.Header.Set("Authorization", "Bearer "+jwt)
+		completeReq.Header.Set("Authorization", "Bearer "+cloudTP.Token())
 		if r, e := http.DefaultClient.Do(completeReq); e == nil {
 			io.Copy(io.Discard, r.Body)
 			r.Body.Close()
@@ -931,7 +943,7 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 // pullJobDatasets loads .cqdata from workdir (or cwd), resolves each dataset
 // key to (name, version), and pulls via drive.DatasetClient.
 // Returns on first error — the caller should fail the job.
-func pullJobDatasets(ctx context.Context, supabaseURL, anonKey, jwt, workdir string, datasets []string) error {
+func pullJobDatasets(ctx context.Context, supabaseURL, anonKey string, cloudTP *cloud.TokenProvider, workdir string, datasets []string) error {
 	dir := workdir
 	if dir == "" {
 		dir = "."
@@ -957,7 +969,7 @@ func pullJobDatasets(ctx context.Context, supabaseURL, anonKey, jwt, workdir str
 		return fmt.Errorf("project_id not found (set C4_PROJECT_ID or .c4/config.yaml)")
 	}
 
-	driveClient := drive.NewClient(supabaseURL, anonKey, &staticToken{token: jwt}, projectID)
+	driveClient := drive.NewClient(supabaseURL, anonKey, cloudTP, projectID)
 	dsClient := drive.NewDatasetClient(driveClient)
 
 	for _, key := range datasets {
@@ -973,128 +985,6 @@ func pullJobDatasets(ctx context.Context, supabaseURL, anonKey, jwt, workdir str
 		}
 		fmt.Printf("cq: dataset %q pulled (%d downloaded, %d skipped)\n", key, result.FilesDownloaded, result.FilesSkipped)
 	}
-	return nil
-}
-
-// refreshCloudSession attempts to refresh the cloud session using the refresh_token.
-// On success, session.json is updated with a new access_token.
-func refreshCloudSession() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("home dir: %w", err)
-	}
-	sessionPath := filepath.Join(home, ".c4", "session.json")
-	data, err := os.ReadFile(sessionPath)
-	if err != nil {
-		return fmt.Errorf("read session: %w", err)
-	}
-
-	var session struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresAt    int64  `json:"expires_at"`
-	}
-	if err := json.Unmarshal(data, &session); err != nil {
-		return fmt.Errorf("parse session: %w", err)
-	}
-	if session.RefreshToken == "" {
-		return fmt.Errorf("no refresh_token in session")
-	}
-
-	// Read Supabase URL from config for token refresh endpoint.
-	supabaseURL := os.Getenv("C4_CLOUD_URL")
-	if supabaseURL == "" {
-		supabaseURL = os.Getenv("SUPABASE_URL")
-	}
-	if supabaseURL == "" {
-		// Try reading from config.yaml
-		cfgPath := filepath.Join(home, ".c4", "config.yaml")
-		if cfgData, readErr := os.ReadFile(cfgPath); readErr == nil {
-			var cfgMap map[string]any
-			if yaml.Unmarshal(cfgData, &cfgMap) == nil {
-				if cloud, ok := cfgMap["cloud"].(map[string]any); ok {
-					if u, ok := cloud["url"].(string); ok {
-						supabaseURL = u
-					}
-				}
-			}
-		}
-	}
-	if supabaseURL == "" {
-		return fmt.Errorf("supabase URL not found (set C4_CLOUD_URL or cloud.url in config)")
-	}
-
-	anonKey := os.Getenv("C4_CLOUD_ANON_KEY")
-	if anonKey == "" {
-		anonKey = os.Getenv("SUPABASE_KEY")
-	}
-	if anonKey == "" {
-		cfgPath := filepath.Join(home, ".c4", "config.yaml")
-		if cfgData, readErr := os.ReadFile(cfgPath); readErr == nil {
-			var cfgMap map[string]any
-			if yaml.Unmarshal(cfgData, &cfgMap) == nil {
-				if cloud, ok := cfgMap["cloud"].(map[string]any); ok {
-					if k, ok := cloud["anon_key"].(string); ok {
-						anonKey = k
-					}
-				}
-			}
-		}
-	}
-
-	// Supabase GoTrue token refresh
-	refreshURL := strings.TrimRight(supabaseURL, "/") + "/auth/v1/token?grant_type=refresh_token"
-	body, _ := json.Marshal(map[string]string{"refresh_token": session.RefreshToken})
-
-	req, err := http.NewRequest("POST", refreshURL, strings.NewReader(string(body)))
-	if err != nil {
-		return fmt.Errorf("build refresh request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if anonKey != "" {
-		req.Header.Set("apikey", anonKey)
-	}
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("refresh request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MB limit
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("refresh failed (%d): %s", resp.StatusCode, string(respBody))
-	}
-
-	var newTokens struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int64  `json:"expires_in"`
-	}
-	if err := json.Unmarshal(respBody, &newTokens); err != nil {
-		return fmt.Errorf("parse refresh response: %w", err)
-	}
-
-	// Update session.json — preserve existing fields (user info etc.)
-	existingData, _ := os.ReadFile(sessionPath)
-	updatedSession := map[string]any{}
-	if len(existingData) > 0 {
-		_ = json.Unmarshal(existingData, &updatedSession)
-	}
-	updatedSession["access_token"] = newTokens.AccessToken
-	updatedSession["refresh_token"] = newTokens.RefreshToken
-	updatedSession["expires_at"] = time.Now().Unix() + newTokens.ExpiresIn
-	updatedData, _ := json.MarshalIndent(updatedSession, "", "  ")
-	tmpPath := sessionPath + ".tmp"
-	if err := os.WriteFile(tmpPath, updatedData, 0o600); err != nil {
-		return fmt.Errorf("write session: %w", err)
-	}
-	if err := os.Rename(tmpPath, sessionPath); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("install session: %w", err)
-	}
-
 	return nil
 }
 

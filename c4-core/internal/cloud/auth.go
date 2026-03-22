@@ -250,6 +250,12 @@ func (c *AuthClient) RefreshToken() (*Session, error) {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		// Network error — check if another process already refreshed.
+		if diskSession, diskErr := c.loadSession(); diskErr == nil && diskSession != nil &&
+			diskSession.AccessToken != session.AccessToken &&
+			diskSession.ExpiresAt > 0 && time.Now().Unix() < diskSession.ExpiresAt {
+			return diskSession, nil
+		}
 		return nil, fmt.Errorf("refresh request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -257,6 +263,15 @@ func (c *AuthClient) RefreshToken() (*Session, error) {
 	if resp.StatusCode != http.StatusOK {
 		var errResp supabaseErrorResponse
 		json.NewDecoder(resp.Body).Decode(&errResp)
+
+		// Refresh token rotation race: another process used our refresh token first.
+		// Re-read session.json — if it now has a valid access token, use that.
+		if diskSession, diskErr := c.loadSession(); diskErr == nil && diskSession != nil &&
+			diskSession.AccessToken != session.AccessToken &&
+			diskSession.ExpiresAt > 0 && time.Now().Unix() < diskSession.ExpiresAt {
+			return diskSession, nil
+		}
+
 		return nil, fmt.Errorf("refresh failed (HTTP %d): %s", resp.StatusCode, errResp.ErrorDescription)
 	}
 
