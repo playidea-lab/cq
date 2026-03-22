@@ -15,6 +15,7 @@ import (
 	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/persona"
 	"github.com/changmin/c4-core/internal/pop"
+	"gopkg.in/yaml.v3"
 )
 
 // RegisterPersonaNativeHandlers registers c4_persona_* and c4_profile_* tools as Go native handlers.
@@ -235,6 +236,24 @@ func personaLearnFromDiffHandler(llmGW *llm.Gateway, projectRoot string) mcp.Han
 			if err != nil {
 				slog.Warn("persona: OntologyExtractor failed", "error", err)
 			} else if len(nodes) > 0 {
+				// Cross-position detection: tag nodes when user role is available in team.yaml.
+				if projectRoot != "" {
+					if userRole := getUserRoleFromTeam(projectRoot, username); userRole != "" {
+						var crossLLM ontology.CrossLLMClient
+						if llmGW != nil {
+							crossLLM = &llmGatewayAdapter{gw: llmGW}
+						} else {
+							crossLLM = &noopLLMClient{}
+						}
+						detector := ontology.NewCrossPositionDetector(crossLLM)
+						if result, detectErr := detector.Detect(context.Background(), summary); detectErr == nil && result.Detected {
+							for i, n := range nodes {
+								nodes[i] = ontology.TagNode(n, result)
+							}
+							slog.Info("persona: cross-position detected", "scope", result.Scope, "nodes", len(nodes))
+						}
+					}
+				}
 				ontologyNodesAdded = updateUserOntology(username, nodes)
 			}
 		}
@@ -386,4 +405,22 @@ type noopLLMClient struct{}
 
 func (n *noopLLMClient) Complete(_ context.Context, _ string) (string, error) {
 	return "[]", nil
+}
+
+// getUserRoleFromTeam reads .c4/team.yaml and returns the primary role for username.
+// Returns empty string if the file is absent, the user is not found, or role is unset.
+func getUserRoleFromTeam(projectRoot, username string) string {
+	teamPath := filepath.Join(projectRoot, ".c4", "team.yaml")
+	data, err := os.ReadFile(teamPath)
+	if err != nil {
+		return ""
+	}
+	var team TeamConfig
+	if err := yaml.Unmarshal(data, &team); err != nil {
+		return ""
+	}
+	if member, ok := team.Members[username]; ok {
+		return member.Role
+	}
+	return ""
 }
