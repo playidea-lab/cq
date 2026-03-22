@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.10.0] - 2026-03-23
+
+### ✨ Features
+- **ontology**: L1 persona ontology system — 온톨로지 기반 페르소나 학습 (Phase 1)
+  - `internal/ontology/`: 스키마(4축 코어 + extended), Store, Updater, 마이그레이션, 시드/머지
+  - `internal/pop/source/`: DiffSource(프라이버시 안전 diff 요약), ReviewSource(리뷰 판단 추출)
+  - `internal/pop/ontology_extract.go`: Haiku 기반 노드 추출 + rule-based 폴백
+  - MCP 핸들러 통합: `persona_learn_from_diff` → 온톨로지 경유, `c4_pop_extract` → 다중 소스
+- **standards**: 9개 추가 스킬 + 3개 팀(pm, qa, ops) 추가
+- **hooks**: hook 응답 형식 개선 + 워크플로우 연속성 원칙
+
+### 🐛 Bug Fixes
+- **ci**: `embed-standards` 타겟에서 `embed.go` 누락 → 자동 생성 추가
+- **update**: GitHub org 대소문자 변경 반영 (`PlayIdea-Lab` → `playidea-lab`)
+- **standards**: skill-creator 리뷰 피드백 반영
+- **cli**: 새 프로젝트에서 `git init` 경고 억제
+
+---
+
+## [v1.9.2] - 2026-03-22
+
+### 🐛 Bug Fixes
+- **update**: `raw.githubusercontent.com` URL 대소문자 수정 — `cq update` 정상 동작
+
+---
+
+## [v1.9.1] - 2026-03-22
+
+### 🐛 Bug Fixes
+- **ci**: Makefile `embed-standards`에서 `embed.go` 자동 생성 — CI 빌드 실패 수정
+
+---
+
+## [v1.9.0] - 2026-03-22
+
+### ✨ Features
+- **hub**: auto-pull datasets from `.cqdata` before worker job execution
+- **hub**: remove duplicate `staticToken` type, reuse struct from `drive.go`
+
+---
+
 ## [v1.8.0] - 2026-03-22
 
 ### ✨ Features
