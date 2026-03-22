@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.12.0] - 2026-03-23
+
+### ✨ Features
+- **ontology**: L2 프로젝트 온톨로지 + 크로스-포지션 지식 순환 (Phase 2)
+  - ProjectOntology Store (.c4/project-ontology.yaml)
+  - L1→프로젝트 추출 (HIGH confidence 노드, source_role 태깅)
+  - CrossPositionDetector (Haiku 기반 scope 태깅: cross:frontend→backend)
+  - 워커 주입 (c4_get_task enrichment 통합)
+  - PikiConflictDetector (표준 vs 현실 모순 감지 + 갱신 제안)
+  - SeedFromProject (프로젝트→신규 유저 L1 시드)
+- **c4-help**: piki vs CQ 스킬 가이드 + 전체 piki 스킬 카탈로그
+- **standards**: 9개 팀 CQ 통합 가이드 + 3개 문서 스킬
+
+---
+
 ## [v1.11.0] - 2026-03-23
 
 ### ✨ Features
