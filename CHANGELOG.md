@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.14.0] - 2026-03-23
+
+### ✨ Features
+- **experiment**: `MetricWriter` — @key=value 실시간 메트릭 수집 복원 (C5 ExperimentWrapper Go 포팅)
+- **experiment**: hub_worker.go에 MetricWriter 자동 삽입 (job experiment_id 기반)
+- **experiment**: circuit breaker (3회 연속 실패 시 비활성화, 잡 실행 영향 없음)
+- **docs**: GitHub Pages 전면 리뉴얼 — "만들고, 검증하며, 당신을 배우는 AI" (20파일 EN/KO)
+
+---
+
 ## [v1.13.2] - 2026-03-23
 
 ### ✨ Features
