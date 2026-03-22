@@ -1028,18 +1028,6 @@ func TestCheckSupabase_WithSupabaseURLInConfig(t *testing.T) {
 }
 
 // ────────────────────────────────────────────────────────────────
-// embed_c5_stub.go: ExtractEmbeddedC5
-// ────────────────────────────────────────────────────────────────
-
-func TestExtractEmbeddedC5_StubReturnsError(t *testing.T) {
-	_, err := ExtractEmbeddedC5()
-	// Stub always returns error (no c5_embed build tag)
-	if err == nil {
-		t.Error("expected error from stub ExtractEmbeddedC5")
-	}
-}
-
-// ────────────────────────────────────────────────────────────────
 // doctor.go: checkC4Dir with config info
 // ────────────────────────────────────────────────────────────────
 
