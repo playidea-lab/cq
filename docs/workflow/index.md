@@ -1,42 +1,63 @@
 # Workflow Overview
 
-CQ follows a structured loop:
+CQ follows a structured loop with **gates at every transition**:
 
 ```
-/pi → INIT → DISCOVERY → DESIGN → PLAN → EXECUTE → CHECKPOINT → COMPLETE
+/pi → PLAN → EXECUTE → COMPLETE
+       ↑        ↑         ↑
+    refine    polish    review
+     gate      gate      gate
 ```
 
 ## Commands
 
-| Command | Phase | When to use |
+| Command | Phase | What happens |
 |---------|-------|-------------|
-| [`/pi`](/workflow/plan#pi) | Ideation | Brainstorm and refine ideas before planning. Automatically transitions to `/c4-plan`. |
-| [`/c4-plan`](/workflow/plan) | Plan | New feature or significant change |
-| [`/c4-run`](/workflow/run) | Execute | Spawn workers and run the full cycle end-to-end |
-| [`/c4-finish`](/workflow/finish) | Complete | Build, tests, docs, and commit — called automatically by `/c4-run`, or manually after additional changes |
-| `/c4-status` | Any | Check progress at any time |
-| `/c4-quick` | — | Single small task, skip the planning phase |
+| [`/pi`](/workflow/plan#pi) | Ideation | Brainstorm, research, debate. Produces `idea.md`, auto-transitions to `/c4-plan`. |
+| [`/c4-plan`](/workflow/plan) | Plan | Discovery → Design → Task breakdown. **Refine gate**: batch ≥ 4 tasks requires critique loop. |
+| [`/c4-run`](/workflow/run) | Execute | Spawn parallel workers. **Polish gate**: each worker self-reviews before submit. |
+| [`/c4-finish`](/workflow/finish) | Complete | Build → test → install → commit. Polish loop built-in. |
+| `/c4-status` | Any | Check progress, dependency graph, worker status. |
+| `/c4-quick` | — | Single small task, skip planning. |
 
 ## Task lifecycle
 
-Every task goes through:
-
 ```
-pending → in_progress → (review) → completed
-                      ↘ request_changes → revision → ...
+pending → in_progress → polish → submit → review → done
+                                            ↘ request_changes → T-XXX-1 (revision)
 ```
 
-- **T-001-0** — implementation task (version 0)
-- **R-001-0** — auto-generated review task after each implementation
-- **T-001-1** — revision task if a review requests changes
-- **CP-001** — checkpoint, auto-generated when a phase completes
+- **T-001-0** — implementation (version 0)
+- **R-001-0** — auto-generated 6-axis review
+- **T-001-1** — revision if review requests changes (max 3 revisions)
+- **CP-001** — checkpoint at phase boundaries
 
-Checkpoints are created automatically — you don't trigger them manually. When a checkpoint appears, CQ pauses and asks you to review the phase output before continuing to the next phase.
+## Quality gates
+
+| Gate | Trigger | Enforcement |
+|------|---------|-------------|
+| **Refine** | `c4_add_todo` with 4+ tasks in 10 min | Go rejects unless `c4_record_gate("refine", "done")` |
+| **Polish** | `c4_submit` with diff ≥ 5 lines | Go rejects unless `c4_record_gate("polish", "done")` |
+| **Review** | Every T- task completion | Auto-creates R- task, 6-axis evaluation |
+| **Max revision** | 3 rejection cycles | Go blocks further revisions |
+
+These are **not suggestions** — they are Go-level checks compiled into the binary.
 
 ## Worker isolation
 
-Each worker runs in its own git worktree (`c4/w-T-XXX-N`), so parallel workers never conflict. Worktrees are cleaned up automatically after `c4-finish`.
+Each worker runs in its own git worktree (`c4/w-T-XXX-N`). Parallel workers never conflict. Worktrees merge automatically on submit.
 
-## Knowledge loop
+## Knowledge & Persona loop
 
-Every completed task records discoveries and rationale. Future tasks receive relevant past knowledge injected into their context automatically.
+```
+Task completed → discoveries recorded → knowledge base updated
+                                              ↓
+Next task ← knowledge auto-injected ← persona learns your style
+```
+
+The **3-layer ontology** builds up over time:
+- **L1**: Your local patterns (naming, review preferences)
+- **L2**: Project-level cross-position patterns
+- **L3**: Collective patterns shared via Hub
+
+After 100 tasks, CQ adapts to your style. After 500, it anticipates your feedback.

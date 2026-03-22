@@ -7,16 +7,18 @@ Trigger: `/c4-finish` or keywords: `마무리`, `finish`, `완료`
 Post-implementation completion routine. Run once all tasks are done.
 
 ```
-1. Run /c4-polish (fix until reviewer finds zero changes)
-2. Acquire phase lock (prevents concurrent finish)
-3. Build verification (project-specific)
-4. Run full test suite
-5. Update documentation
-6. Record session knowledge (c4_knowledge_record)
-7. Commit all changes
-8. Generate CHANGELOG (calls /c4-release)
+1. Polish loop (build-test-review-fix until zero changes, max 8 rounds)
+2. Record polish gate (c4_record_gate)
+3. Acquire phase lock (prevents concurrent finish)
+4. Build verification (project-specific)
+5. Run full test suite
+6. Install binary (make install)
+7. Record session knowledge (c4_knowledge_record)
+8. Commit all changes
 9. Release phase lock
 ```
+
+The polish loop is the same gate that workers use during `/c4-run`. Whether triggered by a worker or manually via `/c4-finish`, the Go-level gate ensures convergence.
 
 ## When to run
 

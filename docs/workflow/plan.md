@@ -22,8 +22,9 @@ Runs a structured planning process:
 2. **Design** — Proposes architecture and key decisions with tradeoffs.
 3. **Lighthouse** — Registers tool contracts (DoD checklist per task). Lighthouse is C4's contract-first TDD layer: each task gets a verifiable definition of done before any code is written.
 4. **Tasks** — Drafts the task queue with Definition of Done per task.
-5. **Plan Critique Loop** — Spawns a fresh reviewer each round to stress-test specs, DoDs, and task design. Stops when no CRITICAL or HIGH issues remain. This is why no separate `/c4-refine` step is needed.
-6. **Commit** — Saves the validated tasks to `.c4/tasks.db`.
+5. **Plan Critique Loop** — Spawns a fresh reviewer each round to stress-test specs, DoDs, and task design. Stops when no CRITICAL or HIGH issues remain.
+6. **Refine Gate** — Go rejects batch task creation (≥ 4 tasks) unless the critique loop has run. This is compiled into the binary — not a suggestion.
+7. **Commit** — Saves the validated tasks to `.c4/tasks.db`.
 
 ## Example
 

@@ -19,4 +19,6 @@ No separate step needed. The workflow is now:
 | Spawns fresh plan critic each round | Same — auto-runs inside `/c4-plan` |
 | Stops when CRITICAL + HIGH = 0 | Same convergence condition |
 
+The Go-level **refine gate** in `c4_add_todo` enforces that batch task creation (≥ 4 tasks) has been through the critique loop. See [Quality Gates](/workflow/#quality-gates) for details.
+
 See [/c4-plan](/workflow/plan) for details on the critique loop.

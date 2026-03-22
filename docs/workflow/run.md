@@ -21,11 +21,12 @@ Spawns one worker per ready task. Workers run in parallel, each in an isolated g
 ## Worker lifecycle
 
 Each worker:
-1. Calls `c4_get_task` → receives task with DoD and knowledge context
+1. Calls `c4_get_task` → receives task with DoD + knowledge context + persona hints
 2. Implements in the assigned worktree
-3. Runs validations (lint + tests)
-4. Calls `c4_submit` with commit SHA and handoff summary
-5. Auto-generates a review task
+3. **Polish loop** — spawns self-review, fixes until zero modifications (max 3 rounds)
+4. Records `c4_record_gate("polish", "done")` on convergence
+5. Calls `c4_submit` — Go verifies polish gate (rejects if diff ≥ 5 lines without gate)
+6. Auto-generates a 6-axis review task (R-XXX)
 
 ## Monitoring
 
