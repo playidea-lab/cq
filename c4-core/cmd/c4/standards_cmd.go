@@ -48,12 +48,19 @@ var standardsListCmd = &cobra.Command{
 	RunE:  runStandardsList,
 }
 
+var standardsSkillsTeam string
+var standardsSkillsInstalled bool
+
 func init() {
 	standardsApplyCmd.Flags().BoolVar(&standardsForce, "force", false, "overwrite modified files")
+	standardsSkillsCmd.Flags().StringVar(&standardsSkillsTeam, "team", "", "filter by team")
+	standardsSkillsCmd.Flags().BoolVar(&standardsSkillsInstalled, "installed", false, "show only installed skills")
 	standardsCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error { return nil }
 	standardsCmd.AddCommand(standardsApplyCmd)
 	standardsCmd.AddCommand(standardsCheckCmd)
 	standardsCmd.AddCommand(standardsListCmd)
+	standardsCmd.AddCommand(standardsSkillsCmd)
+	standardsCmd.AddCommand(standardsInstallCmd)
 	rootCmd.AddCommand(standardsCmd)
 }
 
@@ -206,4 +213,112 @@ func parseTeamLangs(args []string) (team string, langs []string) {
 		}
 	}
 	return team, langs
+}
+
+// ── skills subcommand ──
+
+var standardsSkillsCmd = &cobra.Command{
+	Use:   "skills",
+	Short: "List available piki skills",
+	Long:  "List all skills in the piki standards manifest.\nUse --team to filter by team, --installed to show only installed.",
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error { return nil },
+	RunE: func(cmd *cobra.Command, args []string) error {
+		skills, names, err := standards.ListSkills()
+		if err != nil {
+			return err
+		}
+
+		// Build team→skills reverse map
+		m, _ := standards.Parse()
+		teamOf := map[string][]string{} // skill → teams
+		if m != nil {
+			for tName, tl := range m.Teams {
+				for _, sn := range tl.Skills {
+					teamOf[sn] = append(teamOf[sn], tName)
+				}
+			}
+		}
+
+		// Filter by team
+		if standardsSkillsTeam != "" {
+			teamSkills, err := standards.SkillsForTeam(standardsSkillsTeam)
+			if err != nil {
+				return err
+			}
+			allowed := map[string]bool{}
+			for _, s := range teamSkills {
+				allowed[s] = true
+			}
+			// Also include auto_install
+			for _, n := range names {
+				if skills[n].AutoInstall {
+					allowed[n] = true
+				}
+			}
+			var filtered []string
+			for _, n := range names {
+				if allowed[n] {
+					filtered = append(filtered, n)
+				}
+			}
+			names = filtered
+		}
+
+		// Filter by installed
+		if standardsSkillsInstalled {
+			var filtered []string
+			for _, n := range names {
+				path := fmt.Sprintf(".claude/skills/%s/skill.md", n)
+				if _, err := os.Stat(path); err == nil {
+					filtered = append(filtered, n)
+				}
+			}
+			names = filtered
+		}
+
+		if len(names) == 0 {
+			fmt.Println("No skills found.")
+			return nil
+		}
+
+		fmt.Printf("Skills (%d):\n", len(names))
+		for _, n := range names {
+			se := skills[n]
+			tag := "     "
+			if se.AutoInstall {
+				tag = "[auto]"
+			}
+			teams := ""
+			if ts, ok := teamOf[n]; ok {
+				teams = " (" + strings.Join(ts, ",") + ")"
+			}
+			installed := " "
+			path := fmt.Sprintf(".claude/skills/%s/skill.md", n)
+			if _, err := os.Stat(path); err == nil {
+				installed = "✓"
+			}
+			fmt.Printf("  %s %s %-25s%s\n", installed, tag, n, teams)
+		}
+		return nil
+	},
+}
+
+// ── install subcommand ──
+
+var standardsInstallCmd = &cobra.Command{
+	Use:   "install <skill> [skill...]",
+	Short: "Install piki skills into the project",
+	Long:  "Install one or more piki skills from the embedded standards into .claude/skills/.",
+	Args:  cobra.MinimumNArgs(1),
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error { return nil },
+	RunE: func(cmd *cobra.Command, args []string) error {
+		for _, name := range args {
+			if err := standards.InstallSkill(name); err != nil {
+				fmt.Fprintf(os.Stderr, "  ✗ %s: %v\n", name, err)
+			} else {
+				fmt.Fprintf(os.Stderr, "  ✓ %s installed\n", name)
+			}
+		}
+		return nil
+	},
 }

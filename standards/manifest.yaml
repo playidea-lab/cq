@@ -92,54 +92,63 @@ teams:
       - teams/backend/rules/backend.md
     default_langs: [go]
     domain: backend
+    skills: [api-design, db-design, migration, deploy, security-audit, perf-audit, mcp-builder]
 
   frontend:
     rules:
       - teams/frontend/rules/frontend.md
     default_langs: [ts]
     domain: frontend
+    skills: [component-design, a11y-audit, webapp-testing, feature-dev, perf-audit]
 
   infra:
     rules:
       - teams/infra/rules/infra.md
     default_langs: [go, python]
     domain: infra
+    skills: [deploy, migration, data-pipeline, hookify, mcp-builder]
 
   mlops:
     rules:
       - teams/mlops/rules/mlops.md
     default_langs: [python]
     domain: mlops
+    skills: [experiment-design, model-serving, data-pipeline, deploy]
 
   research:
     rules:
       - teams/research/rules/research.md
     default_langs: [python]
     domain: research
+    skills: [paper-review, paper-writing, experiment-design]
 
   security:
     rules:
       - teams/security/rules/security-team.md
     default_langs: []
     domain: security
+    skills: [security-audit]
 
   pm:
     rules:
       - teams/pm/rules/pm.md
     default_langs: []
     domain: pm
+    skills: [proposal-writer, document-review, meeting-notes, internal-comms, estimation]
 
   qa:
     rules:
       - teams/qa/rules/qa.md
     default_langs: []
     domain: qa
+    skills: [webapp-testing, perf-audit]
 
   ops:
     rules:
       - teams/ops/rules/ops.md
     default_langs: [go, python]
     domain: ops
+    skills: [incident-response, postmortem, deploy, internal-comms]
 
 # Skills — cq init 시 프로젝트에 복사 가능한 스킬
 skills:

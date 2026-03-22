@@ -231,6 +231,29 @@ func Apply(projectDir string, team string, langs []string, opts ApplyOptions) (*
 		return nil
 	})
 
+	// 7.5. Team-specific skills.
+	if team != "" {
+		if tl, ok := m.Teams[team]; ok {
+			for _, skillName := range tl.Skills {
+				se, exists := m.Skills[skillName]
+				if !exists {
+					continue
+				}
+				_ = fs.WalkDir(pkgstandards.FS, "skills", func(path string, d fs.DirEntry, walkErr error) error {
+					if walkErr != nil || d.IsDir() {
+						return nil
+					}
+					if se.Src == path {
+						base := filepath.Base(path)
+						dst := filepath.Join(".claude", "skills", skillName, base)
+						_ = copyFile(path, dst, false, nil)
+					}
+					return nil
+				})
+			}
+		}
+	}
+
 	// 8. Write .piki-lock.yaml.
 	lock := lockFile{
 		Team:      team,
@@ -265,4 +288,72 @@ func Apply(projectDir string, team string, langs []string, opts ApplyOptions) (*
 	}
 
 	return result, nil
+}
+
+// installEmbeddedFile copies a file from the embedded FS to a destination path.
+func installEmbeddedFile(src, dst string) error {
+	data, err := fs.ReadFile(pkgstandards.FS, src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0644)
+}
+
+// InstallSkill installs a specific skill by name into .claude/skills/<name>/.
+func InstallSkill(skillName string) error {
+	m, err := Parse()
+	if err != nil {
+		return fmt.Errorf("parse manifest: %w", err)
+	}
+	se, ok := m.Skills[skillName]
+	if !ok {
+		return fmt.Errorf("skill %q not found in manifest", skillName)
+	}
+
+	dst := filepath.Join(".claude", "skills", skillName, filepath.Base(se.Src))
+	if err := installEmbeddedFile(se.Src, dst); err != nil {
+		return fmt.Errorf("install %s: %w", skillName, err)
+	}
+	return nil
+}
+
+// ListSkills returns all skill entries and sorted names from the manifest.
+func ListSkills() (map[string]SkillEntry, []string, error) {
+	m, err := Parse()
+	if err != nil {
+		return nil, nil, err
+	}
+	return m.Skills, sortedKeys(m.Skills), nil
+}
+
+// SkillsForTeam returns the skill names mapped to a team.
+func SkillsForTeam(teamName string) ([]string, error) {
+	m, err := Parse()
+	if err != nil {
+		return nil, err
+	}
+	tl, ok := m.Teams[teamName]
+	if !ok {
+		return nil, fmt.Errorf("team %q not found", teamName)
+	}
+	return tl.Skills, nil
+}
+
+func sortedKeys(m map[string]SkillEntry) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	// Simple sort
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[i] > keys[j] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+	return keys
 }

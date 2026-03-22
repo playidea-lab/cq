@@ -59,6 +59,7 @@ type TeamLayer struct {
 	Rules        []string `yaml:"rules"`
 	DefaultLangs []string `yaml:"default_langs"`
 	Domain       string   `yaml:"domain"`
+	Skills       []string `yaml:"skills"`
 }
 
 // SkillEntry describes a skill that can be installed into a project.
