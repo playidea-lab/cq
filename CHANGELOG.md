@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.13.2] - 2026-03-23
+
+### ✨ Features
+- **gate**: `c4_add_todo`에 refine gate 강제 — batch(4개+) 태스크 추가 시 critique loop 필수
+- **gate**: `HasGateDone(gateName, sinceTime)` 일반화 — polish/refine 공용
+- **config**: `run.refine_threshold` (default 4) 추가
+
+---
+
 ## [v1.13.1] - 2026-03-23
 
 ### ✨ Features
