@@ -14,6 +14,8 @@ import (
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/pop"
+	"github.com/changmin/c4-core/internal/pop/source"
+	"github.com/changmin/c4-core/internal/store"
 )
 
 // Opts holds dependencies for POP MCP handlers.
@@ -21,6 +23,7 @@ type Opts struct {
 	ProjectDir string
 	Store      *knowledge.Store
 	LLM        *llm.Gateway // nil if LLM gateway disabled
+	TaskStore  store.Store  // nil if task store unavailable (review source disabled)
 }
 
 // Register registers c4_pop_extract, c4_pop_status, and c4_pop_reflect tools.
@@ -31,13 +34,21 @@ func Register(reg *mcp.Registry, opts *Opts) {
 
 	reg.RegisterBlocking(mcp.ToolSchema{
 		Name:        "c4_pop_extract",
-		Description: "Run a POP (Proactive Output Pipeline) extraction cycle: fetch recent messages, extract knowledge proposals via LLM, record them. Optionally pass `content` to inject conversation text directly (e.g. from Claude Code session summary) without requiring C1 Messenger.",
+		Description: "Run a POP (Proactive Output Pipeline) extraction cycle: fetch recent messages, extract knowledge proposals via LLM, record them. Optionally pass `content` to inject conversation text, `diff` to extract from git diff output, or set `review` to true to learn from completed review tasks.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"content": map[string]any{
 					"type":        "string",
 					"description": "Optional: conversation or session text to extract knowledge from. If omitted, falls back to C1 Messenger messages.",
+				},
+				"diff": map[string]any{
+					"type":        "string",
+					"description": "Optional: raw git diff output to extract ontology nodes from (privacy-safe — code content is stripped).",
+				},
+				"review": map[string]any{
+					"type":        "boolean",
+					"description": "Optional: set true to extract patterns from completed review tasks (approve/reject judgments).",
 				},
 			},
 		},
@@ -66,6 +77,8 @@ func extractHandler(opts *Opts) mcp.BlockingHandlerFunc {
 	return func(ctx context.Context, rawArgs json.RawMessage) (any, error) {
 		var args struct {
 			Content string `json:"content"`
+			Diff    string `json:"diff"`
+			Review  bool   `json:"review"`
 		}
 		if len(rawArgs) > 0 {
 			_ = json.Unmarshal(rawArgs, &args)
@@ -76,8 +89,16 @@ func extractHandler(opts *Opts) mcp.BlockingHandlerFunc {
 			return map[string]any{"error": "POP engine unavailable (LLM or store missing)"}, nil
 		}
 
-		// If content is provided, override the message source with injected text.
-		if args.Content != "" {
+		// Source priority: diff > review > content > default (C1 Messenger).
+		switch {
+		case args.Diff != "":
+			engine.SetMessageSource(source.NewDiffSource(args.Diff))
+		case args.Review:
+			if opts.TaskStore == nil {
+				return map[string]any{"error": "review source unavailable (task store not configured)"}, nil
+			}
+			engine.SetMessageSource(source.NewReviewSource(opts.TaskStore))
+		case args.Content != "":
 			engine.SetMessageSource(&staticMessageSource{content: args.Content})
 		}
 

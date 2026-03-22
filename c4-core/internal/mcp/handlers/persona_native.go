@@ -10,12 +10,20 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/persona"
+	"github.com/changmin/c4-core/internal/pop"
 )
 
 // RegisterPersonaNativeHandlers registers c4_persona_* and c4_profile_* tools as Go native handlers.
-func RegisterPersonaNativeHandlers(reg *mcp.Registry) {
+// llmGW is optional — when nil, ontology extraction falls back to rule-based extraction.
+func RegisterPersonaNativeHandlers(reg *mcp.Registry, llmGW ...*llm.Gateway) {
+	var gw *llm.Gateway
+	if len(llmGW) > 0 {
+		gw = llmGW[0]
+	}
 	// Persona learning tools (2)
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_persona_learn",
@@ -34,7 +42,7 @@ func RegisterPersonaNativeHandlers(reg *mcp.Registry) {
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_persona_learn_from_diff",
-		Description: "Extract coding patterns from git diff and append to raw_patterns.json. Use after polish/finish to learn from user edits.",
+		Description: "Extract coding patterns from git diff and append to raw_patterns.json. Also updates the user's ontology via OntologyExtractor. Use after polish/finish to learn from user edits.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -42,7 +50,7 @@ func RegisterPersonaNativeHandlers(reg *mcp.Registry) {
 			},
 			"required": []string{"commit_range"},
 		},
-	}, personaLearnFromDiffHandler())
+	}, personaLearnFromDiffHandler(gw))
 
 	// Profile tools (2)
 	reg.Register(mcp.ToolSchema{
@@ -111,7 +119,7 @@ func personaLearnHandler() mcp.HandlerFunc {
 	}
 }
 
-func personaLearnFromDiffHandler() mcp.HandlerFunc {
+func personaLearnFromDiffHandler(llmGW *llm.Gateway) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		var params struct {
 			CommitRange string `json:"commit_range"`
@@ -208,12 +216,35 @@ func personaLearnFromDiffHandler() mcp.HandlerFunc {
 			slog.Warn("persona: MergeToGlobal failed", "error", err)
 		}
 
-		return map[string]any{
+		// Extract ontology nodes from the diff patterns via OntologyExtractor (non-fatal).
+		ontologyNodesAdded := 0
+		if len(allPatterns) > 0 {
+			summary := buildPatternSummary(allPatterns)
+			var llmClient pop.LLMClient
+			if llmGW != nil {
+				llmClient = &llmGatewayAdapter{gw: llmGW}
+			} else {
+				llmClient = &noopLLMClient{}
+			}
+			extractor := pop.NewOntologyExtractor(llmClient)
+			nodes, err := extractor.Extract(context.Background(), summary)
+			if err != nil {
+				slog.Warn("persona: OntologyExtractor failed", "error", err)
+			} else if len(nodes) > 0 {
+				ontologyNodesAdded = updateUserOntology(username, nodes)
+			}
+		}
+
+		result := map[string]any{
 			"patterns_found": len(allPatterns),
 			"total_patterns": len(existing),
 			"patterns_path":  patternsPath,
 			"files_analyzed": len(files),
-		}, nil
+		}
+		if ontologyNodesAdded > 0 {
+			result["ontology_nodes_added"] = ontologyNodesAdded
+		}
+		return result, nil
 	}
 }
 
@@ -277,4 +308,65 @@ func profileSaveHandler() mcp.HandlerFunc {
 
 		return map[string]any{"success": true}, nil
 	}
+}
+
+// buildPatternSummary converts EditPatterns to a text summary for the OntologyExtractor.
+func buildPatternSummary(patterns []persona.EditPattern) string {
+	var sb strings.Builder
+	for _, p := range patterns {
+		sb.WriteString(p.Category)
+		if p.Description != "" {
+			sb.WriteString(": ")
+			sb.WriteString(p.Description)
+		}
+		sb.WriteByte('\n')
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+// updateUserOntology loads the user's ontology, adds the given nodes via Updater, and saves.
+// Returns the number of nodes actually added/updated. Non-fatal: errors are logged.
+func updateUserOntology(username string, nodes []ontology.Node) int {
+	o, err := ontology.Load(username)
+	if err != nil {
+		slog.Warn("persona: ontology load failed", "username", username, "error", err)
+		return 0
+	}
+	updater := ontology.NewUpdater(o)
+	for _, n := range nodes {
+		if n.Label == "" {
+			continue
+		}
+		path := strings.ToLower(strings.ReplaceAll(n.Label, " ", "_"))
+		updater.AddOrUpdate(path, n)
+	}
+	if err := ontology.Save(username, o); err != nil {
+		slog.Warn("persona: ontology save failed", "username", username, "error", err)
+		return 0
+	}
+	return len(nodes)
+}
+
+// llmGatewayAdapter adapts llm.Gateway to pop.LLMClient.
+type llmGatewayAdapter struct {
+	gw *llm.Gateway
+}
+
+func (a *llmGatewayAdapter) Complete(ctx context.Context, prompt string) (string, error) {
+	req := &llm.ChatRequest{
+		Messages:  []llm.Message{{Role: "user", Content: prompt}},
+		MaxTokens: 2048,
+	}
+	resp, err := a.gw.Chat(ctx, "ontology_extract", req)
+	if err != nil {
+		return "", err
+	}
+	return resp.Content, nil
+}
+
+// noopLLMClient returns empty completions (triggers rule-based fallback in OntologyExtractor).
+type noopLLMClient struct{}
+
+func (n *noopLLMClient) Complete(_ context.Context, _ string) (string, error) {
+	return "[]", nil
 }
