@@ -232,11 +232,27 @@ func (s *SQLiteStore) enrichUnified(assignment *TaskAssignment) {
 		}
 	}
 
-	// 3. Past Solutions (knowledge search)
+	// 3. Past Solutions (knowledge search with ontology-based personalization)
 	if s.knowledgeSearch != nil {
 		query := assignment.Title
 		if assignment.Domain != "" {
 			query = assignment.Domain + " " + query
+		}
+		// Boost query with HIGH-confidence personal ontology tags for personalized ranking.
+		// Non-fatal: if ontology load fails, fall back to original query.
+		if boostUsername := os.Getenv("USER"); boostUsername != "" {
+			if boostOntology, boostErr := ontology.Load(boostUsername); boostErr == nil && boostOntology != nil {
+				var boostTerms []string
+				for _, node := range boostOntology.Schema.Nodes {
+					if node.NodeConfidence != ontology.ConfidenceHigh {
+						continue
+					}
+					boostTerms = append(boostTerms, node.Tags...)
+				}
+				if len(boostTerms) > 0 {
+					query = query + " " + strings.Join(boostTerms, " ")
+				}
+			}
 		}
 		results, err := s.knowledgeSearch.Search(query, 3, nil)
 		if s.knowledgeHitTracker != nil {
