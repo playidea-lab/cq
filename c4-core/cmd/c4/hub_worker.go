@@ -49,7 +49,6 @@ type workerYAML struct {
 	Capabilities string   `yaml:"capabilities,omitempty"`
 	Tags         []string `yaml:"tags,omitempty"`
 	Name         string   `yaml:"name,omitempty"`
-	Binary       string   `yaml:"binary,omitempty"` // override c5 binary path
 }
 
 var (
@@ -123,7 +122,6 @@ var hubWorkerStartCmd = &cobra.Command{
 Resolves the c5 binary via:
   1. PATH ("c5")
   2. $C5_BIN environment variable
-  3. config.yaml hub.binary field
 
 Example:
   cq hub worker start`,
@@ -570,21 +568,6 @@ func ensureDockerRuntime() error {
 	}
 
 	return nil
-}
-
-// resolvec5Binary returns the path to the c5 binary.
-// Resolution order: PATH → $C5_BIN env → config hub.binary field → "c5".
-func resolvec5Binary(cfg workerYAML) string {
-	if p, err := exec.LookPath("c5"); err == nil {
-		return p
-	}
-	if env := os.Getenv("C5_BIN"); env != "" {
-		return env
-	}
-	if cfg.Binary != "" {
-		return cfg.Binary
-	}
-	return "c5"
 }
 
 func runWorkerStart(cmd *cobra.Command, args []string) error {

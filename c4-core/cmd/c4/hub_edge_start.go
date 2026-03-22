@@ -40,7 +40,6 @@ type edgeYAML struct {
 	MetricsInterval            int      `yaml:"metrics_interval,omitempty"` // seconds
 	DriveURL                   string   `yaml:"drive_url,omitempty"`
 	DriveAPIKey                string   `yaml:"drive_api_key,omitempty"`
-	Binary                     string   `yaml:"binary,omitempty"` // override c5 binary path
 	AllowExec                  bool     `yaml:"allow_exec,omitempty"`
 	AllowedArtifactURLPrefixes []string `yaml:"allowed_artifact_url_prefixes,omitempty"`
 }
@@ -80,7 +79,6 @@ var hubEdgeStartCmd = &cobra.Command{
 Resolves the c5 binary via:
   1. PATH ("c5")
   2. $C5_BIN environment variable
-  3. edge.yaml binary field
 
 Example:
   cq hub edge start`,
@@ -204,15 +202,12 @@ func runEdgeInit(cmd *cobra.Command, args []string) error {
 // cq hub edge start
 // =========================================================================
 
-func resolveC5BinaryForEdge(cfg edgeYAML) string {
+func resolveC5BinaryForEdge() string {
 	if p, err := exec.LookPath("c5"); err == nil {
 		return p
 	}
 	if env := os.Getenv("C5_BIN"); env != "" {
 		return env
-	}
-	if cfg.Binary != "" {
-		return cfg.Binary
 	}
 	return "c5"
 }
@@ -262,7 +257,7 @@ func runEdgeStart(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	binary := resolveC5BinaryForEdge(cfg)
+	binary := resolveC5BinaryForEdge()
 
 	// Build args: c5 edge-agent [flags...]
 	cmdArgs := []string{"edge-agent"}
@@ -355,7 +350,7 @@ func runEdgeInstall(cmd *cobra.Command, args []string) error {
 		_ = yaml.Unmarshal(data, &cfg)
 	}
 
-	binary := resolveC5BinaryForEdge(cfg)
+	binary := resolveC5BinaryForEdge()
 
 	// Build ExecStart args.
 	execArgs := []string{binary, "edge-agent"}
