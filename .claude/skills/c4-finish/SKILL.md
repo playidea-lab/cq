@@ -205,6 +205,19 @@ c4_persona_learn_from_diff(commit_range=f"{last_tag}..HEAD")
 Conventional commit. 완료 후 `c4_phase_lock_release(phase="finish")`.
 알림: `c4_notify(message='구현 완료', event='finish.complete')`
 
+### 8.5. Pipeline State Cleanup
+
+finish commit 성공 후 pipeline-state.json 삭제. 다음 파이프라인 실행과 충돌 방지.
+
+```python
+import os
+pipeline_state = ".c4/pipeline-state.json"
+if os.path.exists(pipeline_state):
+    os.remove(pipeline_state)
+    print(f"🧹 {pipeline_state} 삭제 완료")
+# 파일 미존재 시 에러 없이 통과
+```
+
 ### 9. Release
 ```
 /c4-release
