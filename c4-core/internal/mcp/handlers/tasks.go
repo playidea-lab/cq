@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/store"
@@ -361,6 +362,41 @@ func checkPolishGate(ss *SQLiteStore, taskID, commitSHA string) error {
 	return nil
 }
 
+// checkRefineGate enforces the refine gate rule on c4_add_todo:
+// if pending task count (last 10 min) >= refine_threshold, a refine=done gate must be present.
+func checkRefineGate(s *SQLiteStore) error {
+	if s.config == nil {
+		return nil
+	}
+	threshold := s.config.GetConfig().Run.RefineThreshold
+	if threshold <= 0 {
+		return nil
+	}
+
+	// Count pending tasks created in the last 10 minutes.
+	sinceTime := time.Now().Add(-10 * time.Minute).UTC().Format("2006-01-02 15:04:05")
+	var count int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM c4_tasks WHERE status='pending' AND created_at >= ?`,
+		sinceTime,
+	).Scan(&count); err != nil {
+		return nil // best-effort: don't block add on DB error
+	}
+
+	if count < threshold {
+		return nil
+	}
+
+	ok, err := s.HasGateDone("refine", sinceTime)
+	if err != nil {
+		return nil // best-effort: don't block add on DB error
+	}
+	if !ok {
+		return fmt.Errorf("refine gate required: run critique loop (Phase 4.5) or call c4_record_gate")
+	}
+	return nil
+}
+
 func handleAddTodo(store Store, rawArgs json.RawMessage) (any, error) {
 	var args addTodoArgs
 	if err := json.Unmarshal(rawArgs, &args); err != nil {
@@ -400,6 +436,13 @@ func handleAddTodo(store Store, rawArgs json.RawMessage) (any, error) {
 		Priority:     args.Priority,
 		Model:        args.Model,
 		ExecutionMode: executionMode,
+	}
+
+	// Enforce refine gate when pending batch is large.
+	if ss, ok := store.(*SQLiteStore); ok {
+		if err := checkRefineGate(ss); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := store.AddTask(t); err != nil {
