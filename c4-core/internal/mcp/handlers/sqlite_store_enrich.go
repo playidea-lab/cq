@@ -179,6 +179,39 @@ func extractFilesChangedFromHandoff(handoff string) string {
 	return strings.Join(payload.FilesChanged, ",")
 }
 
+// enrichWithPersonalOntology appends the user's L1 HIGH-confidence ontology nodes
+// as a "Developer Profile" section to KnowledgeContext. This lets workers adapt
+// their coding style to the user's established patterns (e.g. error handling, naming).
+// Best-effort: errors are silently ignored so task assignment never blocks.
+func (s *SQLiteStore) enrichWithPersonalOntology(assignment *TaskAssignment) {
+	username := os.Getenv("USER")
+	if username == "" {
+		return
+	}
+	personal, err := ontology.Load(username)
+	if err != nil || personal == nil || len(personal.Schema.Nodes) == 0 {
+		return
+	}
+
+	var lines []string
+	for path, node := range personal.Schema.Nodes {
+		if node.NodeConfidence != ontology.ConfidenceHigh {
+			continue
+		}
+		line := fmt.Sprintf("- %s: %s", path, node.Label)
+		if node.Description != "" {
+			line += " — " + node.Description
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return
+	}
+
+	section := "\n\n## Developer Profile (auto-injected)\n" + strings.Join(lines, "\n")
+	assignment.KnowledgeContext += section
+}
+
 // enrichWithOntology appends project ontology nodes to KnowledgeContext.
 // Filters nodes by scope ("project") or source_role matching the task's domain.
 // Best-effort: errors are silently ignored so task assignment never blocks.
