@@ -87,9 +87,9 @@ You described the goal
   ↓
 /c4-run spawned a worker in an isolated branch
   ↓
-Worker wrote the code, ran tests, committed
+Worker wrote the code, self-reviewed (polish gate), committed
   ↓
-Result lands in your repo — reviewed and ready
+Result lands in your repo — verified by Go-level gates
 ```
 
 No boilerplate. No copy-pasting from Stack Overflow. No debugging loops.

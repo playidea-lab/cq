@@ -92,6 +92,8 @@ Workers run in **parallel** — each in its own isolated git worktree so they ne
 
 ## What happened behind the scenes
 
-- Each worker got the task DoD + relevant past knowledge injected into its context
-- Reviews caught 3 issues across T-002 and T-003, triggering revision tasks automatically
-- All discoveries from this session were recorded to the knowledge base for future tasks
+- **Refine gate** ensured the 5-task plan went through critique loop before execution
+- Each worker got the task DoD + relevant past knowledge + persona hints injected into context
+- **Polish gate** verified each worker self-reviewed before submitting (Go-level enforcement)
+- Reviews caught 3 issues across T-002 and T-003, triggering revision tasks automatically (max 3 revisions)
+- All discoveries from this session were recorded — the **persona ontology** now knows your auth preferences
