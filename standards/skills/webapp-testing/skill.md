@@ -1,3 +1,10 @@
+---
+name: webapp-testing
+description: |
+  E2E 웹 애플리케이션 테스트 가이드 (Playwright 기반). 테스트 시나리오 설계, 페이지 오브젝트
+  패턴, CI 통합까지 가이드합니다. "E2E 테스트", "webapp testing", "Playwright",
+  "브라우저 테스트", "UI 테스트", "통합 테스트" 등의 요청에 트리거됩니다.
+---
 # Webapp Testing
 
 E2E 웹 애플리케이션 테스트 가이드 (Playwright).

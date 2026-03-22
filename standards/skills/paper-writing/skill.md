@@ -1,3 +1,10 @@
+---
+name: paper-writing
+description: |
+  학술 논문 작성 가이드. 논문 구조, Abstract, Introduction, Method, Experiment, Conclusion
+  각 섹션 작성법을 체계적으로 가이드합니다. "논문 작성", "paper writing", "학술 논문 쓰기",
+  "논문 초안", "manuscript", "논문 구조" 등의 요청에 트리거됩니다.
+---
 # Paper Writing
 
 학술 논문 작성 가이드.

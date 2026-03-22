@@ -1,3 +1,13 @@
+---
+name: pr-review
+description: |
+  PR/MR 생성 시 자동 체크리스트와 리뷰 가이드. PR을 만들거나 PR 체크리스트가 필요할 때
+  반드시 이 스킬을 사용하세요. 빌드 통과, 테스트 추가, breaking change, 시크릿 체크 등
+  필수/권장 항목을 자동 생성합니다. "PR 만들어줘", "PR 체크리스트", "MR 생성",
+  "pull request", "merge request 준비", "PR 올리기 전에 확인" 등의 요청에 트리거됩니다.
+  코드 리뷰(company-review)와는 다릅니다 — 이 스킬은 PR 생성/준비 단계입니다.
+---
+
 # PR Review
 
 PR 생성 시 자동 체크리스트 + 리뷰 가이드.

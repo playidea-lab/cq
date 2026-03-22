@@ -1,3 +1,10 @@
+---
+name: automation-recommender
+description: |
+  코드베이스를 분석하여 자동화 기회를 찾고 추천합니다. 반복 작업, 수동 프로세스, DX 개선 포인트를
+  식별할 때 이 스킬을 사용하세요. "자동화 추천", "뭘 자동화할까", "automation recommender",
+  "개선 포인트", "DX 개선", "반복 작업 줄이기" 등의 요청에 트리거됩니다.
+---
 # Automation Recommender
 
 코드베이스를 분석하여 자동화 기회를 추천.

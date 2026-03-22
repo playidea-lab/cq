@@ -1,3 +1,10 @@
+---
+name: api-design
+description: |
+  REST API 설계 가이드. API 엔드포인트, URL 구조, HTTP 상태 코드, 페이지네이션, 인증 설계 시
+  반드시 이 스킬을 사용하세요. "API 설계", "엔드포인트 설계", "REST API", "api design",
+  "URL 구조", "상태 코드", "페이지네이션" 등의 요청에 트리거됩니다.
+---
 # API Design
 
 REST API 설계 가이드.

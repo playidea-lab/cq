@@ -1,3 +1,10 @@
+---
+name: mcp-builder
+description: |
+  MCP (Model Context Protocol) 서버 개발 가이드. MCP 도구 정의, 핸들러 구현, 프로토콜 준수,
+  서버 테스트까지 가이드합니다. "MCP 서버", "mcp builder", "MCP 개발", "도구 서버",
+  "tool server", "MCP 도구 만들기" 등의 요청에 트리거됩니다.
+---
 # MCP Builder
 
 MCP (Model Context Protocol) 서버 개발 가이드.

@@ -1,0 +1,22 @@
+[
+  {"query": "이 PR 좀 리뷰해줘. backend/api/auth.go에서 JWT 검증 로직을 바꿨어", "should_trigger": true},
+  {"query": "방금 올린 MR에 대해 코드 리뷰 부탁해. 3개 파일 수정했고 테스트도 추가했어", "should_trigger": true},
+  {"query": "git diff 결과 보여줄테니까 리뷰해줘. 보안 관련 변경이라 꼼꼼히 봐야할듯", "should_trigger": true},
+  {"query": "회사 코드 리뷰 표준에 맞춰서 이 변경사항 검토해줘. soul.md 기준으로", "should_trigger": true},
+  {"query": "이번에 인증 미들웨어 리팩토링했는데 6축 평가로 한번 봐줄래?", "should_trigger": true},
+  {"query": "PR #47 review 해줘. DB 마이그레이션이랑 API 변경 같이 들어갔어", "should_trigger": true},
+  {"query": "코드리뷰 해줘 src/components/UserProfile.tsx 수정했어", "should_trigger": true},
+  {"query": "지난번에 approve 받은 PR인데 추가 수정했어. 다시 리뷰 가능?", "should_trigger": true},
+  {"query": "이 diff를 보고 보안 취약점이 있는지, 테스트가 충분한지 확인해줘", "should_trigger": true},
+  {"query": "company review 해줘. 신규 API 엔드포인트 3개 추가한 건데", "should_trigger": true},
+  {"query": "이 논문 리뷰해줘. arXiv에 올라온 새로운 transformer 아키텍처인데 수식 검증도 부탁", "should_trigger": false},
+  {"query": "PR 체크리스트 만들어줘. 우리 팀에서 PR 올릴때 확인할 항목 정리", "should_trigger": false},
+  {"query": "이 Go 코드에서 에러 핸들링 패턴이 맞는지 봐줘. 리팩토링 조언이 필요해", "should_trigger": false},
+  {"query": "장애 발생했어. 서버 에러율이 5% 넘었는데 원인 분석 좀", "should_trigger": false},
+  {"query": "제안서 리뷰해줘. 내일 제출인데 가격 부분이 좀 걱정됨", "should_trigger": false},
+  {"query": "CLAUDE.md를 개선하고 싶어. 현재 구조가 좀 지저분한데 정리 방법 알려줘", "should_trigger": false},
+  {"query": "성능 감사 해줘. API 응답이 2초 넘는 엔드포인트가 3개야", "should_trigger": false},
+  {"query": "보안 감사 체크리스트대로 전체 프로젝트 점검해줘. OWASP 기준으로", "should_trigger": false},
+  {"query": "git log 보여줘. 최근 커밋 히스토리 확인하고 싶어", "should_trigger": false},
+  {"query": "이 함수 리팩토링해줘. 너무 길어서 분리하고 싶은데", "should_trigger": false}
+]

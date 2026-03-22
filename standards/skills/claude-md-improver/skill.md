@@ -1,3 +1,13 @@
+---
+name: claude-md-improver
+description: |
+  프로젝트의 CLAUDE.md를 분석하고 개선하는 스킬. CLAUDE.md 구조 점검, 빌드/테스트 명령
+  누락 확인, 프로젝트 컨벤션 보강, 불필요한 내용 정리 등을 수행합니다.
+  "CLAUDE.md 개선", "CLAUDE.md 리뷰", "에이전트 지침 정리", "CLAUDE.md가 너무 길다",
+  "프로젝트 설정 정리" 등의 요청에 트리거됩니다. 새 프로젝트 셋업이나 기존 프로젝트의
+  AI 에이전트 지침을 최적화할 때 사용하세요.
+---
+
 # CLAUDE.md Improver
 
 프로젝트의 CLAUDE.md를 분석하고 개선하는 가이드.

@@ -1,3 +1,10 @@
+---
+name: security-audit
+description: |
+  보안 감사 체크리스트 및 보고서 작성 워크플로우. OWASP Top 10, 인증/권한, 입력 검증, 시크릿
+  관리 등을 체계적으로 점검합니다. "보안 감사", "security audit", "취약점 점검",
+  "보안 리뷰", "OWASP 체크", "보안 점검" 등의 요청에 트리거됩니다.
+---
 # Security Audit
 
 보안 감사 체크리스트 + 보고서 작성 워크플로우.

@@ -1,3 +1,10 @@
+---
+name: paper-review
+description: |
+  학술 논문 리뷰 방법론 가이드 (3-pass 기법). 논문의 기여도, 방법론, 실험 설계를 체계적으로
+  평가합니다. "논문 리뷰", "paper review", "학술 리뷰", "논문 평가", "peer review",
+  "논문 읽기", "논문 분석" 등의 요청에 트리거됩니다.
+---
 # Paper Review
 
 학술 논문 리뷰 방법론 가이드 (3-pass 기법).

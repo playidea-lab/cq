@@ -1,3 +1,10 @@
+---
+name: doc-writing
+description: |
+  기술 문서, ADR, 스펙, README 작성 가이드. 문서 구조화, 독자 분석, 명확한 기술 문서 작성이
+  필요할 때 이 스킬을 사용하세요. "문서 작성", "doc writing", "ADR 작성", "스펙 작성",
+  "기술 문서", "README 작성", "가이드 문서" 등의 요청에 트리거됩니다.
+---
 # Doc Writing
 
 기술 문서, ADR, 스펙 작성 가이드.

@@ -1,3 +1,10 @@
+---
+name: proposal-writer
+description: |
+  제안서/입찰서 작성 워크플로우. RFP 분석, 전략 수립, 본문 작성, 최종 편집까지 체계적으로
+  진행합니다. "제안서 작성", "proposal", "입찰서", "RFP 대응", "proposal writer",
+  "사업 제안", "프로젝트 제안" 등의 요청에 트리거됩니다.
+---
 # Proposal Writer
 
 제안서/입찰서 작성 워크플로우. RFP 분석부터 최종 편집까지 체계적으로 진행한다.
