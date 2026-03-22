@@ -1317,10 +1317,17 @@ func listJSONLNames(dir string) map[string]struct{} {
 	return m
 }
 
-// rebootFlagFile returns the path to the reboot-request flag file.
+// rebootFlagFile returns the path to the reboot-request flag file for a given session name.
+// Each named session watches its own file to avoid cross-session interference.
 func rebootFlagFile() string {
 	homeDir, _ := os.UserHomeDir()
 	return filepath.Join(homeDir, ".c4", ".reboot")
+}
+
+// rebootFlagFileForSession returns a session-specific reboot flag file.
+func rebootFlagFileForSession(sessionName string) string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".c4", ".reboot-"+sessionName)
 }
 
 // findGeminiSessionIndex executes 'gemini --list-sessions' and parses the output
@@ -1390,9 +1397,11 @@ func launchToolNamed(tool, projectDir, name string) error {
 		}
 	}
 
-	// Reboot loop: re-launches the tool when ~/.c4/.reboot exists after exit.
+	// Reboot loop: re-launches the tool when session-specific reboot file exists after exit.
+	sessionRebootFile := rebootFlagFileForSession(name)
 	for {
-		os.Remove(rebootFlagFile())
+		os.Remove(sessionRebootFile)
+		os.Remove(rebootFlagFile()) // also clean legacy global file
 
 		var toolArgs []string
 		if isNew {
@@ -1437,7 +1446,7 @@ func launchToolNamed(tool, projectDir, name string) error {
 			return fmt.Errorf("start %s: %w", tool, err)
 		}
 
-		// Watch for .reboot file — auto-terminate only if UUID matches this session.
+		// Watch for session-specific .reboot-{name} file — only this session responds.
 		rebootDetected := make(chan struct{}, 1)
 		go func() {
 			ticker := time.NewTicker(2 * time.Second)
@@ -1445,22 +1454,16 @@ func launchToolNamed(tool, projectDir, name string) error {
 			for {
 				select {
 				case <-ticker.C:
-					content, err := os.ReadFile(rebootFlagFile())
-					if err != nil {
-						continue
+					if _, err := os.Stat(sessionRebootFile); err == nil {
+						select {
+						case rebootDetected <- struct{}{}:
+						default:
+						}
+						if cmd.Process != nil {
+							_ = cmd.Process.Signal(os.Interrupt)
+						}
+						return
 					}
-					rebootUUID := strings.TrimSpace(string(content))
-					if rebootUUID != "" && rebootUUID != currentUUID {
-						continue // different session's reboot request — ignore
-					}
-					select {
-					case rebootDetected <- struct{}{}:
-					default:
-					}
-					if cmd.Process != nil {
-						_ = cmd.Process.Signal(os.Interrupt)
-					}
-					return
 				case <-rebootDetected:
 					return
 				}
