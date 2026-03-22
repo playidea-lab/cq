@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.10.1] - 2026-03-23
+
+### ✨ Features
+
+- **ontology**: Scope/SourceRole + ProjectOntology store (L2 프로젝트 온톨로지)
+
+### 🐛 Bug Fixes
+
+- **cli**: `--name` 옵션을 resume 시에도 전달하여 세션 이름 일관성 유지
+- **hub**: 죽은 fly.dev URL 참조 제거 (hub_edge_start, hub_worker)
+- **hub**: 5개 프로젝트 `.c4/config.yaml`에서 `piqsol-c5.fly.dev` URL 제거
+
+### ♻️ Refactoring
+
+- **serve**: HubComponent 제거 (C5 subprocess manager — Supabase 전환 후 불필요)
+- **cmd**: worker.go 삭제 (C5 전용 dead code)
+
+---
+
 ## [v1.10.0] - 2026-03-23
 
 ### ✨ Features
