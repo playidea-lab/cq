@@ -7,6 +7,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/ontology"
 )
 
 func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
@@ -42,6 +43,15 @@ func knowledgeRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		docID, err := opts.Store.Create(knowledge.DocumentType(docType), metadata, body)
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("KnowledgeRecord failed: %v", err)}, nil
+		}
+
+		// Boost ontology confidence for matching nodes based on knowledge tags (non-fatal).
+		if tags := toStringSliceAny(params["tags"]); len(tags) > 0 {
+			if username := os.Getenv("USER"); username != "" {
+				if boostErr := ontology.BoostFromKnowledge(username, tags); boostErr != nil {
+					fmt.Fprintf(os.Stderr, "c4: knowledge: ontology boost failed: %v\n", boostErr)
+				}
+			}
 		}
 
 		// Index for vector search (skip silently on embedding failure — will be caught up on reindex)
