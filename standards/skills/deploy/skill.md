@@ -1,12 +1,10 @@
 ---
 name: deploy
-description: PI Lab 표준 배포 워크플로우. 검증 → 빌드 → 배포 → 확인 단계를 가이드한다.
-triggers:
-  - "배포"
-  - "deploy"
-  - "릴리스"
-  - "release"
-  - "배포해줘"
+description: |
+  PI Lab 표준 배포 워크플로우. 코드 검증, 빌드, 배포, 사후 확인까지 체계적으로 안내합니다.
+  프로덕션 배포, 스테이징 배포, 핫픽스 배포 시 반드시 이 스킬을 사용하세요.
+  "배포", "deploy", "릴리스", "release", "프로덕션 반영", "canary 배포",
+  "배포해줘", "rollback", "hotfix 배포" 등의 요청에 트리거됩니다.
 ---
 
 # Standard Deploy Workflow

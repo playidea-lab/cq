@@ -1,3 +1,11 @@
+---
+name: onboarding
+description: |
+  새 프로젝트에 PI Lab 표준을 적용하는 온보딩 워크플로우. cq standards apply로 규칙/훅/설정을
+  배포하고 프로젝트 구조를 검증합니다. "온보딩", "프로젝트 설정", "새 프로젝트", "onboarding",
+  "project setup", "piki 적용", "표준 설정" 등의 요청에 트리거됩니다.
+---
+
 # Project Onboarding
 
 새 프로젝트에 PI Lab 표준을 적용하는 온보딩 워크플로우입니다.
