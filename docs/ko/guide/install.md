@@ -52,6 +52,14 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 cq --help
 ```
 
+::: tip 환경 자동 수정
+뭔가 제대로 설정되지 않았다면:
+```sh
+cq doctor --fix
+```
+CLAUDE.md, hooks, .mcp.json, Hub 인증을 한 번에 자동 패치합니다.
+:::
+
 ## Step 4 — 첫 프로젝트 시작
 
 ```sh

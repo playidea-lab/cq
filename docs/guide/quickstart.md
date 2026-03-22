@@ -130,7 +130,7 @@ Review it before implementation starts — it becomes the completion criteria.
 /c4-run
 ```
 
-Workers start automatically — one per task, each in an isolated git worktree. When the queue empties, `/c4-run` automatically runs polish (fix until zero changes) then finish (build · tests · docs · commit).
+Workers start automatically — one per task, each in an isolated git worktree. Each worker runs a built-in **polish loop** (review → fix → converge) before submitting. The Go-level polish gate rejects unreviewed code (diff ≥ 5 lines), so quality is enforced by the system, not by trust.
 
 During finish, CQ validates your behavior spec against actual test results:
 
@@ -167,6 +167,18 @@ For small tasks, skip the full plan flow:
 ```
 
 This creates one task, assigns it to a worker, and runs immediately.
+
+## What happens behind the scenes
+
+Every step is gated:
+
+| Gate | When | What it checks |
+|------|------|----------------|
+| **Refine** | `/c4-plan` adds 4+ tasks | Critique loop must run first |
+| **Polish** | Worker submits code (diff ≥ 5 lines) | Self-review must converge |
+| **Review** | After every implementation | 6-axis evaluation (correctness, security, reliability, observability, tests, readability) |
+
+These are Go-level checks that cannot be skipped. The more you use CQ, the sharper reviews get — the [persona ontology](/guide/ecosystem) learns your preferences across tasks.
 
 ## Next
 

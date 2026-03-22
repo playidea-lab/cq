@@ -52,6 +52,14 @@ Open a new terminal and confirm:
 cq --help
 ```
 
+::: tip Auto-fix your environment
+If something isn't set up correctly, run:
+```sh
+cq doctor --fix
+```
+This auto-patches CLAUDE.md, hooks, .mcp.json, and Hub auth in one command.
+:::
+
 ## Step 4 — Start your first project
 
 ```sh
