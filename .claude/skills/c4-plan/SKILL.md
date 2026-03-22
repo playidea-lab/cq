@@ -88,6 +88,11 @@ Show dependency chains for pending tasks. Status icons: completed, in_progress, 
 ## Phase 0.5: Action Selection
 
 ```python
+if FROM_PI:
+    → Phase 2.5  # 이미 "Plan new feature"가 확정 — 선택 불필요
+```
+
+```python
 AskUserQuestion(questions=[{
     "question": "What would you like to do?",
     "header": "Action",
@@ -362,6 +367,11 @@ EARS 요구사항과 태스크 DoD를 분석하여 시나리오를 도출한다.
 - 경계값, 동시성, 권한 → 추가 시나리오
 
 ### 에디터 열기
+
+```python
+if AUTO_RUN:
+    → Phase 5  # 에디터 대기 불필요
+```
 
 ```python
 # spec 파일에 시나리오 섹션 추가 후 에디터에서 열기
