@@ -22,10 +22,9 @@ import (
 )
 
 // registerCoreServeComponents registers always-available components:
-// EventBus, GPU, Hub, and Agent. Returns the started EventBus component
+// EventBus, GPU, and Agent. Returns the started EventBus component
 // so optional components (EventSink, HubPoller) can wire up a publisher,
 // and the GPU component so the caller can mount its HTTP handler.
-// secComp provides access to the secrets store for env injection into C5.
 func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home string, secComp *secretsSyncComponent) (*serve.EventBusComponent, *serve.GPUComponent) {
 	var ebComp *serve.EventBusComponent
 	var gpuComp *serve.GPUComponent
@@ -49,24 +48,6 @@ func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home s
 		fmt.Fprintf(os.Stderr, "cq serve: registered gpu\n")
 	}
 
-	// C5 Hub subprocess
-	if cfg.Serve.Hub.Enabled {
-		hubEnv := loadC4CloudEnv(cfg)
-		hubEnv = append(hubEnv, secComp.GetForEnv(cfg.Serve.Secrets.EnvInject)...)
-		hubCfg := serve.HubComponentConfig{
-			Binary: cfg.Serve.Hub.Binary,
-			Port:   cfg.Serve.Hub.Port,
-			Args:   cfg.Serve.Hub.Args,
-			Env:    hubEnv,
-		}
-		// Wire embedded binary extractor when available (c5_embed build tag).
-		if EmbeddedC5FS != nil {
-			hubCfg.ExtractBinary = ExtractEmbeddedC5
-		}
-		mgr.Register(serve.NewHubComponent(hubCfg))
-		fmt.Fprintf(os.Stderr, "cq serve: registered hub\n")
-	}
-
 	// Agent (Supabase Realtime @cq mention listener)
 	if cfg.Serve.Agent.Enabled && cfg.Cloud.URL != "" && cfg.Cloud.AnonKey != "" {
 		mgr.Register(serve.NewAgent(serve.AgentConfig{
@@ -79,18 +60,6 @@ func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home s
 	}
 
 	return ebComp, gpuComp
-}
-
-// loadC4CloudEnv returns env vars to inject into the C5 subprocess from cfg.Cloud.
-func loadC4CloudEnv(cfg config.C4Config) []string {
-	var envs []string
-	if cfg.Cloud.URL != "" {
-		envs = append(envs, "C5_SUPABASE_URL="+cfg.Cloud.URL)
-	}
-	if cfg.Cloud.AnonKey != "" {
-		envs = append(envs, "C5_SUPABASE_KEY="+cfg.Cloud.AnonKey)
-	}
-	return envs
 }
 
 // registerHarnessWatcherServeComponent registers HarnessWatcherComponent, which
