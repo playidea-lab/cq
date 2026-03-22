@@ -351,7 +351,7 @@ func checkPolishGate(ss *SQLiteStore, taskID, commitSHA string) error {
 		return nil // best-effort: don't block submit on lookup failure
 	}
 
-	ok, err := ss.HasPolishGateDone(t.UpdatedAt)
+	ok, err := ss.HasGateDone("polish", t.UpdatedAt)
 	if err != nil {
 		return nil // best-effort: don't block submit on DB error
 	}
