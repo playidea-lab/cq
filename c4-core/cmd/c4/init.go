@@ -1412,7 +1412,7 @@ func launchToolNamed(tool, projectDir, name string) error {
 				resumeID := findGeminiSessionIndex(currentUUID)
 				toolArgs = []string{"--resume", resumeID}
 			} else {
-				toolArgs = []string{"--resume", currentUUID}
+				toolArgs = []string{"--resume", currentUUID, "--name", name}
 			}
 		}
 
