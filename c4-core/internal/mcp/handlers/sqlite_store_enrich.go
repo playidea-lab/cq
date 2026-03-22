@@ -179,6 +179,96 @@ func extractFilesChangedFromHandoff(handoff string) string {
 	return strings.Join(payload.FilesChanged, ",")
 }
 
+// enrichUnified combines knowledge, project ontology, and personal ontology into
+// a single coherent context section. Instead of 3 separate blocks, it groups
+// information by relevance so workers get a unified view of:
+// - Developer coding style (personal ontology HIGH nodes)
+// - Project conventions (project ontology nodes)
+// - Past solutions (knowledge search results)
+func (s *SQLiteStore) enrichUnified(assignment *TaskAssignment) {
+	var b strings.Builder
+	b.WriteString("## Context (auto-injected)\n")
+
+	// 1. Developer Profile (personal ontology HIGH nodes)
+	username := os.Getenv("USER")
+	if username != "" {
+		if personal, err := ontology.Load(username); err == nil && personal != nil {
+			var profileLines []string
+			for path, node := range personal.Schema.Nodes {
+				if node.NodeConfidence != ontology.ConfidenceHigh {
+					continue
+				}
+				line := fmt.Sprintf("  - %s: %s", path, node.Description)
+				profileLines = append(profileLines, line)
+			}
+			if len(profileLines) > 0 {
+				b.WriteString("\n### Developer Style\n")
+				for _, l := range profileLines {
+					b.WriteString(l)
+					b.WriteByte('\n')
+				}
+			}
+		}
+	}
+
+	// 2. Project Conventions (project ontology nodes)
+	if s.projectRoot != "" {
+		if proj, err := ontology.LoadProject(s.projectRoot); err == nil && proj != nil {
+			domain := assignment.Domain
+			var projLines []string
+			for path, node := range proj.Schema.Nodes {
+				if node.Scope == "project" || (domain != "" && node.SourceRole == domain) {
+					line := fmt.Sprintf("  - %s: %s", path, node.Description)
+					projLines = append(projLines, line)
+				}
+			}
+			if len(projLines) > 0 {
+				b.WriteString("\n### Project Conventions\n")
+				for _, l := range projLines {
+					b.WriteString(l)
+					b.WriteByte('\n')
+				}
+			}
+		}
+	}
+
+	// 3. Past Solutions (knowledge search)
+	if s.knowledgeSearch != nil {
+		query := assignment.Title
+		if assignment.Domain != "" {
+			query = assignment.Domain + " " + query
+		}
+		results, err := s.knowledgeSearch.Search(query, 3, nil)
+		if s.knowledgeHitTracker != nil {
+			resultCount := len(results)
+			if err != nil {
+				resultCount = 0
+			}
+			s.knowledgeHitTracker.Record(assignment.TaskID, query, resultCount)
+		}
+		if err == nil && len(results) > 0 {
+			b.WriteString("\n### Past Solutions\n")
+			for _, r := range results {
+				fmt.Fprintf(&b, "  - [%s] %s", r.Type, r.Title)
+				if s.knowledgeReader != nil {
+					if body, err := s.knowledgeReader.GetBody(r.ID); err == nil && body != "" {
+						if len(body) > 150 {
+							body = body[:150] + "..."
+						}
+						fmt.Fprintf(&b, " — %s", body)
+					}
+				}
+				b.WriteByte('\n')
+			}
+		}
+	}
+
+	ctx := b.String()
+	if ctx != "## Context (auto-injected)\n" { // has content beyond header
+		assignment.KnowledgeContext = ctx
+	}
+}
+
 // enrichWithPersonalOntology appends the user's L1 HIGH-confidence ontology nodes
 // as a "Developer Profile" section to KnowledgeContext. This lets workers adapt
 // their coding style to the user's established patterns (e.g. error handling, naming).

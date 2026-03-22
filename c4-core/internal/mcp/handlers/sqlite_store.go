@@ -484,14 +484,8 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	// 5. Enrich with review context (if R- task)
 	s.enrichWithReviewContext(assignment)
 
-	// 6. Enrich with knowledge context (past patterns and insights)
-	s.enrichWithKnowledge(assignment)
-
-	// 7. Enrich with project ontology (cross-position patterns)
-	s.enrichWithOntology(assignment)
-
-	// 8. Enrich with personal ontology HIGH nodes (developer profile)
-	s.enrichWithPersonalOntology(assignment)
+	// 6. Enrich with unified context (knowledge + project ontology + developer profile)
+	s.enrichUnified(assignment)
 
 	// C3 EventBus: publish task.started event
 	s.notifyEventBus("task.started", map[string]any{
