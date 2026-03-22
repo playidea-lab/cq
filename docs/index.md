@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "Coding Team for AI Researchers"
-  tagline: Your experiments and tools — built by AI, directed by you.
+  text: "AI that builds, verifies, and learns you."
+  tagline: Describe your idea. AI plans, implements, and guarantees quality. The more you use it, the more it becomes your team.
   actions:
     - theme: brand
       text: Install
@@ -14,71 +14,103 @@ hero:
       link: https://github.com/PlayIdea-Lab/cq
 
 features:
-  - icon: 🗣️
-    title: Just Say It
-    details: Describe what you need. AI writes, runs, and reviews the code. No IDE required.
+  - icon: 💡
+    title: Idea → Ship
+    details: "/pi to brainstorm, /c4-plan to design, /c4-run to build, /c4-finish to ship. One flow from thought to production."
+
+  - icon: 🔒
+    title: Quality by System
+    details: "Polish and refine gates enforce convergence — not by trust, but by Go-level checks. Every submit is verified."
+
+  - icon: 🧠
+    title: Learns Your Style
+    details: "Persona ontology tracks your preferences across 1,000+ tasks. Reviews get sharper. Suggestions get personal."
 
   - icon: 🖥️
-    title: Run Everywhere
-    details: Spawn AI workers across multiple servers. Experiments and builds run in parallel, around the clock.
-
-  - icon: ☀️
-    title: Wake Up to Results
-    details: Set it before bed. Your code is written, tested, and committed by morning.
-
-  - icon: 📋
-    title: Living Behavior Spec
-    details: Auto-generated behavior specs with WHEN-THEN-VERIFY scenarios. Know exactly what was built — before you touch the code.
+    title: Distributed Workers
+    details: "Spawn AI workers across servers. Experiments and builds run in parallel, around the clock."
 
 ---
 
-## Why CQ?
+## How It Works
 
-I built CQ because I needed two things at once: run deep learning experiments across multiple servers *and* build the tools around them — without switching contexts.
+```
+ You say          CQ does                        You get
+─────────────────────────────────────────────────────────────
+ "이런 거 만들자"   /pi → brainstorm + research     idea.md
+ "만들어"          /c4-plan → tasks + review       plan
+ ⏳               /c4-run → parallel workers      code + tests
+ ☕               /c4-finish → polish + verify    shipped
+```
 
-The experiments run as distributed workers. The tools get built by AI through `/pi` → `/c4-run`. I just set the direction. The AI team handles the rest.
-
-That's **Human Outside the Loop** — not "AI assists you" but "AI does the work, you steer."
-
-CQ works with any AI coding assistant: Claude Code, Gemini CLI, Codex, or Cursor. One setup. One workflow.
+Every step is **gated**: plans require critique review, implementations require polish, reviews require 6-axis evaluation. Nothing ships without passing.
 
 ---
 
-## Two Ways to Use CQ
+## The Numbers
 
-### 🔬 Experiment Automation
-
-Running ML experiments across multiple GPUs or cloud servers:
-
-```
-/pi  →  describe your experiment setup
-      AI plans the pipeline, writes training scripts,
-      submits jobs to multiple servers,
-      and reports results when done.
-```
-
-You wake up to a comparison table of results.
-
-### 🛠️ Tool Development
-
-Building a research tool, CLI, or internal system:
-
-```
-/pi  →  describe what the tool should do
-      AI plans the architecture, implements features,
-      runs tests, and commits working code.
-```
-
-No boilerplate. No debugging loops. Just describe and ship.
+| Metric | Value |
+|--------|-------|
+| Tasks completed | 1,100+ |
+| Review approval rate | 93% |
+| Codebase | 179K LOC |
+| Polish gates passed | 55+ |
+| Languages | Go, Python, TypeScript, Rust |
 
 ---
 
-## Get Started in 30 Seconds
+## What Makes CQ Different
+
+### 🧠 It Learns You
+
+Most AI coding tools start fresh every session. CQ builds a **3-layer ontology** of your patterns:
+
+- **L1 Local**: Your coding style, review preferences, common decisions
+- **L2 Project**: Cross-position patterns, team conventions
+- **L3 Collective**: Shared patterns from the community
+
+After 100 tasks, CQ knows your naming conventions. After 500, it anticipates your review feedback.
+
+### 🔒 Quality Is Not Optional
+
+AI can write code fast. But who checks it? CQ enforces quality at the system level:
+
+- **Polish gate**: `c4_submit` rejects code that hasn't been reviewed (diff ≥ 5 lines)
+- **Refine gate**: `c4_add_todo` rejects plans without critique (batch ≥ 4 tasks)
+- **Review tasks**: Every implementation gets a 6-axis review (correctness, security, reliability, observability, tests, readability)
+
+These aren't suggestions. They're Go-level gates that **cannot be bypassed**.
+
+### 🖥️ Your Team Runs 24/7
+
+Each worker gets one task, fresh context, isolated worktree. No context pollution. No interference.
+
+```sh
+/c4-run    # spawns parallel workers, auto-respawns until queue empty
+```
+
+Set it before bed. Wake up to committed, reviewed, tested code.
+
+---
+
+## Works With Any AI
+
+CQ is the orchestration layer. The AI is pluggable:
+
+```sh
+cq claude    # Claude Code (recommended)
+cq cursor    # Cursor
+cq codex     # OpenAI Codex
+cq gemini    # Gemini CLI
+```
+
+---
+
+## Get Started
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
-cq claude   # or: cq cursor / cq codex / cq gemini
+cq claude
 ```
 
-Then type what you need. AI takes it from there.
----
+Then just say what you need.
