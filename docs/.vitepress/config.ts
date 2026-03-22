@@ -66,7 +66,9 @@ export default defineConfig({
                 { text: 'Overview', link: '/examples/' },
                 { text: 'Your First Task', link: '/examples/first-task' },
                 { text: 'Quick Bug Fix', link: '/examples/quick-fix' },
+                { text: 'Idea to Ship', link: '/examples/idea-to-ship' },
                 { text: 'Feature Planning', link: '/examples/feature-planning' },
+                { text: 'Quality Gates', link: '/examples/team-review' },
                 { text: 'Distributed Experiments', link: '/examples/distributed-experiments' },
               ]
             }
@@ -142,7 +144,9 @@ export default defineConfig({
                 { text: '개요', link: '/ko/examples/' },
                 { text: '첫 번째 태스크', link: '/ko/examples/first-task' },
                 { text: '빠른 버그 수정', link: '/ko/examples/quick-fix' },
+                { text: '아이디어→배포', link: '/ko/examples/idea-to-ship' },
                 { text: '기능 계획', link: '/ko/examples/feature-planning' },
+                { text: '품질 게이트', link: '/ko/examples/team-review' },
                 { text: '분산 실험', link: '/ko/examples/distributed-experiments' },
               ]
             }

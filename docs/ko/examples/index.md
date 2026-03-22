@@ -8,7 +8,9 @@ CQ가 실제로 어떻게 동작하는지 보여주는 실제 시나리오입니
 |------|---------|:----:|-----------|
 | [첫 번째 태스크](/ko/examples/first-task) | 처음부터 CSV 요약 스크립트 생성 | `solo` | `/pi` `/c4-run` |
 | [빠른 버그 수정](/ko/examples/quick-fix) | 전체 계획 없이 버그 수정 | `solo` | `/c4-quick` |
+| [아이디어에서 배포까지](/ko/examples/idea-to-ship) | 막연한 아이디어에서 커밋까지 전자동 | `solo` | `/pi` → 자동 파이프라인 |
 | [기능 계획](/ko/examples/feature-planning) | 새 기능을 end-to-end로 빌드 | `solo` | `/c4-plan` `/c4-run` `/c4-finish` |
+| [품질 게이트 실전](/ko/examples/team-review) | refine, polish, review 게이트 동작 | `solo` | `/c4-plan` `/c4-run` |
 | [분산 실험](/ko/examples/distributed-experiments) | 여러 머신에서 ML 실험 실행 | `full` | `/c4-plan` `/c4-standby` `/c4-status` |
 
 ## 패턴
