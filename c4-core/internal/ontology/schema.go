@@ -30,6 +30,21 @@ type Node struct {
 	Frequency int `yaml:"frequency,omitempty"`
 	// NodeConfidence indicates the trust level (low, medium, high).
 	NodeConfidence Confidence `yaml:"confidence,omitempty"`
+	// Scope narrows the context in which this node is relevant (e.g. "project", "global").
+	Scope string `yaml:"scope,omitempty"`
+	// SourceRole identifies the role or origin that introduced this node (e.g. "user", "agent").
+	SourceRole string `yaml:"source_role,omitempty"`
+}
+
+// ProjectOntology is the top-level structure persisted to .c4/project-ontology.yaml.
+// It reuses the same schema as Ontology to remain backward-compatible with L1.
+type ProjectOntology struct {
+	// Version is a semantic version string for schema evolution.
+	Version string `yaml:"version"`
+	// UpdatedAt records the last modification time.
+	UpdatedAt time.Time `yaml:"updated_at"`
+	// Schema contains the core concept definitions.
+	Schema CoreSchema `yaml:"schema"`
 }
 
 // CoreSchema holds the named concept nodes that make up the ontology.
