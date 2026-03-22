@@ -276,6 +276,18 @@ skills:
     src: skills/model-serving/skill.md
     auto_install: false
 
+  tdd-cycle:
+    src: skills/tdd-cycle/skill.md
+    auto_install: true        # 모든 팀에 TDD 습관
+
+  debugging:
+    src: skills/debugging/skill.md
+    auto_install: true        # 모든 팀이 매일 씀
+
+  codebase-audit:
+    src: skills/codebase-audit/skill.md
+    auto_install: false
+
 # 적용 순서 (우선순위: 높은 번호가 낮은 번호를 오버라이드)
 # 1. common (항상)
 # 2. languages (--lang)
