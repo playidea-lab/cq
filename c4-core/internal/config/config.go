@@ -110,6 +110,9 @@ type RunConfig struct {
 	// PolishThreshold is the minimum number of trivial (non-code) changes
 	// required to trigger a polish cycle. Default: 5.
 	PolishThreshold int `mapstructure:"polish_threshold" yaml:"polish_threshold"`
+	// RefineThreshold is the maximum number of refine iterations before
+	// escalating to a full review cycle. Default: 4.
+	RefineThreshold int `mapstructure:"refine_threshold" yaml:"refine_threshold"`
 }
 
 // ValidationConfig holds validation command settings.
@@ -466,6 +469,7 @@ func defaultConfig() C4Config {
 		Run: RunConfig{
 			CheckpointMode:  "auto",
 			PolishThreshold: 5,
+			RefineThreshold: 4,
 		},
 		Observe: ObserveConfig{
 			Enabled:   true,

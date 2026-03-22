@@ -11,24 +11,25 @@ import (
 	"github.com/changmin/c4-core/internal/task"
 )
 
-// HasPolishGateDone reports whether a polish gate with status='done' exists
+// HasGateDone reports whether a gate with the given name and status='done' exists
 // that was recorded at or after sinceTime (SQLite CURRENT_TIMESTAMP format).
 // Returns true when sinceTime is empty (no constraint).
-func (s *SQLiteStore) HasPolishGateDone(sinceTime string) (bool, error) {
+func (s *SQLiteStore) HasGateDone(gateName string, sinceTime string) (bool, error) {
 	var count int
 	var err error
 	if sinceTime == "" {
 		err = s.db.QueryRow(
-			`SELECT COUNT(*) FROM c4_gates WHERE gate='polish' AND status='done'`,
+			`SELECT COUNT(*) FROM c4_gates WHERE gate=? AND status='done'`,
+			gateName,
 		).Scan(&count)
 	} else {
 		err = s.db.QueryRow(
-			`SELECT COUNT(*) FROM c4_gates WHERE gate='polish' AND status='done' AND completed_at >= ?`,
-			sinceTime,
+			`SELECT COUNT(*) FROM c4_gates WHERE gate=? AND status='done' AND completed_at >= ?`,
+			gateName, sinceTime,
 		).Scan(&count)
 	}
 	if err != nil {
-		return false, fmt.Errorf("querying polish gate: %w", err)
+		return false, fmt.Errorf("querying %s gate: %w", gateName, err)
 	}
 	return count > 0, nil
 }
