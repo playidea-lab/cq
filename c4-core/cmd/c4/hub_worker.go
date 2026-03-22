@@ -805,11 +805,12 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 	}
 
 	var job struct {
-		ID       string   `json:"id"`
-		Name     string   `json:"name"`
-		Command  string   `json:"command"`
-		Workdir  string   `json:"workdir"`
-		Datasets []string `json:"datasets"`
+		ID           string   `json:"id"`
+		Name         string   `json:"name"`
+		Command      string   `json:"command"`
+		Workdir      string   `json:"workdir"`
+		Datasets     []string `json:"datasets"`
+		ExperimentID string   `json:"experiment_id"`
 	}
 	json.Unmarshal(result.Job, &job)
 
@@ -852,9 +853,19 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey, jwt, workerID string
 
 		// Capture stdout+stderr while also printing to terminal.
 		var outputBuf bytes.Buffer
-		cmd.Stdout = io.MultiWriter(os.Stdout, &outputBuf)
+		var metricWriter *MetricWriter
+		if job.ExperimentID != "" {
+			// io.Discard as underlying: stdout is already in the outer MultiWriter.
+			metricWriter = NewMetricWriter(io.Discard, job.ExperimentID, supabaseURL, anonKey, jwt)
+			cmd.Stdout = io.MultiWriter(os.Stdout, &outputBuf, metricWriter)
+		} else {
+			cmd.Stdout = io.MultiWriter(os.Stdout, &outputBuf)
+		}
 		cmd.Stderr = io.MultiWriter(os.Stderr, &outputBuf)
 		cmdErr := cmd.Run()
+		if metricWriter != nil {
+			metricWriter.Close()
+		}
 
 		// Complete the job.
 		status := "COMPLETE"
