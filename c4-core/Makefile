@@ -51,7 +51,7 @@ embed-standards:
 	@echo "Standards embedded from $(REPO_ROOT)/standards/"
 
 # Build tags — single tier (all features)
-BUILD_TAGS = c0_drive c3_eventbus c5_hub llm_gateway cdp gpu c1_messenger research skills_embed c7_observe
+BUILD_TAGS = c0_drive c3_eventbus hub llm_gateway cdp gpu c1_messenger research skills_embed c7_observe
 
 ## build-cross: Cross-compile for target GOOS/GOARCH (used by CI)
 build-cross: embed-skills embed-standards

@@ -27,7 +27,7 @@ Hub가 잡 도착 시 워커 MCP에 직접 push dispatch하는 구조.
 **When** 워커의 mcphttp가 `hub_dispatch_job` 도구 호출을 받으면,
 **the system shall** 잡 페이로드(job_id, lease_id, command, env, tags 등)를 수신하고
 즉시 `{"status":"accepted", "job_id":"..."}` 응답을 반환한다.
-- Build tag: `c5_hub`
+- Build tag: `hub`
 - 에이전트가 반환값으로 실행 판단 (c4_get_task or c4_execute)
 
 ### R5: Configurable Timeout (SHOULD)

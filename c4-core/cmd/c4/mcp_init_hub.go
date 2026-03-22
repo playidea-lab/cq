@@ -1,4 +1,4 @@
-//go:build c5_hub
+//go:build hub
 
 package main
 

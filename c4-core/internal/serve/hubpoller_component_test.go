@@ -1,4 +1,4 @@
-//go:build c5_hub
+//go:build hub
 
 package serve
 
@@ -184,7 +184,7 @@ func TestServeComponents_HubPollerWithPublisher(t *testing.T) {
 	}
 
 	// Use a spy publisher (reuse testPublisher from eventsink tests via same package)
-	// In c5_hub-only builds, use a simple inline publisher.
+	// In hub-only builds, use a simple inline publisher.
 	pub := &struct {
 		calls int
 	}{}

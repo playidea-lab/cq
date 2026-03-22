@@ -1,4 +1,4 @@
-//go:build c5_hub && c3_eventbus
+//go:build hub && c3_eventbus
 
 package serve
 

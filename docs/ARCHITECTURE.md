@@ -187,7 +187,7 @@ cq serve --port 4141   # 포트 지정
 | `eventsink` | `serve.eventsink.enabled: true` + `c3_eventbus` 빌드 태그 | C5→C4 HTTP 이벤트 수신 (:4141) |
 | `gpu` | `serve.gpu.enabled: true` | GPU/CPU 작업 스케줄러 (daemon 패키지 래핑) |
 | `agent` | `serve.agent.enabled: true` + `cloud.url` + `cloud.anon_key` 설정 | Supabase Realtime @cq mention → claude -p 디스패치; claim 직후 `c1_members.status="typing"` 비동기 알림, 완료 시 `"online"` 복원; `claude -p --dir <projectDir>` |
-| `ssesubscriber` | `serve.ssesubscriber.enabled: true` + `c5_hub && c3_eventbus` 빌드 태그 | Hub SSE 스트림 구독 → EventBus 전달 |
+| `ssesubscriber` | `serve.ssesubscriber.enabled: true` + `hub && c3_eventbus` 빌드 태그 | Hub SSE 스트림 구독 → EventBus 전달 |
 | `stale_checker` | `serve.stale_checker.enabled: true` | 주기적 stale 태스크(in_progress stuck) 감지 → pending 리셋 + `task.stale` 이벤트 발행 |
 | `hub` | `serve.hub.enabled: true` | Supabase 기반 Hub 작업 큐 연동 (cloud.url + cloud.anon_key 필요) |
 
@@ -203,7 +203,7 @@ serve:
   agent:
     enabled: true   # cloud.url + cloud.anon_key 필요
   ssesubscriber:
-    enabled: true   # c5_hub && c3_eventbus 빌드 태그 필요; hub.enabled: true 필요
+    enabled: true   # hub && c3_eventbus 빌드 태그 필요; hub.enabled: true 필요
   stale_checker:
     enabled: true
     threshold_minutes: 30   # 이 시간 이상 in_progress이면 stale 판정
