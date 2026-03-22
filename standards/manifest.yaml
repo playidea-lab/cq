@@ -239,6 +239,14 @@ skills:
     src: skills/meeting-notes/skill.md
     auto_install: false
 
+  paper-review:
+    src: skills/paper-review/skill.md
+    auto_install: false
+
+  paper-writing:
+    src: skills/paper-writing/skill.md
+    auto_install: false
+
 # 적용 순서 (우선순위: 높은 번호가 낮은 번호를 오버라이드)
 # 1. common (항상)
 # 2. languages (--lang)
