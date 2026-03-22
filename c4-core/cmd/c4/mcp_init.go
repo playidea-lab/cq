@@ -275,8 +275,9 @@ func newMCPServer() (*mcpServer, error) {
 		w, r, s := handlers.AdaptKnowledge(knowledgeStore, knowledgeSearcher)
 		storeOpts = append(storeOpts, handlers.WithKnowledge(w, r, s))
 	}
+	var knowledgeHitTracker *handlers.KnowledgeHitTracker
 	if knowledgeStore != nil || knowledgeSearcher != nil {
-		knowledgeHitTracker := handlers.NewKnowledgeHitTracker()
+		knowledgeHitTracker = handlers.NewKnowledgeHitTracker()
 		storeOpts = append(storeOpts, handlers.WithKnowledgeHitTracker(knowledgeHitTracker))
 	}
 	storeOpts = append(storeOpts, handlers.WithRegistry(reg))
@@ -347,6 +348,14 @@ func newMCPServer() (*mcpServer, error) {
 		Sidecar:        lazySidecar,
 		KnowledgeStore: knowledgeStore,
 		StartTime:      time.Now(),
+	})
+
+	// Register intelligence stats handler (knowledge + ontology + circulation monitoring)
+	handlers.RegisterIntelligenceStatsHandler(reg, &handlers.IntelligenceStatsDeps{
+		KnowledgeStore: knowledgeStore,
+		HitTracker:     knowledgeHitTracker,
+		ProjectRoot:    projectDir,
+		OntologyUser:   os.Getenv("USER"),
 	})
 
 	// Register config handlers
