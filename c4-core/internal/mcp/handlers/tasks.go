@@ -314,12 +314,51 @@ func handleSubmit(store Store, rawArgs json.RawMessage) (any, error) {
 		}
 	}
 
+	// Polish gate enforcement: if diff is large enough, require a polish gate.
+	if ss, ok := store.(*SQLiteStore); ok {
+		if err := checkPolishGate(ss, args.TaskID, args.CommitSHA); err != nil {
+			return nil, err
+		}
+	}
+
 	result, err := store.SubmitTask(args.TaskID, args.WorkerID, args.CommitSHA, args.Handoff, args.ValidationResults)
 	if err != nil {
 		return nil, fmt.Errorf("submitting task: %w", err)
 	}
 
 	return result, nil
+}
+
+// checkPolishGate enforces the polish gate rule:
+// if the commit diff size >= polish_threshold, a polish=done gate must be present.
+func checkPolishGate(ss *SQLiteStore, taskID, commitSHA string) error {
+	if ss.config == nil || ss.projectRoot == "" {
+		return nil
+	}
+	threshold := ss.config.GetConfig().Run.PolishThreshold
+	if threshold <= 0 {
+		return nil
+	}
+
+	lines := diffStatLines(ss.projectRoot, commitSHA)
+	if lines < threshold {
+		return nil
+	}
+
+	// Get task's updated_at (when it became in_progress) to scope gate lookup.
+	t, err := ss.GetTask(taskID)
+	if err != nil {
+		return nil // best-effort: don't block submit on lookup failure
+	}
+
+	ok, err := ss.HasPolishGateDone(t.UpdatedAt)
+	if err != nil {
+		return nil // best-effort: don't block submit on DB error
+	}
+	if !ok {
+		return fmt.Errorf("polish gate required: run polish loop or call c4_record_gate")
+	}
+	return nil
 }
 
 func handleAddTodo(store Store, rawArgs json.RawMessage) (any, error) {

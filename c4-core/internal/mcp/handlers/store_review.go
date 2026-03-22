@@ -11,6 +11,28 @@ import (
 	"github.com/changmin/c4-core/internal/task"
 )
 
+// HasPolishGateDone reports whether a polish gate with status='done' exists
+// that was recorded at or after sinceTime (SQLite CURRENT_TIMESTAMP format).
+// Returns true when sinceTime is empty (no constraint).
+func (s *SQLiteStore) HasPolishGateDone(sinceTime string) (bool, error) {
+	var count int
+	var err error
+	if sinceTime == "" {
+		err = s.db.QueryRow(
+			`SELECT COUNT(*) FROM c4_gates WHERE gate='polish' AND status='done'`,
+		).Scan(&count)
+	} else {
+		err = s.db.QueryRow(
+			`SELECT COUNT(*) FROM c4_gates WHERE gate='polish' AND status='done' AND completed_at >= ?`,
+			sinceTime,
+		).Scan(&count)
+	}
+	if err != nil {
+		return false, fmt.Errorf("querying polish gate: %w", err)
+	}
+	return count > 0, nil
+}
+
 // completeReviewTask returns the paired R-task ID if it exists as pending,
 // leaving it for a real review Worker to process (no auto-cascade).
 // Uses ParseTaskID + ReviewID so the review ID is collision-safe and consistent with
