@@ -1,10 +1,10 @@
 # API Design
 
-REST/GraphQL API 설계 가이드.
+REST API 설계 가이드.
 
 ## 트리거
 
-"API 설계", "api design", "엔드포인트 설계", "REST API", "GraphQL 스키마"
+"API 설계", "api design", "엔드포인트 설계", "REST API"
 
 ## Steps
 

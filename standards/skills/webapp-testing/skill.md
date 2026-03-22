@@ -1,6 +1,6 @@
 # Webapp Testing
 
-E2E 웹 애플리케이션 테스트 가이드 (Playwright/Cypress).
+E2E 웹 애플리케이션 테스트 가이드 (Playwright).
 
 ## 트리거
 

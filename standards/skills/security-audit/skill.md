@@ -68,7 +68,21 @@ trivy image <image>
 - [ ] 쿠키: HttpOnly, Secure, SameSite
 - [ ] 디버그 모드 프로덕션 비활성화
 
-### 7. 보고서
+### 7. 시크릿 스캐닝
+
+```bash
+# gitleaks — git 히스토리 전체 스캔
+gitleaks detect --source . --verbose
+
+# trufflehog — 엔트로피 기반 탐지
+trufflehog filesystem --directory .
+```
+
+- [ ] git 히스토리에 시크릿 노출 없는가?
+- [ ] pre-commit hook에 시크릿 스캐너 설정되어 있는가?
+- [ ] 과거 유출된 키가 revoke되었는가?
+
+### 8. 보고서
 
 ```markdown
 ## 보안 감사 보고서

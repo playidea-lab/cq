@@ -18,7 +18,7 @@ ls .claude/hooks/ 2>/dev/null          # 훅
 ls .claude/skills/ 2>/dev/null         # 스킬
 cat .claude/settings.json 2>/dev/null  # 설정
 cat .mcp.json 2>/dev/null              # MCP 서버
-cat .github/workflows/ 2>/dev/null     # CI/CD
+ls .github/workflows/ 2>/dev/null      # CI/CD
 ```
 
 ### 2. 자동화 카테고리

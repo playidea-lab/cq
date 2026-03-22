@@ -37,7 +37,28 @@ def search_users(query: str, limit: int = 10) -> str:
     return json.dumps([u.dict() for u in results])
 ```
 
-### 3. TypeScript (MCP SDK)
+### 3. Go (JSON-RPC stdio)
+
+```go
+// Go는 공식 SDK가 없으므로 JSON-RPC over stdio를 직접 구현.
+// mcp-go 커뮤니티 라이브러리 또는 직접 구현.
+func main() {
+    scanner := bufio.NewScanner(os.Stdin)
+    for scanner.Scan() {
+        var req jsonrpc.Request
+        json.Unmarshal(scanner.Bytes(), &req)
+        switch req.Method {
+        case "tools/call":
+            result := handleToolCall(req.Params)
+            writeResponse(os.Stdout, req.ID, result)
+        case "tools/list":
+            writeResponse(os.Stdout, req.ID, toolsList)
+        }
+    }
+}
+```
+
+### 4. TypeScript (MCP SDK)
 
 ```typescript
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';

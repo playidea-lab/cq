@@ -1,28 +1,21 @@
----
-name: onboarding
-description: 새 프로젝트에 piki 표준을 적용하는 온보딩 가이드. cq init 실행 후 프로젝트 구조를 검증한다.
-triggers:
-  - "온보딩"
-  - "프로젝트 설정"
-  - "새 프로젝트"
-  - "onboarding"
-  - "project setup"
----
-
 # Project Onboarding
 
 새 프로젝트에 PI Lab 표준을 적용하는 온보딩 워크플로우입니다.
 
+## 트리거
+
+"온보딩", "프로젝트 설정", "새 프로젝트", "onboarding", "project setup"
+
 ## Step 1: 프로젝트 초기화
 
 ```bash
-# 팀과 언어를 지정하여 초기화
-cq init --team <팀> --lang <언어>
+# 프로젝트 디렉토리에서 cq 실행 (common 규칙 자동 적용)
+cq
 
-# 예시
-cq init --team backend --lang go
-cq init --team frontend --lang ts
-cq init --team research --lang python
+# 팀/언어별 표준 적용
+cq standards apply --team backend --lang go
+cq standards apply --team frontend --lang ts
+cq standards apply --team research --lang python
 ```
 
 이 명령은 piki에서 다음을 복사합니다:
