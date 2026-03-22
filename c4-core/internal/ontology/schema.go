@@ -8,9 +8,10 @@ import "time"
 type Confidence string
 
 const (
-	ConfidenceLow    Confidence = "low"
-	ConfidenceMedium Confidence = "medium"
-	ConfidenceHigh   Confidence = "high"
+	ConfidenceLow      Confidence = "low"
+	ConfidenceMedium   Confidence = "medium"
+	ConfidenceHigh     Confidence = "high"
+	ConfidenceVerified Confidence = "verified"
 )
 
 // PromotionThreshold is the frequency count at which a node is auto-promoted to HIGH confidence.
