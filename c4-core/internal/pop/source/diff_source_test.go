@@ -217,3 +217,159 @@ func TestDiffSource_RecentMessages_EmptyDiff(t *testing.T) {
 		t.Errorf("expected 0 messages for empty diff, got %d", len(msgs))
 	}
 }
+
+// --- Coding pattern detection tests ---
+
+func TestSummarizeDiff_ErrorHandling_IfErrNil(t *testing.T) {
+	diff := `diff --git a/handler.go b/handler.go
+--- a/handler.go
++++ b/handler.go
+@@ -1,3 +1,8 @@
+ package handler
++
++func do() error {
++	if err := run(); err != nil {
++		return err
++	}
++	return nil
++}
+`
+	got := summarizeDiff(diff)
+	if !strings.Contains(got, "error-check") {
+		t.Errorf("expected error-check pattern, got %q", got)
+	}
+}
+
+func TestSummarizeDiff_ErrorHandling_FmtErrorfWrap(t *testing.T) {
+	diff := `diff --git a/svc.go b/svc.go
+--- a/svc.go
++++ b/svc.go
+@@ -1,3 +1,6 @@
+ package svc
++
++func wrap(err error) error {
++	return fmt.Errorf("svc: %w", err)
++}
+`
+	got := summarizeDiff(diff)
+	if !strings.Contains(got, "error-wrapping") {
+		t.Errorf("expected error-wrapping pattern, got %q", got)
+	}
+}
+
+func TestSummarizeDiff_ErrorHandling_SentinelError(t *testing.T) {
+	diff := `diff --git a/errs.go b/errs.go
+--- a/errs.go
++++ b/errs.go
+@@ -1,3 +1,5 @@
+ package errs
++
++var ErrNotFound = errors.New("not found")
+`
+	got := summarizeDiff(diff)
+	if !strings.Contains(got, "sentinel-error") {
+		t.Errorf("expected sentinel-error pattern, got %q", got)
+	}
+}
+
+func TestSummarizeDiff_TestPattern_TableDriven(t *testing.T) {
+	diff := `diff --git a/foo_test.go b/foo_test.go
+--- a/foo_test.go
++++ b/foo_test.go
+@@ -1,3 +1,10 @@
+ package foo
++
++func TestFoo(t *testing.T) {
++	cases := []struct {
++		in  string
++		out string
++	}{}
++	_ = cases
++}
+`
+	got := summarizeDiff(diff)
+	if !strings.Contains(got, "table-driven-test") {
+		t.Errorf("expected table-driven-test pattern, got %q", got)
+	}
+}
+
+func TestSummarizeDiff_TestPattern_SubTest(t *testing.T) {
+	diff := `diff --git a/bar_test.go b/bar_test.go
+--- a/bar_test.go
++++ b/bar_test.go
+@@ -1,3 +1,7 @@
+ package bar
++
++func TestBar(t *testing.T) {
++	t.Run("case1", func(t *testing.T) {})
++}
+`
+	got := summarizeDiff(diff)
+	if !strings.Contains(got, "sub-test") {
+		t.Errorf("expected sub-test(t.Run) pattern, got %q", got)
+	}
+}
+
+func TestSummarizeDiff_FuncSize(t *testing.T) {
+	diff := `diff --git a/big.go b/big.go
+--- a/big.go
++++ b/big.go
+@@ -1,3 +1,8 @@
+ package big
++
++func DoStuff() {
++	a := 1
++	b := 2
++	_ = a + b
++}
+`
+	got := summarizeDiff(diff)
+	// Should report approximate func line count
+	if !strings.Contains(got, "func~") {
+		t.Errorf("expected func~ size indicator, got %q", got)
+	}
+}
+
+func TestSummarizeDiff_ImportChanges(t *testing.T) {
+	diff := `diff --git a/main.go b/main.go
+--- a/main.go
++++ b/main.go
+@@ -1,5 +1,8 @@
+ package main
++
++import (
++	"fmt"
++	"os"
++)
+`
+	got := summarizeDiff(diff)
+	if !strings.Contains(got, "import+") {
+		t.Errorf("expected import+ indicator, got %q", got)
+	}
+	if !strings.Contains(got, "fmt") {
+		t.Errorf("expected fmt in import list, got %q", got)
+	}
+}
+
+// --- extractImportPkg unit tests ---
+
+func TestExtractImportPkg(t *testing.T) {
+	cases := []struct {
+		token string
+		want  string
+	}{
+		{`"fmt"`, "fmt"},
+		{`"github.com/foo/bar"`, "bar"},
+		{`alias "pkg/path"`, "path"},
+		{`_ "pkg"`, "pkg"},
+		{`. "pkg"`, "pkg"},
+		{``, ""},
+		{`noQuotes`, ""},
+	}
+	for _, tc := range cases {
+		got := extractImportPkg(tc.token)
+		if got != tc.want {
+			t.Errorf("extractImportPkg(%q) = %q, want %q", tc.token, got, tc.want)
+		}
+	}
+}
