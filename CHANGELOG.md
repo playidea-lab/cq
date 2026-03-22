@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.13.1] - 2026-03-23
+
+### ✨ Features
+- **gate**: `c4_record_gate` MCP 도구 — 워커가 gate 결과를 DB에 기록
+- **gate**: `c4_submit`에 polish gate 강제 — diff >= threshold 시 gate 필수
+- **config**: `run.checkpoint_mode` (auto/interactive) + `run.polish_threshold` (default 5)
+- **worker**: 워커 프롬프트에 self-polish loop 삽입 (Step 3.5)
+
+---
+
 ## [v1.13.0] - 2026-03-23
 
 ### ✨ Features
