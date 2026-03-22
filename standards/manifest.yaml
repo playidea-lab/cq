@@ -288,6 +288,14 @@ skills:
     src: skills/codebase-audit/skill.md
     auto_install: false
 
+  git-worktree:
+    src: skills/git-worktree/skill.md
+    auto_install: false
+
+  spec-first:
+    src: skills/spec-first/skill.md
+    auto_install: true        # spec-driven은 모든 팀의 기본
+
 # 적용 순서 (우선순위: 높은 번호가 낮은 번호를 오버라이드)
 # 1. common (항상)
 # 2. languages (--lang)
