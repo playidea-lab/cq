@@ -19,11 +19,8 @@ import (
 
 // RegisterPersonaNativeHandlers registers c4_persona_* and c4_profile_* tools as Go native handlers.
 // llmGW is optional — when nil, ontology extraction falls back to rule-based extraction.
-func RegisterPersonaNativeHandlers(reg *mcp.Registry, llmGW ...*llm.Gateway) {
-	var gw *llm.Gateway
-	if len(llmGW) > 0 {
-		gw = llmGW[0]
-	}
+func RegisterPersonaNativeHandlers(reg *mcp.Registry, llmGW *llm.Gateway, projectRoot string) {
+	gw := llmGW
 	// Persona learning tools (2)
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_persona_learn",
@@ -50,7 +47,7 @@ func RegisterPersonaNativeHandlers(reg *mcp.Registry, llmGW ...*llm.Gateway) {
 			},
 			"required": []string{"commit_range"},
 		},
-	}, personaLearnFromDiffHandler(gw))
+	}, personaLearnFromDiffHandler(gw, projectRoot))
 
 	// Profile tools (2)
 	reg.Register(mcp.ToolSchema{
@@ -119,7 +116,7 @@ func personaLearnHandler() mcp.HandlerFunc {
 	}
 }
 
-func personaLearnFromDiffHandler(llmGW *llm.Gateway) mcp.HandlerFunc {
+func personaLearnFromDiffHandler(llmGW *llm.Gateway, projectRoot string) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		var params struct {
 			CommitRange string `json:"commit_range"`
@@ -232,6 +229,19 @@ func personaLearnFromDiffHandler(llmGW *llm.Gateway) mcp.HandlerFunc {
 				slog.Warn("persona: OntologyExtractor failed", "error", err)
 			} else if len(nodes) > 0 {
 				ontologyNodesAdded = updateUserOntology(username, nodes)
+			}
+		}
+
+		// L1→L2: Extract HIGH confidence nodes to project ontology (non-fatal)
+		if projectRoot != "" && ontologyNodesAdded > 0 {
+			if n, err := ontology.ExtractHighConfidence(username, projectRoot); err != nil {
+				slog.Warn("persona: L1→L2 ExtractHighConfidence failed", "error", err)
+			} else if n > 0 {
+				slog.Info("persona: L1→L2 extracted", "nodes", n)
+			}
+			// L2→piki: Detect conflicts between project ontology and piki standards (non-fatal)
+			if _, _, err := ontology.DetectPikiConflicts(projectRoot); err != nil {
+				slog.Warn("persona: piki conflict detection failed", "error", err)
 			}
 		}
 

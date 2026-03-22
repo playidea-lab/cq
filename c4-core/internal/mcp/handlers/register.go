@@ -106,7 +106,7 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 	if opts != nil {
 		llmGW = opts.LLMGateway
 	}
-	registerC2Native(reg, proxy, llmGW)
+	registerC2Native(reg, proxy, llmGW, rootDir)
 	// Knowledge (13+ tools) — build-tagged via knowledgehandler subpackage
 	if opts != nil && opts.KnowledgeStore != nil {
 		knowledgehandler.RegisterKnowledgeNativeHandlers(reg, &knowledgehandler.KnowledgeNativeOpts{
@@ -144,9 +144,9 @@ func RegisterAllHandlersLazyWithOpts(reg *mcp.Registry, store Store, rootDir str
 
 // registerC2Native registers C2 Workspace/Profile/Persona (6 tools) + Doc parsing (2 tools).
 // Always compiled — no build tag (C2 native has no heavy external dependencies).
-func registerC2Native(reg *mcp.Registry, proxy *BridgeProxy, llmGW *llm.Gateway) {
+func registerC2Native(reg *mcp.Registry, proxy *BridgeProxy, llmGW *llm.Gateway, projectRoot string) {
 	RegisterWorkspaceNativeHandlers(reg)
-	RegisterPersonaNativeHandlers(reg, llmGW)
+	RegisterPersonaNativeHandlers(reg, llmGW, projectRoot)
 	RegisterDocProxyHandlers(reg, proxy)
 }
 
