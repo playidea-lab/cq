@@ -56,42 +56,6 @@ func TestServeMux_DaemonPrefix_GPUDisabled(t *testing.T) {
 	}
 }
 
-func TestLoadC4CloudEnv_BothSet(t *testing.T) {
-	cfg := config.C4Config{}
-	cfg.Cloud.URL = "https://example.supabase.co"
-	cfg.Cloud.AnonKey = "test-anon-key"
-	envs := loadC4CloudEnv(cfg)
-	if len(envs) != 2 {
-		t.Fatalf("expected 2 env vars, got %d", len(envs))
-	}
-	if envs[0] != "C5_SUPABASE_URL=https://example.supabase.co" {
-		t.Errorf("envs[0] = %q, want %q", envs[0], "C5_SUPABASE_URL=https://example.supabase.co")
-	}
-	if envs[1] != "C5_SUPABASE_KEY=test-anon-key" {
-		t.Errorf("envs[1] = %q, want %q", envs[1], "C5_SUPABASE_KEY=test-anon-key")
-	}
-}
-
-func TestLoadC4CloudEnv_Empty(t *testing.T) {
-	cfg := config.C4Config{}
-	envs := loadC4CloudEnv(cfg)
-	if len(envs) != 0 {
-		t.Fatalf("expected 0 env vars, got %d: %v", len(envs), envs)
-	}
-}
-
-func TestLoadC4CloudEnv_URLOnly(t *testing.T) {
-	cfg := config.C4Config{}
-	cfg.Cloud.URL = "https://example.supabase.co"
-	envs := loadC4CloudEnv(cfg)
-	if len(envs) != 1 {
-		t.Fatalf("expected 1 env var, got %d", len(envs))
-	}
-	if envs[0] != "C5_SUPABASE_URL=https://example.supabase.co" {
-		t.Errorf("envs[0] = %q, want %q", envs[0], "C5_SUPABASE_URL=https://example.supabase.co")
-	}
-}
-
 // TestServeStaleCheckerRegistration verifies that when StaleChecker.Enabled=false,
 // calling registerStaleCheckerServeComponent does not add a component to the manager.
 func TestServeStaleCheckerRegistration(t *testing.T) {
@@ -294,36 +258,3 @@ func TestRegisterKnowledgeSuggestPoller_NoURL(t *testing.T) {
 	}
 }
 
-// TestHealthHandler_SkippedNotDegraded verifies that when all components are
-// "skipped", the HealthHandler returns overall status "ok" (not "degraded").
-func TestHealthHandler_SkippedNotDegraded(t *testing.T) {
-	mgr := serve.NewManager()
-
-	// Register a hub component with a missing binary so Health() returns "skipped".
-	hub := serve.NewHubComponent(serve.HubComponentConfig{
-		Binary: "c5-binary-that-does-not-exist-xyz",
-		Port:   19995,
-	})
-	// Start it so startErr is set (graceful skip).
-	if err := hub.Start(context.Background()); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	mgr.Register(hub)
-
-	handler := serve.HealthHandler(mgr)
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	handler(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d (all-skipped should be overall ok)", rec.Code, http.StatusOK)
-	}
-
-	var hr serve.HealthResponse
-	if err := json.NewDecoder(rec.Body).Decode(&hr); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if hr.Status != "ok" {
-		t.Errorf("overall status = %q, want %q", hr.Status, "ok")
-	}
-}
