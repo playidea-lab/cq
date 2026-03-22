@@ -191,6 +191,42 @@ skills:
     src: skills/postmortem/skill.md
     auto_install: false
 
+  feature-dev:
+    src: skills/feature-dev/skill.md
+    auto_install: false
+
+  doc-writing:
+    src: skills/doc-writing/skill.md
+    auto_install: false
+
+  webapp-testing:
+    src: skills/webapp-testing/skill.md
+    auto_install: false
+
+  mcp-builder:
+    src: skills/mcp-builder/skill.md
+    auto_install: false
+
+  hookify:
+    src: skills/hookify/skill.md
+    auto_install: false
+
+  estimation:
+    src: skills/estimation/skill.md
+    auto_install: false
+
+  claude-md-improver:
+    src: skills/claude-md-improver/skill.md
+    auto_install: true       # CLAUDE.md 개선
+
+  automation-recommender:
+    src: skills/automation-recommender/skill.md
+    auto_install: false
+
+  internal-comms:
+    src: skills/internal-comms/skill.md
+    auto_install: false
+
 # 적용 순서 (우선순위: 높은 번호가 낮은 번호를 오버라이드)
 # 1. common (항상)
 # 2. languages (--lang)
