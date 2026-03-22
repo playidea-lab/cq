@@ -4,6 +4,18 @@ package ontology
 
 import "time"
 
+// Confidence represents the trust level of an ontology node.
+type Confidence string
+
+const (
+	ConfidenceLow    Confidence = "low"
+	ConfidenceMedium Confidence = "medium"
+	ConfidenceHigh   Confidence = "high"
+)
+
+// PromotionThreshold is the frequency count at which a node is auto-promoted to HIGH confidence.
+const PromotionThreshold = 3
+
 // Node represents a named concept in the ontology with associated metadata.
 type Node struct {
 	// Label is a human-readable name for the concept.
@@ -14,6 +26,10 @@ type Node struct {
 	Tags []string `yaml:"tags,omitempty"`
 	// Properties holds arbitrary key-value pairs for extensibility.
 	Properties map[string]string `yaml:"properties,omitempty"`
+	// Frequency tracks how many times this node has been observed.
+	Frequency int `yaml:"frequency,omitempty"`
+	// NodeConfidence indicates the trust level (low, medium, high).
+	NodeConfidence Confidence `yaml:"confidence,omitempty"`
 }
 
 // CoreSchema holds the named concept nodes that make up the ontology.
