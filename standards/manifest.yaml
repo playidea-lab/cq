@@ -123,18 +123,72 @@ teams:
     default_langs: []
     domain: security
 
+  pm:
+    rules:
+      - teams/pm/rules/pm.md
+    default_langs: []
+    domain: pm
+
+  qa:
+    rules:
+      - teams/qa/rules/qa.md
+    default_langs: []
+    domain: qa
+
+  ops:
+    rules:
+      - teams/ops/rules/ops.md
+    default_langs: [go, python]
+    domain: ops
+
 # Skills — cq init 시 프로젝트에 복사 가능한 스킬
 skills:
   company-review:
     src: skills/company-review/skill.md
     auto_install: true      # 모든 프로젝트에 자동 설치
 
+  pr-review:
+    src: skills/pr-review/skill.md
+    auto_install: true      # PR 리뷰 체크리스트
+
+  incident-response:
+    src: skills/incident-response/skill.md
+    auto_install: true      # 장애 대응
+
   deploy:
     src: skills/deploy/skill.md
-    auto_install: false     # 명시적 설치만
+    auto_install: false
 
   onboarding:
     src: skills/onboarding/skill.md
+    auto_install: false
+
+  migration:
+    src: skills/migration/skill.md
+    auto_install: false
+
+  refactor:
+    src: skills/refactor/skill.md
+    auto_install: false
+
+  api-design:
+    src: skills/api-design/skill.md
+    auto_install: false
+
+  perf-audit:
+    src: skills/perf-audit/skill.md
+    auto_install: false
+
+  security-audit:
+    src: skills/security-audit/skill.md
+    auto_install: false
+
+  data-pipeline:
+    src: skills/data-pipeline/skill.md
+    auto_install: false
+
+  postmortem:
+    src: skills/postmortem/skill.md
     auto_install: false
 
 # 적용 순서 (우선순위: 높은 번호가 낮은 번호를 오버라이드)
