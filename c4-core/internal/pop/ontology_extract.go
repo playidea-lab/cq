@@ -23,8 +23,10 @@ func NewOntologyExtractor(llm LLMClient) *OntologyExtractor {
 }
 
 // ontologyPrompt builds the LLM prompt for extracting ontology nodes.
-func ontologyPrompt(summary string) string {
-	return `You are analyzing a developer's coding behavior to build their personal ontology profile.
+// existingLabels are passed so the LLM reuses them instead of creating synonyms.
+func ontologyPrompt(summary string, existingLabels []string) string {
+	var sb strings.Builder
+	sb.WriteString(`You are analyzing a developer's coding behavior to build their personal ontology profile.
 Extract patterns about HOW this developer thinks, judges, and codes — not WHAT files they changed.
 
 Focus on these 4 axes:
@@ -34,7 +36,7 @@ Focus on these 4 axes:
 4. workflow — How they work: commit frequency, refactoring approach, review habits
 
 Return a JSON array. Each object must have:
-- "label": short pattern name (e.g. "sentinel_error_handling", "table_driven_tests")
+- "label": short snake_case pattern name (e.g. "sentinel_error_handling", "table_driven_tests")
 - "description": what this pattern means about the developer
 - "tags": array containing the axis ("judgment", "domain", "style", or "workflow") + topic tags
 
@@ -44,16 +46,22 @@ Rules:
 - Each node should be actionable: if you saw this developer's code again, you'd recognize this pattern
 - 3-8 nodes per summary is ideal
 - Return ONLY valid JSON array, no other text
+`)
 
-Example output:
-[
-  {"label":"small_function_preference","description":"Splits functions over 30 lines into smaller units","tags":["style","refactoring"]},
-  {"label":"error_wrapping","description":"Wraps errors with context using fmt.Errorf with %w verb","tags":["style","error-handling","go"]},
-  {"label":"test_before_implement","description":"Writes test files before or alongside implementation","tags":["workflow","tdd"]}
-]
+	if len(existingLabels) > 0 {
+		sb.WriteString("\nIMPORTANT — These labels already exist in the developer's ontology.\n")
+		sb.WriteString("If you observe the SAME pattern, reuse the EXACT label from this list (do NOT create synonyms):\n")
+		for _, l := range existingLabels {
+			sb.WriteString("  - ")
+			sb.WriteString(l)
+			sb.WriteByte('\n')
+		}
+		sb.WriteString("Only create a NEW label if the pattern is genuinely different from all of the above.\n\n")
+	}
 
-Behavior summary:
-` + summary
+	sb.WriteString("Behavior summary:\n")
+	sb.WriteString(summary)
+	return sb.String()
 }
 
 // parseOntologyNodes attempts to unmarshal an LLM JSON response into ontology nodes.
@@ -124,13 +132,19 @@ func ruleBasedNodes(summary string) []ontology.Node {
 }
 
 // Extract calls the LLM to extract ontology nodes from the given behavior summary.
+// existingLabels are labels already in the user's ontology — passed to the LLM
+// so it reuses them instead of creating synonyms.
 // If the LLM call fails or returns no nodes, it falls back to rule-based extraction.
-func (e *OntologyExtractor) Extract(ctx context.Context, summary string) ([]ontology.Node, error) {
+func (e *OntologyExtractor) Extract(ctx context.Context, summary string, existingLabels ...[]string) ([]ontology.Node, error) {
 	if strings.TrimSpace(summary) == "" {
 		return nil, nil
 	}
 
-	prompt := ontologyPrompt(summary)
+	var labels []string
+	if len(existingLabels) > 0 {
+		labels = existingLabels[0]
+	}
+	prompt := ontologyPrompt(summary, labels)
 	raw, err := e.llm.Complete(ctx, prompt)
 	if err != nil {
 		log.Printf("pop: OntologyExtractor: llm failed, falling back to rule-based: %v", err)

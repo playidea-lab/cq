@@ -224,7 +224,14 @@ func personaLearnFromDiffHandler(llmGW *llm.Gateway, projectRoot string) mcp.Han
 				llmClient = &noopLLMClient{}
 			}
 			extractor := pop.NewOntologyExtractor(llmClient)
-			nodes, err := extractor.Extract(context.Background(), summary)
+			// Pass existing ontology labels so LLM reuses them (prevents synonym fragmentation)
+			var existingLabels []string
+			if existing, loadErr := ontology.Load(username); loadErr == nil && existing != nil {
+				for path := range existing.Schema.Nodes {
+					existingLabels = append(existingLabels, path)
+				}
+			}
+			nodes, err := extractor.Extract(context.Background(), summary, existingLabels)
 			if err != nil {
 				slog.Warn("persona: OntologyExtractor failed", "error", err)
 			} else if len(nodes) > 0 {
