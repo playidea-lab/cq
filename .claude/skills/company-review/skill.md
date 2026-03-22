@@ -1,12 +1,12 @@
 ---
 name: company-review
-description: PI Lab 표준 코드 리뷰. soul.md 판단 기준 + review-criteria.md 6축 평가를 적용하여 MR/PR을 리뷰한다.
-triggers:
-  - "코드 리뷰"
-  - "리뷰해줘"
-  - "MR 리뷰"
-  - "PR 리뷰"
-  - "company review"
+description: |
+  PI Lab 표준 코드 리뷰 스킬. PR/MR 리뷰, diff 리뷰, 코드 변경사항 검토 요청 시
+  반드시 이 스킬을 사용하세요. soul.md 판단 기준 + review-criteria.md 6축 평가
+  (Correctness, Security, Reliability, Observability, Test Coverage, Readability)를
+  적용합니다. "리뷰해줘", "PR 리뷰", "MR 리뷰", "코드 리뷰", "code review",
+  "diff 확인", "변경사항 검토", "6축 평가", "company review" 등의 요청에 트리거됩니다.
+  단순 코드 질문이나 리팩토링 조언이 아닌, 변경사항에 대한 체계적 리뷰가 필요할 때 사용합니다.
 ---
 
 # Company Standard Code Review

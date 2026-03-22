@@ -39,11 +39,7 @@ _find_c4_root() {
     return 1
 }
 
-C4_ROOT=$(_find_c4_root) || {
-    # No C4 project — emit allow JSON (not bare exit 0)
-    echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","message":"no C4 project"}}}'
-    exit 0
-}
+C4_ROOT=$(_find_c4_root) || exit 0
 
 # Load config
 HOOK_CONFIG_JSON="${C4_ROOT}/.c4/hook-config.json"
@@ -56,7 +52,6 @@ BLOCK_PATTERNS=()
 if [[ -f "$HOOK_CONFIG_JSON" ]] && command -v jq &>/dev/null; then
     _enabled=$(jq -r '.enabled // true' "$HOOK_CONFIG_JSON" 2>/dev/null)
     if [[ "$_enabled" == "false" ]]; then
-        echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","message":"hook disabled"}}}'
         exit 0
     fi
     PERMISSION_MODE=$(jq -r '.mode // "model"' "$HOOK_CONFIG_JSON" 2>/dev/null)
@@ -65,7 +60,6 @@ if [[ -f "$HOOK_CONFIG_JSON" ]] && command -v jq &>/dev/null; then
     while IFS= read -r _p; do [[ -n "$_p" ]] && BLOCK_PATTERNS+=("$_p"); done < <(jq -r '.block_patterns[]? // empty' "$HOOK_CONFIG_JSON" 2>/dev/null)
 else
     # No config: C4 project found but hook-config.json not yet generated — allow all
-    echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","message":"no hook-config.json"}}}'
     exit 0
 fi
 
@@ -123,7 +117,8 @@ done
 if [[ "$PERMISSION_MODE" == "model" ]]; then
     api_key="${ANTHROPIC_API_KEY:-}"
     if [[ -z "$api_key" ]] || ! command -v jq &>/dev/null; then
-        _emit_allow "fail-open: no API key or jq"
+        # No API key or jq — allow (fail open)
+        exit 0
     fi
 
     # Build context string for the model
@@ -162,16 +157,12 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
             elif [[ "$allow" == "true" ]]; then
                 _emit_allow "AI reviewer approved: $reason"
             fi
-            fi
-            # allow == "null" (parse failure) → emit allow
-            _emit_allow "fail-open: could not parse AI response"
+            # allow == "null" (parse failure) → fall through to fail-open exit 0
         fi
     fi
-    # empty response from API
-    _emit_allow "fail-open: no API response"
 fi
 
 # =============================================================================
 # Default: allow (fail open — hook mode or API unavailable)
 # =============================================================================
-_emit_allow "fail-open: default allow"
+exit 0
