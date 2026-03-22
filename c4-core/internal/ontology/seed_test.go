@@ -291,3 +291,164 @@ func TestSeedThenMerge_RoundTrip(t *testing.T) {
 		t.Errorf("expected git frequency 2, got %d", git.Frequency)
 	}
 }
+
+func TestSeedFromProject_EmptyProject_IsNoOp(t *testing.T) {
+	setupTempHome(t)
+	root := t.TempDir()
+
+	n, err := SeedFromProject("alice", root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 nodes seeded, got %d", n)
+	}
+}
+
+func TestSeedFromProject_CopiesProjectScopedNodes(t *testing.T) {
+	setupTempHome(t)
+	root := t.TempDir()
+
+	proj := &ProjectOntology{
+		Version: defaultVersion,
+		Schema: CoreSchema{
+			Nodes: map[string]Node{
+				"arch/event-bus": {Label: "EventBus", Scope: "project", Frequency: 4, NodeConfidence: ConfidenceHigh},
+				"arch/hub":       {Label: "Hub", Scope: "project", Frequency: 2, NodeConfidence: ConfidenceMedium},
+			},
+		},
+	}
+	if err := SaveProject(root, proj); err != nil {
+		t.Fatalf("save project: %v", err)
+	}
+
+	n, err := SeedFromProject("bob", root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("expected 2 nodes seeded, got %d", n)
+	}
+
+	local, err := Load("bob")
+	if err != nil {
+		t.Fatalf("load local: %v", err)
+	}
+	if len(local.Schema.Nodes) != 2 {
+		t.Fatalf("expected 2 nodes in local, got %d", len(local.Schema.Nodes))
+	}
+	if local.Schema.Nodes["arch/event-bus"].Label != "EventBus" {
+		t.Errorf("expected label EventBus, got %s", local.Schema.Nodes["arch/event-bus"].Label)
+	}
+}
+
+func TestSeedFromProject_SkipsNonProjectScopedNodes(t *testing.T) {
+	setupTempHome(t)
+	root := t.TempDir()
+
+	// Project ontology with mixed scopes.
+	proj := &ProjectOntology{
+		Version: defaultVersion,
+		Schema: CoreSchema{
+			Nodes: map[string]Node{
+				"arch/core":  {Label: "Core", Scope: "project", Frequency: 3, NodeConfidence: ConfidenceHigh},
+				"tools/lint": {Label: "Lint", Scope: "global", Frequency: 1, NodeConfidence: ConfidenceLow},
+				"tools/ci":   {Label: "CI", Scope: "", Frequency: 1, NodeConfidence: ConfidenceLow},
+			},
+		},
+	}
+	if err := SaveProject(root, proj); err != nil {
+		t.Fatalf("save project: %v", err)
+	}
+
+	n, err := SeedFromProject("carol", root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("expected 1 node seeded (project-scoped only), got %d", n)
+	}
+
+	local, err := Load("carol")
+	if err != nil {
+		t.Fatalf("load local: %v", err)
+	}
+	if _, ok := local.Schema.Nodes["arch/core"]; !ok {
+		t.Error("expected arch/core in local ontology")
+	}
+	if _, ok := local.Schema.Nodes["tools/lint"]; ok {
+		t.Error("did not expect global-scoped tools/lint in local ontology")
+	}
+}
+
+func TestSeedFromProject_MergesWithExistingL1(t *testing.T) {
+	setupTempHome(t)
+	root := t.TempDir()
+
+	proj := &ProjectOntology{
+		Version: defaultVersion,
+		Schema: CoreSchema{
+			Nodes: map[string]Node{
+				"arch/hub": {Label: "Hub", Scope: "project", Frequency: 3, NodeConfidence: ConfidenceHigh},
+			},
+		},
+	}
+	if err := SaveProject(root, proj); err != nil {
+		t.Fatalf("save project: %v", err)
+	}
+
+	// L1 already has a different node + the same node with different data.
+	local := &Ontology{
+		Version: defaultVersion,
+		Schema: CoreSchema{
+			Nodes: map[string]Node{
+				"lang/go":  {Label: "Go", Frequency: 2, NodeConfidence: ConfidenceMedium},
+				"arch/hub": {Label: "Hub Local", Frequency: 1, NodeConfidence: ConfidenceLow},
+			},
+		},
+	}
+	if err := Save("dave", local); err != nil {
+		t.Fatalf("save local: %v", err)
+	}
+
+	n, err := SeedFromProject("dave", root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("expected 1 node processed, got %d", n)
+	}
+
+	merged, err := Load("dave")
+	if err != nil {
+		t.Fatalf("load merged: %v", err)
+	}
+	if len(merged.Schema.Nodes) != 2 {
+		t.Fatalf("expected 2 nodes total, got %d", len(merged.Schema.Nodes))
+	}
+	// arch/hub frequency should be incremented (1 existing + 3 incoming → 4, or via AddOrUpdate).
+	hub := merged.Schema.Nodes["arch/hub"]
+	if hub.Frequency < 1 {
+		t.Errorf("expected positive frequency after merge, got %d", hub.Frequency)
+	}
+}
+
+func TestSeedFromProject_RejectsEmptyUsername(t *testing.T) {
+	setupTempHome(t)
+	root := t.TempDir()
+
+	_, err := SeedFromProject("", root)
+	if err == nil {
+		t.Error("expected error for empty username")
+	}
+}
+
+func TestSeedFromProject_RejectsGlobalUsername(t *testing.T) {
+	setupTempHome(t)
+	root := t.TempDir()
+
+	_, err := SeedFromProject(GlobalUsername, root)
+	if err == nil {
+		t.Error("expected error for global username as target")
+	}
+}
