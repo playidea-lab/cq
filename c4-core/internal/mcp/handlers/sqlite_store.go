@@ -490,6 +490,9 @@ func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	// 7. Enrich with project ontology (cross-position patterns)
 	s.enrichWithOntology(assignment)
 
+	// 8. Enrich with personal ontology HIGH nodes (developer profile)
+	s.enrichWithPersonalOntology(assignment)
+
 	// C3 EventBus: publish task.started event
 	s.notifyEventBus("task.started", map[string]any{
 		"task_id":   taskID,
