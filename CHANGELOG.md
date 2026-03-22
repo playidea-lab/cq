@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.12.1] - 2026-03-23
+
+### ✨ Features
+
+- **standards**: paper-review + paper-writing 스킬 추가 (연구팀, 총 26 스킬)
+- **ontology**: L3 collective patterns — 패턴 익명화 + Hub 업로드
+- **infra**: collective_patterns 테이블 (L3 클러스터 지능)
+- **mcp**: `c4_record_gate` — 표준화된 gate 기록 도구
+- **config**: RunConfig (checkpoint_mode, polish_threshold)
+- **mcp**: c4_submit에 polish gate 체크 추가
+
+### 🐛 Bug Fixes
+
+- **lsp**: TS/JS multilspy shutdown 시 psutil 에러 → 심볼 보존하도록 수정
+
+---
+
 ## [v1.12.0] - 2026-03-23
 
 ### ✨ Features
