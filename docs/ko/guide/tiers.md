@@ -14,10 +14,11 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 
 포함 기능:
 - 전체 태스크 관리 (plan → run → review → finish)
+- **Polish & Refine 게이트** — Go 레벨 품질 강제
 - 로컬 SQLite 데이터베이스
 - 워커당 git 워크트리 격리
 - 바이너리에 내장된 스킬
-- `cq doctor` 환경 점검
+- `cq doctor --fix` 환경 자동 복구
 - 시크릿 스토어 (`~/.c4/secrets.db`)
 - Personal Ontology Pipeline (POP)
 
@@ -52,7 +53,7 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 
 ## full
 
-**분산 워커 큐와 데스크톱 앱을 포함한 전체 기능.**
+**분산 워커 큐, 3계층 온톨로지를 포함한 전체 기능.**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier full
@@ -62,8 +63,8 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 - **Supabase 워커 큐** — LISTEN/NOTIFY 기반 분산 워커 큐 (NAT-safe, 아웃바운드 연결만)
 - **CDP** — Chrome DevTools Protocol 자동화
 - **GPU** — 로컬 GPU 잡 스케줄러
-- **C1 Messenger** — Tauri 데스크톱 대시보드
-- **Research** — 논문/실험 추적 루프
+- **Research Loop (C9)** — c9-* 스킬 11개로 ML 실험 루프
+- **3계층 온톨로지** — L1 로컬 → L2 프로젝트 → L3 집단 패턴 학습
 - **연구 루프 (C9)** — c9-* 스킬 11개로 ML 실험 루프 자동화
 
 적합한 경우: 프로덕션 배포, ML 워크플로우, 대규모 팀.
@@ -75,23 +76,24 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 | 기능 | solo | connected | full |
 |------|:----:|:---------:|:----:|
 | 태스크 관리 | ✅ | ✅ | ✅ |
+| Polish & Refine 게이트 | ✅ | ✅ | ✅ |
 | 로컬 SQLite | ✅ | ✅ | ✅ |
 | 스킬 내장 | ✅ | ✅ | ✅ |
 | 시크릿 스토어 | ✅ | ✅ | ✅ |
+| POP (개인 온톨로지) | ✅ | ✅ | ✅ |
+| 페르소나/Soul 진화 | ✅ | ✅ | ✅ |
 | Supabase 동기화 | — | ✅ | ✅ |
 | LLM Gateway | — | ✅ | ✅ |
 | EventBus | — | ✅ | ✅ |
-| C9 Knowledge (시맨틱) | — | ✅ | ✅ |
+| Knowledge (시맨틱 + 자동 pull) | — | ✅ | ✅ |
 | Telegram 봇 | — | ✅ | ✅ |
-| 지식 자동 pull | — | ✅ | ✅ |
+| Secret Central | — | ✅ | ✅ |
+| 스킬 헬스 파이프라인 | — | ✅ | ✅ |
 | 분산 워커 (LISTEN/NOTIFY) | — | — | ✅ |
 | CDP 자동화 | — | — | ✅ |
 | GPU 스케줄러 | — | — | ✅ |
-| POP (개인 온톨로지) | ✅ | ✅ | ✅ |
-| 페르소나/Soul 진화 | ✅ | ✅ | ✅ |
-| 스킬 헬스 파이프라인 | — | ✅ | ✅ |
 | 연구 루프 (c9-*) | — | — | ✅ |
-| C6 Secret Central | — | ✅ | ✅ |
+| 3계층 온톨로지 (L1→L2→L3) | — | — | ✅ |
 
 ## 설정 파일 위치
 

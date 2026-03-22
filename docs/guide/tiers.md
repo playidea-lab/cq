@@ -14,10 +14,11 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 
 Included features:
 - Full task management (plan → run → review → finish)
+- **Polish & Refine gates** — Go-level quality enforcement
 - Local SQLite database
 - Git worktree isolation per worker
 - Skills embedded in binary
-- `cq doctor` environment checks
+- `cq doctor --fix` environment auto-repair
 - Secret store (`~/.c4/secrets.db`)
 - Personal Ontology Pipeline (POP)
 
@@ -62,9 +63,8 @@ Additional features on top of `connected`:
 - **Supabase Worker Queue** — distributed worker queue via LISTEN/NOTIFY (NAT-safe, outbound connection only)
 - **CDP** — Chrome DevTools Protocol automation
 - **GPU** — local GPU job scheduler
-- **C1 Messenger** — Tauri desktop dashboard
-- **Research** — paper/experiment tracking loop
 - **Research Loop (C9)** — ML experiment loop with c9-* skills (11 skills)
+- **3-Layer Ontology** — L1 local → L2 project → L3 collective pattern learning
 
 Best for: production deployments, ML workflows, large teams.
 
@@ -75,23 +75,24 @@ Best for: production deployments, ML workflows, large teams.
 | Feature | solo | connected | full |
 |---------|:----:|:---------:|:----:|
 | Task management | ✅ | ✅ | ✅ |
+| Polish & Refine gates | ✅ | ✅ | ✅ |
 | Local SQLite | ✅ | ✅ | ✅ |
 | Skills embedded | ✅ | ✅ | ✅ |
 | Secret store | ✅ | ✅ | ✅ |
+| POP (Personal Ontology) | ✅ | ✅ | ✅ |
+| Persona/Soul Evolution | ✅ | ✅ | ✅ |
 | Supabase sync | — | ✅ | ✅ |
 | LLM Gateway | — | ✅ | ✅ |
 | EventBus | — | ✅ | ✅ |
-| C9 Knowledge (semantic) | — | ✅ | ✅ |
+| Knowledge (semantic + auto-pull) | — | ✅ | ✅ |
 | Telegram bot | — | ✅ | ✅ |
-| Knowledge auto-pull | — | ✅ | ✅ |
+| Secret Central | — | ✅ | ✅ |
+| Skill Health Pipeline | — | ✅ | ✅ |
 | Distributed workers (LISTEN/NOTIFY) | — | — | ✅ |
 | CDP automation | — | — | ✅ |
 | GPU scheduler | — | — | ✅ |
-| POP (Personal Ontology) | ✅ | ✅ | ✅ |
-| Persona/Soul Evolution | ✅ | ✅ | ✅ |
-| Skill Health Pipeline | — | ✅ | ✅ |
 | Research Loop (c9-*) | — | — | ✅ |
-| C6 Secret Central | — | ✅ | ✅ |
+| 3-Layer Ontology (L1→L2→L3) | — | — | ✅ |
 
 ## Config file location
 
