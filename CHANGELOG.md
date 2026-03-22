@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.13.0] - 2026-03-23
+
+### ✨ Features
+- **ontology**: E2E 파이프라인 연결 — 3계층 온톨로지 시스템 완전 동작
+  - L1→L2 자동 추출 (persona_learn → ExtractHighConfidence)
+  - L2→piki 모순 감지 자동 트리거
+  - L2→신규 유저 시드 (세션 시작 시 SeedFromProject)
+  - L2→L3 Hub 업로드 (Anonymize → HubUploader, best-effort)
+  - L3→L1 Hub 다운로드 (세션 시작 시 백그라운드 goroutine)
+  - MCP 핸들러: c4_collective_sync, c4_collective_stats
+
+---
+
 ## [v1.12.1] - 2026-03-23
 
 ### ✨ Features
