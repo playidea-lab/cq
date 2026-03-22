@@ -281,6 +281,13 @@ For Worker Packet format and DoD principles, see `references/worker-packet.md`.
 
 ## Phase 4.5: Plan Critique Loop
 
+```python
+# 소규모 태스크 자동 skip
+if len(draft_tasks) <= 3:
+    print(f"⏭️  태스크 {len(draft_tasks)}개 — critique skip (소규모 작업)")
+    → Phase 4.9
+```
+
 Worker 기반 Pre-Mortem 분석. 상세: `references/critique-loop.md`
 
 매 라운드마다 fresh Worker 스폰 → 비판 → 수정 → 수렴 판정 (max 3 rounds).
