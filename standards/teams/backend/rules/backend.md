@@ -50,3 +50,13 @@
 - Dockerfile: multi-stage build. 최종 이미지에 빌드 도구 포함 금지.
 - 환경 구분: 환경변수로만. 코드 분기 금지.
 - readiness probe 통과 전까지 트래픽 차단.
+
+## CQ 연동 (CQ 프로젝트인 경우)
+
+| 작업 | CQ 도구/스킬 |
+|------|-------------|
+| API/서비스 설계 | `/c4-plan` |
+| 구현 실행 | `/c4-run` |
+| 빌드·린트·테스트 검증 | `/c4-validate` |
+| 구현 마무리 (빌드, 커밋) | `/c4-finish` |
+| 기존 패턴/장애 이력 조회 | `c4_knowledge_search` |

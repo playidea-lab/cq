@@ -43,3 +43,14 @@
 
 - `uv run` 필수. `pip install`, `python script.py` 금지.
 - PyTorch 버전: 팀 표준 버전 사용. 개인 버전 금지.
+
+## CQ 연동 (CQ 프로젝트인 경우)
+
+| 작업 | CQ 도구/스킬 |
+|------|-------------|
+| 문헌 조사 | `/c9-survey` |
+| 논문 3-pass 리뷰 | `/c4-review` |
+| 실험 설계 토론 | `/c9-conference` |
+| 자율 연구 루프 | `/c9-loop`, `/research-loop` |
+| 실험 결과 기록 | `c4_experiment_record` |
+| 연구 보고서 생성 | `/c9-report` |

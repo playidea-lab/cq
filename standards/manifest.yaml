@@ -227,6 +227,18 @@ skills:
     src: skills/internal-comms/skill.md
     auto_install: false
 
+  proposal-writer:
+    src: skills/proposal-writer/skill.md
+    auto_install: false
+
+  document-review:
+    src: skills/document-review/skill.md
+    auto_install: false
+
+  meeting-notes:
+    src: skills/meeting-notes/skill.md
+    auto_install: false
+
 # 적용 순서 (우선순위: 높은 번호가 낮은 번호를 오버라이드)
 # 1. common (항상)
 # 2. languages (--lang)

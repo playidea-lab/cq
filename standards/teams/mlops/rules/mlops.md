@@ -43,3 +43,13 @@
 
 - `uv run` 필수. `pip install`, `python script.py` 금지.
 - 의존성: `pyproject.toml` + `uv.lock`. requirements.txt 사용 금지.
+
+## CQ 연동 (CQ 프로젝트인 경우)
+
+| 작업 | CQ 도구/스킬 |
+|------|-------------|
+| 파이프라인/서빙 설계 | `/c4-plan` |
+| 학습/파이프라인 실행 | `/c4-run` |
+| 실험 결과 기록 | `c4_experiment_record` |
+| 자율 실험 루프 | `/c9-loop` |
+| 모델/데이터 패턴 조회 | `c4_knowledge_search` |
