@@ -44,6 +44,26 @@ func (d *DiffSource) RecentMessages(_ context.Context, _ time.Time, _ int) ([]po
 	}, nil
 }
 
+// fileStat accumulates change statistics and coding-pattern flags for one file.
+type fileStat struct {
+	added   int
+	removed int
+	// identifiers seen in +/- lines (func/type/const/var names)
+	addedIDs   []string
+	removedIDs []string
+	// coding pattern flags (detected from added lines only)
+	hasErrCheck  bool // "if err != nil"
+	hasErrWrap   bool // fmt.Errorf with %w
+	hasSentinel  bool // errors.New / errors.As / errors.Is
+	hasTableTest bool // []struct{ … } table-driven test
+	hasSubTest   bool // t.Run(
+	hasMock      bool // mock.* usage
+	addedImports []string
+	// approximate line count of added func bodies
+	funcAddedLines int
+	inAddedFunc    bool
+}
+
 // summarizeDiff parses unified diff output and returns a human-readable,
 // code-free summary of what changed in each file.
 func summarizeDiff(diff string) string {
@@ -51,18 +71,11 @@ func summarizeDiff(diff string) string {
 		return ""
 	}
 
-	type fileStat struct {
-		added   int
-		removed int
-		// identifiers seen in +/- lines (func/type/const/var names)
-		addedIDs   []string
-		removedIDs []string
-	}
-
 	files := map[string]*fileStat{}
 	var order []string // preserve insertion order for deterministic output
 
 	var currentFile string
+	inImportBlock := false
 
 	scanner := bufio.NewScanner(strings.NewReader(diff))
 	for scanner.Scan() {
@@ -80,6 +93,7 @@ func summarizeDiff(diff string) string {
 				files[currentFile] = &fileStat{}
 				order = append(order, currentFile)
 			}
+			inImportBlock = false
 
 		case strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "--- "):
 			// header lines — skip
@@ -87,8 +101,60 @@ func summarizeDiff(diff string) string {
 		case strings.HasPrefix(line, "+") && currentFile != "":
 			st := files[currentFile]
 			st.added++
-			if id := extractIdentifier(line[1:]); id != "" {
+			body := line[1:]
+			trimmed := strings.TrimSpace(body)
+
+			if id := extractIdentifier(body); id != "" {
 				st.addedIDs = append(st.addedIDs, id)
+			}
+
+			// Import block tracking
+			if trimmed == "import (" {
+				inImportBlock = true
+			} else if inImportBlock && trimmed == ")" {
+				inImportBlock = false
+			} else if inImportBlock {
+				if pkg := extractImportPkg(trimmed); pkg != "" {
+					st.addedImports = append(st.addedImports, pkg)
+				}
+			} else if strings.HasPrefix(trimmed, "import ") && !strings.Contains(trimmed, "(") {
+				// single-line: import "fmt"
+				if pkg := extractImportPkg(strings.TrimPrefix(trimmed, "import ")); pkg != "" {
+					st.addedImports = append(st.addedImports, pkg)
+				}
+			}
+
+			// Error-handling patterns
+			if strings.Contains(trimmed, "err != nil") {
+				st.hasErrCheck = true
+			}
+			if strings.Contains(trimmed, "fmt.Errorf") && strings.Contains(trimmed, "%w") {
+				st.hasErrWrap = true
+			}
+			if strings.Contains(trimmed, "errors.New(") ||
+				strings.Contains(trimmed, "errors.As(") ||
+				strings.Contains(trimmed, "errors.Is(") {
+				st.hasSentinel = true
+			}
+
+			// Test patterns
+			if strings.Contains(trimmed, "[]struct{") || strings.Contains(trimmed, "[]struct {") {
+				st.hasTableTest = true
+			}
+			if strings.Contains(trimmed, "t.Run(") {
+				st.hasSubTest = true
+			}
+			if strings.Contains(trimmed, "mock.") || strings.Contains(trimmed, "Mock(") ||
+				strings.Contains(trimmed, "MockCtrl") {
+				st.hasMock = true
+			}
+
+			// Function-size tracking: count added lines that belong to a func body
+			if strings.HasPrefix(trimmed, "func ") {
+				st.inAddedFunc = true
+				st.funcAddedLines++ // declaration line counts
+			} else if st.inAddedFunc {
+				st.funcAddedLines++
 			}
 
 		case strings.HasPrefix(line, "-") && currentFile != "":
@@ -106,18 +172,18 @@ func summarizeDiff(diff string) string {
 		if st.added == 0 && st.removed == 0 {
 			continue
 		}
-		parts := buildFileSummary(file, st.added, st.removed, st.addedIDs, st.removedIDs)
+		parts := buildFileSummary(file, st)
 		fmt.Fprintf(&sb, "%s: %s\n", file, strings.Join(parts, ", "))
 	}
 	return strings.TrimRight(sb.String(), "\n")
 }
 
 // buildFileSummary returns the ordered list of change descriptors for one file.
-func buildFileSummary(file string, added, removed int, addedIDs, removedIDs []string) []string {
+func buildFileSummary(file string, st *fileStat) []string {
 	var parts []string
 
 	// Net line-count change
-	net := added - removed
+	net := st.added - st.removed
 	switch {
 	case net > 0:
 		parts = append(parts, fmt.Sprintf("+%d줄", net))
@@ -125,29 +191,87 @@ func buildFileSummary(file string, added, removed int, addedIDs, removedIDs []st
 		parts = append(parts, fmt.Sprintf("%d줄", net))
 	default:
 		// equal add/remove → refactor hint
-		if added > 0 {
-			parts = append(parts, fmt.Sprintf("리팩토링(%d줄 교체)", added))
+		if st.added > 0 {
+			parts = append(parts, fmt.Sprintf("리팩토링(%d줄 교체)", st.added))
 		}
 	}
 
 	// Newly added identifiers
-	unique := dedup(addedIDs)
+	unique := dedup(st.addedIDs)
 	if len(unique) > 0 {
 		parts = append(parts, fmt.Sprintf("%s 추가", strings.Join(unique, "/")))
 	}
 
 	// Removed identifiers
-	uniqueRm := dedup(removedIDs)
+	uniqueRm := dedup(st.removedIDs)
 	if len(uniqueRm) > 0 {
 		parts = append(parts, fmt.Sprintf("%s 제거", strings.Join(uniqueRm, "/")))
 	}
 
-	// Infer structural pattern from file extension
-	if pat := inferPattern(file, added, removed); pat != "" {
+	// Infer structural pattern from change size
+	if pat := inferPattern(file, st.added, st.removed); pat != "" {
 		parts = append(parts, pat)
 	}
 
+	// Approximate func size for added funcs
+	if st.funcAddedLines > 0 {
+		parts = append(parts, fmt.Sprintf("func~%d줄", st.funcAddedLines))
+	}
+
+	// Error-handling patterns
+	if st.hasErrWrap {
+		parts = append(parts, "error-wrapping(fmt.Errorf %w)")
+	} else if st.hasErrCheck {
+		parts = append(parts, "error-check(if err!=nil)")
+	}
+	if st.hasSentinel {
+		parts = append(parts, "sentinel-error")
+	}
+
+	// Test patterns
+	if st.hasTableTest {
+		parts = append(parts, "table-driven-test")
+	}
+	if st.hasSubTest {
+		parts = append(parts, "sub-test(t.Run)")
+	}
+	if st.hasMock {
+		parts = append(parts, "mock-usage")
+	}
+
+	// New imports
+	uniqueImports := dedup(st.addedImports)
+	if len(uniqueImports) > 0 {
+		parts = append(parts, fmt.Sprintf("import+(%s)", strings.Join(uniqueImports, ",")))
+	}
+
 	return parts
+}
+
+// extractImportPkg extracts the package name from an import line token.
+// Handles: `"fmt"`, `alias "pkg/path"`, `. "pkg"`, `_ "pkg"`.
+func extractImportPkg(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	// Find the quoted import path (first opening quote to last closing quote)
+	open := strings.Index(token, `"`)
+	close := strings.LastIndex(token, `"`)
+	if open < 0 || close <= open {
+		return ""
+	}
+	path := token[open+1 : close]
+	if path == "" {
+		return ""
+	}
+	// Package name is the last path element
+	parts := strings.Split(path, "/")
+	pkg := parts[len(parts)-1]
+	if pkg == "" || pkg == "_" || pkg == "." {
+		return ""
+	}
+	return pkg
 }
 
 // extractIdentifier returns the top-level identifier name if the line declares
