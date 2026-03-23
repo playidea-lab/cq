@@ -524,6 +524,48 @@ func handleRequestChanges(store Store, rawArgs json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("request changes: %w", err)
 	}
 
+	// Async: record scope-warning for learn loop
+	if ss, ok := store.(*SQLiteStore); ok && ss.knowledgeWriter != nil {
+		reviewTaskID := args.ReviewTaskID
+		comments := args.Comments
+		changes := args.RequiredChanges
+		go func() {
+			// Derive impl task ID: R-XXX-0 → T-XXX-0 (replace R- prefix with T-)
+			_, baseID, version, _ := task.ParseTaskID(reviewTaskID)
+			implTaskID := fmt.Sprintf("T-%s-%d", baseID, version)
+
+			scope := ""
+			if t, err := ss.GetTask(implTaskID); err == nil && t != nil {
+				scope = t.Scope
+			}
+
+			// Build content
+			var b strings.Builder
+			fmt.Fprintf(&b, "## Rejection Reason\n%s\n\n## Required Changes\n", comments)
+			for _, c := range changes {
+				fmt.Fprintf(&b, "- %s\n", c)
+			}
+			content := b.String()
+
+			title := fmt.Sprintf("Review rejection: %s", reviewTaskID)
+			tags := []string{"scope-warning"}
+			if scope != "" {
+				tags = append(tags, scope)
+			}
+			tags = append(tags, reviewTaskID)
+
+			metadata := map[string]any{
+				"title":    title,
+				"doc_type": "scope-warning",
+				"tags":     tags,
+				"task_id":  reviewTaskID,
+			}
+			if _, err := ss.knowledgeWriter.CreateExperiment(metadata, content); err != nil {
+				slog.Warn("learn-loop: scope-warning record failed", "error", err, "task", reviewTaskID)
+			}
+		}()
+	}
+
 	return result, nil
 }
 

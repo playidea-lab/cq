@@ -155,6 +155,27 @@ func (s *SQLiteStore) enrichWithKnowledge(assignment *TaskAssignment) {
 		}
 		b.WriteString("\n")
 	}
+
+	// Scope-warning injection: past review rejections for this scope
+	if assignment.Scope != "" {
+		warnings, werr := s.knowledgeSearch.Search("scope-warning "+assignment.Scope, 3, nil)
+		if werr == nil && len(warnings) > 0 {
+			b.WriteString("## Past Review Warnings (this scope)\n\n")
+			for _, w := range warnings {
+				fmt.Fprintf(&b, "- **%s**", w.Title)
+				if s.knowledgeReader != nil {
+					if body, berr := s.knowledgeReader.GetBody(w.ID); berr == nil && body != "" {
+						if len(body) > 200 {
+							body = body[:200] + "..."
+						}
+						fmt.Fprintf(&b, ": %s", body)
+					}
+				}
+				b.WriteString("\n")
+			}
+		}
+	}
+
 	assignment.KnowledgeContext = b.String()
 }
 
@@ -275,6 +296,26 @@ func (s *SQLiteStore) enrichUnified(assignment *TaskAssignment) {
 					}
 				}
 				b.WriteByte('\n')
+			}
+		}
+
+		// Scope-warning injection: past review rejections for this scope
+		if assignment.Scope != "" {
+			warnings, werr := s.knowledgeSearch.Search("scope-warning "+assignment.Scope, 3, nil)
+			if werr == nil && len(warnings) > 0 {
+				b.WriteString("\n### Past Review Warnings (this scope)\n")
+				for _, w := range warnings {
+					fmt.Fprintf(&b, "  - **%s**", w.Title)
+					if s.knowledgeReader != nil {
+						if body, berr := s.knowledgeReader.GetBody(w.ID); berr == nil && body != "" {
+							if len(body) > 200 {
+								body = body[:200] + "..."
+							}
+							fmt.Fprintf(&b, ": %s", body)
+						}
+					}
+					b.WriteByte('\n')
+				}
 			}
 		}
 	}
