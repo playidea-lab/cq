@@ -24,16 +24,21 @@
 │              │          │  └ piki Standards      │
 │ 캐시:         │          │                       │
 │  └ SQLite    │          └──────────────────────┘
+│              │   WSS     ┌──────────────────────┐
+│ 서비스 (cq):  │◄────────►│ Relay (Fly.io)        │
+│  ├ Relay     │          │  └ NAT 관통 MCP 접근   │
+│  ├ EventBus  │          └──────────────────────┘
+│  └ Token갱신 │
 └──────────────┘
 ```
 
 | 모드 | 데이터 SSOT | LLM | 설정 |
 |------|-----------|-----|------|
 | **solo** | 로컬 SQLite | 사용자 API 키 | config.yaml 필요 |
-| **connected** | Supabase (cloud-primary) | PI Lab LLM Proxy | `cq auth`만 |
-| **full** | Supabase (cloud-primary) | PI Lab LLM Proxy | `cq auth`만 |
+| **connected** | Supabase (cloud-primary) | PI Lab LLM Proxy | `cq` (로그인+서비스 자동) |
+| **full** | Supabase (cloud-primary) | PI Lab LLM Proxy | `cq` (로그인+서비스 자동) |
 
-- `cq auth` → `cloud.mode: cloud-primary` + `llm_gateway.base_url` 자동 설정
+- `cq` → 로그인 + `cloud.mode: cloud-primary` + relay + serve 자동 설정
 - Cloud 실패 시 SQLite fallback (읽기)
 - ~70개 도구가 클라우드, ~48개 도구가 로컬 필수 (파일/Git/빌드)
 

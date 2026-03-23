@@ -19,11 +19,13 @@ CQ is the brain it's missing.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
-cq auth login    # GitHub OAuth
+cq               # Login + start service (one-time)
 cq claude        # Start building
 ```
 
 Works with **Claude Code, Cursor, Codex CLI, Gemini CLI** — any MCP-compatible tool.
+
+Update anytime: `cq update`
 
 ## What CQ Does
 
@@ -44,18 +46,20 @@ Works with **Claude Code, Cursor, Codex CLI, Gemini CLI** — any MCP-compatible
 │  ├ LSP analysis   │         │  ├ LLM Proxy (Edge Fn)     │
 │  └ MCP bridge     │         │  ├ Quality Gates            │
 │                   │         │  └ Hub (distributed jobs)   │
-│ Cache:            │         │                             │
-│  └ SQLite         │         │                             │
+│ Service (cq serve)│   WSS   │                             │
+│  ├ Relay ─────────┼────────►│  Relay (Fly.io)             │
+│  ├ EventBus       │         │  └ NAT traversal            │
+│  └ Token refresh  │         │                             │
 └──────────────────┘          └────────────────────────────┘
 
 solo:       Everything local (SQLite + your API key)
-connected:  Brain in cloud, hands local (cq auth login)
+connected:  Brain in cloud + relay (cq → login + serve)
 full:       Connected + GPU workers + research loop
 ```
 
 ## Learn More
 
-[Installation](docs/getting-started/) | [Usage Guide](docs/usage-guide.md) | [Architecture](docs/ARCHITECTURE.md) | [Commands](docs/user-guide/) | [Roadmap](docs/ROADMAP.md)
+[Installation](https://playidea-lab.github.io/cq/guide/install) | [Quick Start](https://playidea-lab.github.io/cq/guide/quickstart) | [Architecture](docs/ARCHITECTURE.md) | [Tiers](https://playidea-lab.github.io/cq/guide/tiers)
 
 ## Development
 
