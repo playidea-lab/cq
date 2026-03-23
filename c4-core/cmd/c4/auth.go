@@ -461,7 +461,7 @@ func runAuthToken(cmd *cobra.Command, args []string) error {
 
 // patchCloudConfigAfterLogin patches the cloud section of .c4/config.yaml
 // after a successful OAuth login. It sets cloud.enabled=true, cloud.url,
-// cloud.anon_key, and cloud.mode=local-first. If the user has already set
+// cloud.anon_key, and cloud.mode=cloud-primary. If the user has already set
 // cloud.url, it is preserved (not overwritten). Returns the effective URL
 // on success, or "" if patching was skipped (e.g., .c4/ doesn't exist).
 func patchCloudConfigAfterLogin(projDir string) string {
@@ -495,7 +495,7 @@ func patchCloudConfigAfterLogin(projDir string) string {
 		"enabled:":  "true",
 		"url:":      effectiveURL,
 		"anon_key:": effectiveAnonKey,
-		"mode:":     "local-first",
+		"mode:":     "cloud-primary",
 	}
 
 	result := writeCloudSectionToYAML(existing, desired)
