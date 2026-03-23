@@ -83,6 +83,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		checkHooks,
 		checkPythonSidecar,
 		checkHub,
+		checkCloud,
 		checkSupabase,
 		func() checkResult { return checkOSService(doctorFix) },
 		checkStaleSocket,
@@ -481,6 +482,59 @@ func checkHub() checkResult {
 		Name:    "Hub",
 		Status:  checkOK,
 		Message: "enabled (Supabase worker queue)",
+	}
+}
+
+// checkCloud displays cloud configuration status (no HTTP calls — config display only).
+func checkCloud() checkResult {
+	cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return checkResult{
+			Name:    "Cloud",
+			Status:  checkOK,
+			Message: "disabled (solo tier)",
+		}
+	}
+
+	content := string(data)
+	enabled := sectionYAMLValue(content, "cloud", "enabled:")
+	if enabled != "true" {
+		return checkResult{
+			Name:    "Cloud",
+			Status:  checkOK,
+			Message: "disabled (solo tier)",
+		}
+	}
+
+	url := sectionYAMLValue(content, "cloud", "url:")
+	mode := sectionYAMLValue(content, "cloud", "mode:")
+	if mode == "" {
+		mode = "unknown"
+	}
+
+	// Use c4.db mtime as a proxy for last sync time.
+	dbPath := filepath.Join(projectDir, ".c4", "c4.db")
+	lastSync := "unknown"
+	if info, statErr := os.Stat(dbPath); statErr == nil {
+		elapsed := time.Since(info.ModTime())
+		switch {
+		case elapsed < time.Minute:
+			lastSync = "방금 전"
+		case elapsed < time.Hour:
+			lastSync = fmt.Sprintf("%d분 전", int(elapsed.Minutes()))
+		case elapsed < 24*time.Hour:
+			lastSync = fmt.Sprintf("%d시간 전", int(elapsed.Hours()))
+		default:
+			lastSync = fmt.Sprintf("%d일 전", int(elapsed.Hours()/24))
+		}
+	}
+
+	msg := fmt.Sprintf("connected (%s), mode: %s, last sync: %s", url, mode, lastSync)
+	return checkResult{
+		Name:    "Cloud",
+		Status:  checkOK,
+		Message: msg,
 	}
 }
 
