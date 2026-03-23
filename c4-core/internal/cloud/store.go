@@ -921,12 +921,12 @@ func (c *CloudStore) upsert(table string, body any) error {
 			}
 		}
 
-		defer resp.Body.Close()
-
 		if resp.StatusCode >= 400 {
 			respBody, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
 			return fmt.Errorf("UPSERT %s: %d %s", table, resp.StatusCode, string(respBody))
 		}
+		resp.Body.Close()
 		return nil
 	}
 	return nil

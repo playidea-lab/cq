@@ -5,6 +5,7 @@ package hubhandler
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/mcp"
@@ -81,6 +82,11 @@ func handleCronCreate(client *hub.Client, raw json.RawMessage) (any, error) {
 	}
 	if params.Command != "" && params.DagID != "" {
 		return nil, fmt.Errorf("command and dag_id are mutually exclusive")
+	}
+
+	// S-03: Validate cron expression before saving
+	if _, err := hub.ParseCronExpr(params.CronExpr, time.Now()); err != nil {
+		return nil, fmt.Errorf("invalid cron_expr %q: %w", params.CronExpr, err)
 	}
 
 	sched := &hub.CronSchedule{

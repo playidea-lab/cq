@@ -196,9 +196,14 @@ func (c *Client) updateCronRunTimes(ctx context.Context, id string, lastRun, nex
 // parseCron — standard 5-field cron expression
 // =========================================================================
 
-// parseCron returns the next time after 'after' matching the 5-field cron expression.
+// ParseCronExpr returns the next time after 'after' matching the 5-field cron expression.
 // Fields: minute hour day-of-month month day-of-week (all 1-indexed except minute/hour).
 // Supports '*', single values, ranges (1-5), lists (1,3,5), and step values (*/5).
+// Exported for validation in MCP handlers.
+func ParseCronExpr(expr string, after time.Time) (time.Time, error) {
+	return parseCron(expr, after)
+}
+
 func parseCron(expr string, after time.Time) (time.Time, error) {
 	fields := strings.Fields(expr)
 	if len(fields) != 5 {
