@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Graph</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #666666;
+    --accent: #2563eb;
+    --success: #16a34a;
+    --warning: #d97706;
+    --error: #dc2626;
+    --blocked: #9333ea;
+    --radius: 6px;
+    --gap: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --text-secondary: #888888;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --blocked: #a855f7;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 8px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--gap);
+    height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    overflow: hidden;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+  }
+
+  .legend {
+    display: flex;
+    gap: 8px;
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 16px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    flex-shrink: 0;
+  }
+
+  .graph-container {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  svg text {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <span class="header-title">Task Graph</span>
+    <div class="legend" id="legend">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--success)"></span>done</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span>in_progress</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--warning)"></span>pending</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--blocked)"></span>blocked</span>
+    </div>
+  </div>
+
+  <div class="empty-state" id="empty-state">No tasks</div>
+
+  <div class="graph-container" id="graph-container" style="display:none">
+    <svg id="graph-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var NODE_W = 120;
+  var NODE_H = 36;
+  var PAD_X = 40;
+  var PAD_Y = 24;
+  var MARGIN = 16;
+
+  var statusColors = {
+    done: 'var(--success)',
+    in_progress: 'var(--accent)',
+    pending: 'var(--warning)',
+    blocked: 'var(--blocked)'
+  };
+
+  function esc(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // Topological sort with layers (Kahn's algorithm)
+  function topoLayers(tasks) {
+    var idMap = {};
+    var inDeg = {};
+    var children = {};
+    var i, t, d;
+
+    for (i = 0; i < tasks.length; i++) {
+      t = tasks[i];
+      idMap[t.task_id] = t;
+      inDeg[t.task_id] = 0;
+      children[t.task_id] = [];
+    }
+
+    // Build edges: dependency -> task (dep must finish before task)
+    for (i = 0; i < tasks.length; i++) {
+      t = tasks[i];
+      var deps = t.dependencies || [];
+      for (d = 0; d < deps.length; d++) {
+        if (idMap[deps[d]]) {
+          inDeg[t.task_id]++;
+          children[deps[d]].push(t.task_id);
+        }
+      }
+    }
+
+    var layers = [];
+    var queue = [];
+    var ids = Object.keys(idMap);
+
+    for (i = 0; i < ids.length; i++) {
+      if (inDeg[ids[i]] === 0) {
+        queue.push(ids[i]);
+      }
+    }
+
+    while (queue.length > 0) {
+      layers.push(queue.slice());
+      var next = [];
+      for (i = 0; i < queue.length; i++) {
+        var ch = children[queue[i]];
+        for (d = 0; d < ch.length; d++) {
+          inDeg[ch[d]]--;
+          if (inDeg[ch[d]] === 0) {
+            next.push(ch[d]);
+          }
+        }
+      }
+      queue = next;
+    }
+
+    return { layers: layers, idMap: idMap };
+  }
+
+  function render(tasks) {
+    var emptyEl = document.getElementById('empty-state');
+    var containerEl = document.getElementById('graph-container');
+    var svgEl = document.getElementById('graph-svg');
+
+    if (!tasks || tasks.length === 0) {
+      emptyEl.style.display = '';
+      containerEl.style.display = 'none';
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+    containerEl.style.display = '';
+
+    var result = topoLayers(tasks);
+    var layers = result.layers;
+    var idMap = result.idMap;
+
+    // Assign positions
+    var pos = {};
+    var maxRow = 0;
+    var col, row, id;
+
+    for (col = 0; col < layers.length; col++) {
+      for (row = 0; row < layers[col].length; row++) {
+        id = layers[col][row];
+        pos[id] = { col: col, row: row };
+        if (row > maxRow) maxRow = row;
+      }
+    }
+
+    var svgW = layers.length * (NODE_W + PAD_X) - PAD_X + MARGIN * 2;
+    var svgH = (maxRow + 1) * (NODE_H + PAD_Y) - PAD_Y + MARGIN * 2;
+
+    svgEl.setAttribute('width', svgW);
+    svgEl.setAttribute('height', svgH);
+    svgEl.setAttribute('viewBox', '0 0 ' + svgW + ' ' + svgH);
+
+    var parts = [];
+
+    // Draw edges first (behind nodes)
+    for (var i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      var deps = t.dependencies || [];
+      if (!pos[t.task_id]) continue;
+      var tx = MARGIN + pos[t.task_id].col * (NODE_W + PAD_X);
+      var ty = MARGIN + pos[t.task_id].row * (NODE_H + PAD_Y) + NODE_H / 2;
+
+      for (var d = 0; d < deps.length; d++) {
+        if (!pos[deps[d]]) continue;
+        var sx = MARGIN + pos[deps[d]].col * (NODE_W + PAD_X) + NODE_W;
+        var sy = MARGIN + pos[deps[d]].row * (NODE_H + PAD_Y) + NODE_H / 2;
+
+        var mx = (sx + tx) / 2;
+        parts.push(
+          '<path d="M' + sx + ',' + sy + ' C' + mx + ',' + sy + ' ' + mx + ',' + ty + ' ' + tx + ',' + ty + '"' +
+          ' fill="none" stroke="var(--border)" stroke-width="1.5" marker-end="url(#arrow)"/>'
+        );
+      }
+    }
+
+    // Draw nodes
+    var allIds = Object.keys(pos);
+    for (i = 0; i < allIds.length; i++) {
+      id = allIds[i];
+      var task = idMap[id];
+      var p = pos[id];
+      var x = MARGIN + p.col * (NODE_W + PAD_X);
+      var y = MARGIN + p.row * (NODE_H + PAD_Y);
+      var color = statusColors[task.status] || 'var(--border)';
+
+      var label = task.task_id;
+      if (label.length > 14) label = label.substring(0, 13) + '..';
+
+      var title = task.title || '';
+      if (title.length > 16) title = title.substring(0, 15) + '..';
+
+      parts.push(
+        '<rect x="' + x + '" y="' + y + '" width="' + NODE_W + '" height="' + NODE_H + '"' +
+        ' rx="4" fill="var(--bg)" stroke="' + color + '" stroke-width="2"/>' +
+        '<text x="' + (x + 6) + '" y="' + (y + 13) + '" font-size="10" font-weight="600" fill="' + color + '">' + esc(label) + '</text>' +
+        '<text x="' + (x + 6) + '" y="' + (y + 26) + '" font-size="9" fill="var(--text-secondary)">' + esc(title) + '</text>'
+      );
+    }
+
+    // Arrow marker definition
+    var defs = '<defs><marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">' +
+      '<path d="M0,0 L6,3 L0,6 Z" fill="var(--border)"/></marker></defs>';
+
+    svgEl.innerHTML = defs + parts.join('');
+  }
+
+  // Listen for postMessage from MCP Apps host
+  window.addEventListener('message', function (event) {
+    var msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.type === 'cq:task-graph:data') {
+      render(msg.payload);
+    }
+  });
+
+  // Also check for inline data (for direct rendering)
+  if (window.__CQ_TASK_GRAPH_DATA) {
+    render(window.__CQ_TASK_GRAPH_DATA);
+  }
+
+  // Initial empty state
+  render(null);
+})();
+</script>
+</body>
+</html>

@@ -25,3 +25,9 @@ var JobResultHTML string
 //
 //go:embed widgets/experiment_compare.html
 var ExperimentCompareHTML string
+
+// TaskGraphHTML is the embedded task graph widget HTML content.
+// Served as the ui://cq/task-graph resource via MCP resources/read.
+//
+//go:embed widgets/task_graph.html
+var TaskGraphHTML string
