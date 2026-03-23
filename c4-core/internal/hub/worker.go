@@ -37,6 +37,9 @@ func (c *Client) RegisterWorker(capabilities map[string]any) (string, error) {
 	if err := c.supabaseRPC("register_worker", body, &result); err != nil {
 		return "", fmt.Errorf("register worker: %w", err)
 	}
+	// Store capabilities for use in subsequent ClaimJob calls.
+	c.capabilities = caps
+
 	// RPC returns the hub_workers row; use our workerID as authoritative ID.
 	if id, ok := result["id"].(string); ok && id != "" {
 		c.workerID = id
@@ -65,7 +68,10 @@ func (c *Client) Heartbeat(status string) error {
 // ClaimJob claims the next available job from Supabase via RPC.
 // Returns the job and lease ID, or nil if no job is available.
 func (c *Client) ClaimJob(freeVRAM float64) (*Job, string, error) {
-	caps := []string{}
+	caps := c.capabilities
+	if caps == nil {
+		caps = []string{}
+	}
 	body := map[string]any{
 		"p_worker_id":    c.workerID,
 		"p_capabilities": caps,
@@ -103,7 +109,10 @@ func (c *Client) ClaimJobWithWait(ctx context.Context, freeVRAM float64, waitSec
 		return c.ClaimJob(freeVRAM)
 	}
 
-	caps := []string{}
+	caps := c.capabilities
+	if caps == nil {
+		caps = []string{}
+	}
 	body := map[string]any{
 		"p_worker_id":    c.workerID,
 		"p_capabilities": caps,
