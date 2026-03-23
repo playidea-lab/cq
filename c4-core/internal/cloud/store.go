@@ -62,11 +62,15 @@ type cloudTaskRow struct {
 	Branch        string            `json:"branch,omitempty"`
 	CommitSHA     string            `json:"commit_sha,omitempty"`
 	Handoff       string            `json:"handoff,omitempty"`
-	FailureSignature string         `json:"failure_signature,omitempty"`
-	BlockedAttempts  int            `json:"blocked_attempts,omitempty"`
-	LastError     string            `json:"last_error,omitempty"`
-	CreatedAt     string            `json:"created_at,omitempty"`
-	UpdatedAt     string            `json:"updated_at,omitempty"`
+	ReviewDecisionEvidence string `json:"review_decision_evidence,omitempty"`
+	FailureSignature       string `json:"failure_signature,omitempty"`
+	BlockedAttempts        int    `json:"blocked_attempts,omitempty"`
+	LastError              string `json:"last_error,omitempty"`
+	FilesChanged           string `json:"files_changed,omitempty"`
+	SessionID              string `json:"session_id,omitempty"`
+	SupersededBy           string `json:"superseded_by,omitempty"`
+	CreatedAt              string `json:"created_at,omitempty"`
+	UpdatedAt              string `json:"updated_at,omitempty"`
 }
 
 type cloudDependencies string
@@ -241,19 +245,25 @@ func (c *CloudStore) AddTask(task *store.Task) error {
 	}
 
 	row := &cloudTaskRow{
-		TaskID:        task.ID,
-		ProjectID:     c.projectID,
-		Title:         task.Title,
-		Scope:         task.Scope,
-		DoD:           task.DoD,
-		Status:        "pending",
-		Dependencies:  cloudDependencies(deps),
-		Domain:        task.Domain,
-		Priority:      task.Priority,
-		Model:         task.Model,
-		ExecutionMode: normalizeExecutionMode(task.ExecutionMode),
-		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+		TaskID:                 task.ID,
+		ProjectID:              c.projectID,
+		Title:                  task.Title,
+		Scope:                  task.Scope,
+		DoD:                    task.DoD,
+		Status:                 "pending",
+		Dependencies:           cloudDependencies(deps),
+		Domain:                 task.Domain,
+		Priority:               task.Priority,
+		Model:                  task.Model,
+		ExecutionMode:          normalizeExecutionMode(task.ExecutionMode),
+		ReviewDecisionEvidence: task.ReviewDecisionEvidence,
+		FilesChanged:           task.FilesChanged,
+		SupersededBy:           task.SupersededBy,
+		FailureSignature:       task.FailureSignature,
+		BlockedAttempts:        task.Attempts,
+		LastError:              task.LastError,
+		CreatedAt:              time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:              time.Now().UTC().Format(time.RFC3339),
 	}
 
 	return c.post("c4_tasks", row)
@@ -752,24 +762,27 @@ func rowToTask(row *cloudTaskRow) *store.Task {
 	}
 
 	return &store.Task{
-		ID:                 row.TaskID,
-		Title:              row.Title,
-		Scope:              row.Scope,
-		DoD:                row.DoD,
-		Status:             row.Status,
-		Dependencies:       deps,
-		Domain:             row.Domain,
-		Priority:           row.Priority,
-		Model:              row.Model,
-		ExecutionMode:      normalizeExecutionMode(row.ExecutionMode),
-		WorkerID:           row.WorkerID,
-		Branch:             row.Branch,
-		CommitSHA:          row.CommitSHA,
-		FailureSignature:   row.FailureSignature,
-		Attempts:           row.BlockedAttempts,
-		LastError:          row.LastError,
-		CreatedAt:          row.CreatedAt,
-		UpdatedAt:          row.UpdatedAt,
+		ID:                     row.TaskID,
+		Title:                  row.Title,
+		Scope:                  row.Scope,
+		DoD:                    row.DoD,
+		Status:                 row.Status,
+		Dependencies:           deps,
+		Domain:                 row.Domain,
+		Priority:               row.Priority,
+		Model:                  row.Model,
+		ExecutionMode:          normalizeExecutionMode(row.ExecutionMode),
+		WorkerID:               row.WorkerID,
+		Branch:                 row.Branch,
+		CommitSHA:              row.CommitSHA,
+		ReviewDecisionEvidence: row.ReviewDecisionEvidence,
+		FailureSignature:       row.FailureSignature,
+		Attempts:               row.BlockedAttempts,
+		LastError:              row.LastError,
+		FilesChanged:           row.FilesChanged,
+		SupersededBy:           row.SupersededBy,
+		CreatedAt:              row.CreatedAt,
+		UpdatedAt:              row.UpdatedAt,
 	}
 }
 
