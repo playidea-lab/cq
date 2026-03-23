@@ -27,7 +27,8 @@ type WorkerDeps struct {
 	HubClient     *hub.Client
 	ShutdownStore *worker.ShutdownStore
 	Keeper        *messengerhandler.ContextKeeper // may be nil if C1 not enabled
-	MCPURL        string                   // local mcphttp URL advertised to Hub (e.g. "http://127.0.0.1:4142")
+	MCPURL        string                          // local mcphttp URL advertised to Hub (e.g. "http://127.0.0.1:4142")
+	DirectURL     string                          // Postgres direct URL (port 5432) for LISTEN/NOTIFY; empty → polling only
 
 	// activeWorkers tracks running standby goroutines by worker_id.
 	// A new standby cancels the previous goroutine for the same worker_id.
@@ -172,22 +173,38 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 	// hubCh receives results from the Hub long-poll goroutine (buffered to avoid leaks).
 	hubCh := make(chan hubPollResult, 1)
 
-	// hubPollCtx/Cancel controls the current Hub goroutine.
-	hubPollCtx, hubPollCancel := context.WithCancel(ctx)
+	// pollCtrl holds a mutable cancel function for the current hub-poll goroutine.
+	// Wrapping in a struct avoids go vet's context-leak check which does not trace
+	// deferred closures over reassigned variables.
+	type pollController struct {
+		ctx    context.Context
+		cancel context.CancelFunc
+	}
+	poll := &pollController{}
+	poll.ctx, poll.cancel = context.WithCancel(ctx)
+	defer poll.cancel()
 
 	// startHubPoll launches a new Hub long-poll goroutine.
 	// The server blocks up to 20s waiting for a job; response is near-instant when one arrives.
 	startHubPoll := func() {
 		go func() {
-			job, leaseID, err := deps.HubClient.ClaimJobWithWait(hubPollCtx, 0, 20)
+			job, leaseID, err := deps.HubClient.ClaimJobWithWait(poll.ctx, 0, 20)
 			select {
 			case hubCh <- hubPollResult{job, leaseID, err}:
-			case <-hubPollCtx.Done():
+			case <-poll.ctx.Done():
 			}
 		}()
 	}
 	startHubPoll()
-	defer hubPollCancel()
+
+	// LISTEN/NOTIFY listener: if DirectURL is set, start a pg_notify listener so the
+	// worker wakes up immediately on new jobs instead of waiting for the poll timeout.
+	// listenerC is nil when DirectURL is empty — a nil channel blocks forever in select,
+	// which is exactly the fallback behaviour we want (ticker-only).
+	listener := hub.NewChannelJobListener(deps.DirectURL)
+	listener.Start(ctx, deps.DirectURL)
+	defer listener.Close()
+	listenerC := listener.C // local var so we can nil it on channel close (polling fallback)
 
 	// c1Ticker: check C1 mentions and shutdown signals every 5s.
 	c1Ticker := time.NewTicker(5 * time.Second)
@@ -200,6 +217,22 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 		case <-ctx.Done():
 			// Cancelled by a new standby call for the same worker_id or MCP interrupt
 			return map[string]any{"shutdown": true, "reason": "cancelled"}, nil
+
+		case jobID, ok := <-listenerC:
+			// LISTEN/NOTIFY: a new job was queued (or reconnect poll needed).
+			if !ok {
+				// channel closed (listener stopped) — fall back to polling only
+				listenerC = nil // nil channel blocks forever → ticker-only fallback
+				continue
+			}
+			if jobID != "" {
+				fmt.Fprintf(os.Stderr, "c4: worker %s NOTIFY: job %s\n", params.WorkerID, jobID)
+			}
+			// Cancel the current hub long-poll and start a new one immediately
+			// so ClaimJobWithWait runs against the freshly-available job.
+			poll.cancel()
+			poll.ctx, poll.cancel = context.WithCancel(ctx)
+			startHubPoll()
 
 		case result := <-hubCh:
 			// Hub long-poll returned
