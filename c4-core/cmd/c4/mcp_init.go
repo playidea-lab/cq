@@ -20,6 +20,7 @@ import (
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/secrets"
 	storepackage "github.com/changmin/c4-core/internal/store"
 	_ "modernc.org/sqlite"
@@ -250,6 +251,16 @@ func newMCPServer() (*mcpServer, error) {
 	}
 	if cfgMgr != nil {
 		nativeOpts.KnowledgeCloudMode = cfgMgr.GetConfig().Cloud.Mode
+	}
+	// Wire ontology CloudStore when cloud is enabled (same credentials as knowledge cloud).
+	// *ontology.CloudStore implements L1/L2 upsert via Supabase PostgREST.
+	if cfgMgr != nil && cfgMgr.GetConfig().Cloud.Enabled && cloudTP != nil {
+		cloudCfg := cfgMgr.GetConfig().Cloud
+		if cloudCfg.URL != "" && cloudCfg.AnonKey != "" {
+			nativeOpts.OntologyCloud = ontology.NewCloudStore(
+				cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudTP)
+			nativeOpts.OntologyCloudMode = cloudCfg.Mode
+		}
 	}
 	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, kcForProxy, nativeOpts)
 	ctx.proxy = proxy

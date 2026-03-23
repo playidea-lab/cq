@@ -20,6 +20,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp/handlers/secrethandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/skillevalhandler"
 	handlerswc "github.com/changmin/c4-core/internal/mcp/handlers/webcontent"
+	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/research"
 	"github.com/changmin/c4-core/internal/secrets"
 )
@@ -64,6 +65,8 @@ type NativeOpts struct {
 	KnowledgeUsage           *knowledge.UsageTracker                // nil if usage tracking disabled
 	KnowledgeGlobalManager   *knowledge.GlobalKnowledgeManager      // nil if global store unavailable
 	LLMGateway               *llm.Gateway                           // nil if LLM gateway disabled
+	OntologyCloud            *ontology.CloudStore                   // nil if ontology cloud disabled
+	OntologyCloudMode        string                                 // "cloud-primary" or "local-first"
 }
 
 // RegisterAllHandlersWithOpts is the full-featured registration with native opts.
@@ -108,7 +111,7 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 	if opts != nil {
 		llmGW = opts.LLMGateway
 	}
-	registerC2Native(reg, proxy, llmGW, rootDir)
+	registerC2Native(reg, proxy, llmGW, rootDir, opts)
 	// Knowledge (13+ tools) — build-tagged via knowledgehandler subpackage
 	if opts != nil && opts.KnowledgeStore != nil {
 		knowledgehandler.RegisterKnowledgeNativeHandlers(reg, &knowledgehandler.KnowledgeNativeOpts{
@@ -146,11 +149,19 @@ func RegisterAllHandlersLazyWithOpts(reg *mcp.Registry, store Store, rootDir str
 	return RegisterAllHandlersWithOpts(reg, store, rootDir, "", lazyAddr, knowledgeCloud, opts)
 }
 
+
 // registerC2Native registers C2 Workspace/Profile/Persona (6 tools) + Doc parsing (2 tools).
 // Always compiled — no build tag (C2 native has no heavy external dependencies).
-func registerC2Native(reg *mcp.Registry, proxy *BridgeProxy, llmGW *llm.Gateway, projectRoot string) {
+func registerC2Native(reg *mcp.Registry, proxy *BridgeProxy, llmGW *llm.Gateway, projectRoot string, opts *NativeOpts) {
 	RegisterWorkspaceNativeHandlers(reg)
-	RegisterPersonaNativeHandlers(reg, llmGW, projectRoot)
+	var ontologyCloud *ontologyCloudOpts
+	if opts != nil && opts.OntologyCloud != nil {
+		ontologyCloud = &ontologyCloudOpts{
+			store: opts.OntologyCloud,
+			mode:  opts.OntologyCloudMode,
+		}
+	}
+	RegisterPersonaNativeHandlers(reg, llmGW, projectRoot, ontologyCloud)
 	RegisterDocProxyHandlers(reg, proxy)
 }
 
