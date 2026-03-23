@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Error Trace</title>
+<style>
+  :root {
+    --bg: #ffffff; --surface: #f5f5f5; --border: #e0e0e0;
+    --text: #1a1a1a; --text-secondary: #666666;
+    --error: #dc2626; --error-bg: #fef2f2; --cause-bg: #fee2e2;
+    --radius: 6px; --gap: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0f; --surface: #1a1a1a; --border: #2a2a2a;
+      --text: #f0f0f0; --text-secondary: #888888;
+      --error: #f87171; --error-bg: #1c1111; --cause-bg: #2a1515;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg); color: var(--text); padding: var(--gap); font-size: 13px;
+  }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .error-header { padding: 10px 12px; border-left: 4px solid var(--error); background: var(--error-bg); }
+  .error-type { font-weight: 700; color: var(--error); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .error-message { margin-top: 4px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; word-break: break-all; }
+  .frames { padding: 4px 0; }
+  .frame { padding: 6px 12px; cursor: pointer; border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  .frame:hover { background: var(--surface); }
+  .frame:last-child { border-bottom: none; }
+  .frame.cause { background: var(--cause-bg); border-left: 3px solid var(--error); }
+  .frame-summary { display: flex; align-items: center; gap: 6px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+  .frame-marker { color: var(--error); font-weight: 700; width: 12px; flex-shrink: 0; }
+  .frame-func { color: var(--text); font-weight: 600; }
+  .frame-loc { color: var(--text-secondary); margin-left: auto; flex-shrink: 0; }
+  .frame-detail { display: none; padding: 6px 12px 6px 30px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; color: var(--text-secondary); background: var(--surface); border-bottom: 1px solid var(--border); }
+  .frame-detail.open { display: block; }
+  .frame.cause + .frame-detail { display: block; }
+  .empty { padding: 20px; text-align: center; color: var(--text-secondary); }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; background: var(--border); color: var(--text-secondary); margin-left: 6px; }
+</style>
+</head>
+<body>
+<div id="root" class="card"><div class="empty">에러 데이터 대기 중...</div></div>
+<script>
+'use strict';
+(function() {
+  function esc(s) { if (typeof s !== 'string') return ''; var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function render(data) {
+    var root = document.getElementById('root');
+    if (!data || !data.error_type) { root.innerHTML = '<div class="empty">에러 데이터 없음</div>'; return; }
+    var frames = data.frames || [];
+    var html = '<div class="error-header"><div class="error-type">' + esc(data.error_type) +
+      '<span class="badge">' + esc(data.language || 'unknown') + '</span></div>' +
+      '<div class="error-message">' + esc(data.message) + '</div></div>';
+    if (frames.length === 0) { html += '<div class="empty">스택 프레임 없음</div>'; }
+    else {
+      html += '<div class="frames">';
+      for (var i = 0; i < frames.length; i++) {
+        var f = frames[i], isCause = f.is_cause === true;
+        var cls = 'frame' + (isCause ? ' cause' : '');
+        var loc = esc(f.file || '') + (f.line ? ':' + f.line : '');
+        html += '<div class="' + cls + '" data-idx="' + i + '"><div class="frame-summary">' +
+          '<span class="frame-marker">' + (isCause ? '▸' : ' ') + '</span>' +
+          '<span class="frame-func">' + esc(f.function || f.module || '(anonymous)') + '</span>' +
+          '<span class="frame-loc">' + loc + '</span></div></div>' +
+          '<div class="frame-detail" id="detail-' + i + '">' +
+          (f.module ? 'module: ' + esc(f.module) + '<br>' : '') +
+          'file: ' + esc(f.file || '?') + '<br>line: ' + (f.line || '?') + '</div>';
+      }
+      html += '</div>';
+    }
+    root.innerHTML = html;
+    root.querySelectorAll('.frame').forEach(function(el) {
+      el.addEventListener('click', function() {
+        var d = document.getElementById('detail-' + el.getAttribute('data-idx'));
+        if (d) d.classList.toggle('open');
+      });
+    });
+  }
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'cq:error-trace:data') render(e.data.payload);
+  });
+})();
+</script>
+</body>
+</html>
