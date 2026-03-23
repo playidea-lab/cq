@@ -1,12 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/persona"
 	"github.com/changmin/c4-core/internal/store"
 	"github.com/changmin/c4-core/internal/task"
 )
@@ -325,6 +330,18 @@ func handleSubmit(store Store, rawArgs json.RawMessage) (any, error) {
 	result, err := store.SubmitTask(args.TaskID, args.WorkerID, args.CommitSHA, args.Handoff, args.ValidationResults)
 	if err != nil {
 		return nil, fmt.Errorf("submitting task: %w", err)
+	}
+
+	// Async persona learning: extract coding patterns from this commit (non-blocking, non-fatal).
+	if ss, ok := store.(*SQLiteStore); ok && ss.projectRoot != "" {
+		commitSHA := args.CommitSHA
+		projectRoot := ss.projectRoot
+		go func() {
+			commitRange := commitSHA + "~1.." + commitSHA
+			if err := runPersonaLearnFromDiff(projectRoot, commitRange); err != nil {
+				slog.Warn("persona: learn_from_diff failed", "commit", commitSHA, "error", err)
+			}
+		}()
 	}
 
 	return result, nil
@@ -655,4 +672,89 @@ func RegisterTaskAdminHandlers(reg *mcp.Registry, s AdminStore) {
 			"status":  "reset to pending",
 		}, nil
 	})
+}
+
+// runPersonaLearnFromDiff extracts coding patterns from the given git commit range
+// and appends them to .c4/souls/<user>/raw_patterns.json.
+// This is the lightweight core of personaLearnFromDiffHandler (no LLM/ontology).
+func runPersonaLearnFromDiff(projectRoot, commitRange string) error {
+	// Get changed files
+	cmd := exec.CommandContext(context.Background(), "git", "diff", "--name-only", commitRange)
+	cmd.Dir = projectRoot
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("git diff --name-only: %w", err)
+	}
+
+	files := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(files) == 0 || (len(files) == 1 && files[0] == "") {
+		return nil // no changed files — not an error
+	}
+
+	parts := strings.SplitN(commitRange, "..", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("commitRange must be 'before..after' format, got: %s", commitRange)
+	}
+	beforeRef, afterRef := parts[0], parts[1]
+
+	var allPatterns []persona.EditPattern
+	for _, file := range files {
+		if file == "" || !isCodeFile(file) {
+			continue
+		}
+		before, _ := exec.CommandContext(context.Background(), "git", "show", beforeRef+":"+file).CombinedOutput()
+		after, _ := exec.CommandContext(context.Background(), "git", "show", afterRef+":"+file).CombinedOutput()
+
+		if len(before) == 0 && len(after) == 0 {
+			continue
+		}
+		patterns := persona.AnalyzeEdits(string(before), string(after))
+		for i := range patterns {
+			patterns[i].Description = fmt.Sprintf("[%s] %s", file, patterns[i].Description)
+		}
+		allPatterns = append(allPatterns, patterns...)
+	}
+
+	if len(allPatterns) == 0 {
+		return nil
+	}
+
+	username := os.Getenv("USER")
+	if username == "" {
+		username = "default"
+	}
+
+	relPath := fmt.Sprintf(".c4/souls/%s/raw_patterns.json", username)
+	patternsPath := relPath
+	if projectRoot != "" {
+		patternsPath = projectRoot + "/" + relPath
+	}
+
+	var existing []persona.EditPattern
+	if data, readErr := os.ReadFile(patternsPath); readErr == nil && len(data) > 0 {
+		_ = json.Unmarshal(data, &existing)
+	}
+
+	if len(existing) == 0 {
+		if err := persona.SeedFromGlobal(patternsPath, username); err != nil {
+			slog.Warn("persona: SeedFromGlobal failed", "error", err)
+		}
+		if data, readErr := os.ReadFile(patternsPath); readErr == nil && len(data) > 0 {
+			_ = json.Unmarshal(data, &existing)
+		}
+	}
+
+	existing = append(existing, allPatterns...)
+	_ = os.MkdirAll(strings.TrimSuffix(patternsPath, "raw_patterns.json"), 0755)
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	if err := os.WriteFile(patternsPath, data, 0644); err != nil {
+		return fmt.Errorf("write raw_patterns: %w", err)
+	}
+
+	if err := persona.MergeToGlobal(patternsPath, username); err != nil {
+		slog.Warn("persona: MergeToGlobal failed", "error", err)
+	}
+
+	slog.Info("persona: learn_from_diff complete", "patterns", len(allPatterns), "commit_range", commitRange)
+	return nil
 }
