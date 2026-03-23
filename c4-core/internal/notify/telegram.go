@@ -11,11 +11,14 @@ import (
 // telegramClient is reused across calls to benefit from HTTP keep-alive.
 var telegramClient = &http.Client{Timeout: 15 * time.Second}
 
+// telegramBaseURL is the Telegram API base URL. Overridable in tests.
+var telegramBaseURL = "https://api.telegram.org"
+
 // SendTelegram sends a Markdown message to a Telegram chat via the Bot API.
 // token is the bot token (without the "bot" prefix), chatID is the target chat identifier.
 // A 15-second HTTP timeout is applied automatically.
 func SendTelegram(ctx context.Context, token, chatID, message string) error {
-	return sendTelegram(ctx, "https://api.telegram.org", token, chatID, message)
+	return sendTelegram(ctx, telegramBaseURL, token, chatID, message)
 }
 
 // BotSender implements eventbus.TelegramSender using a fixed bot token.
