@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/mcp"
 	_ "modernc.org/sqlite"
 )
@@ -667,6 +668,88 @@ func TestLighthousePromoteSchemaValidation(t *testing.T) {
 	if len(noWarnings) != 0 {
 		t.Errorf("expected no warnings for superset schema, got %v", noWarnings)
 	}
+}
+
+func TestLighthousePromoteEnforceSchema(t *testing.T) {
+	// setupLighthouseWithEnforceSchema creates store+reg with enforce_schema config
+	setupWithConfig := func(t *testing.T, enforceSchema bool) (*mcp.Registry, *SQLiteStore) {
+		t.Helper()
+		db, err := sql.Open("sqlite", ":memory:")
+		if err != nil {
+			t.Fatalf("open db: %v", err)
+		}
+		t.Cleanup(func() { db.Close() })
+
+		store, err := NewSQLiteStore(db)
+		if err != nil {
+			t.Fatalf("create store: %v", err)
+		}
+
+		cfg, err := config.New(t.TempDir())
+		if err != nil {
+			t.Fatalf("config.New: %v", err)
+		}
+		cfg.Set("lighthouse.enforce_schema", enforceSchema)
+		store.config = cfg
+
+		reg := mcp.NewRegistry()
+		RegisterLighthouseHandlers(reg, store)
+		return reg, store
+	}
+
+	registerMismatch := func(t *testing.T, reg *mcp.Registry, name string) {
+		t.Helper()
+		// Register lighthouse with "age" required
+		callLighthouse(t, reg, map[string]any{
+			"action":       "register",
+			"name":         name,
+			"description":  "Schema enforce test",
+			"input_schema": `{"type":"object","properties":{"name":{"type":"string"},"age":{"type":"number"}},"required":["name"]}`,
+			"auto_task":    false,
+		})
+		// Replace stub with real tool missing "age"
+		reg.Unregister(name)
+		reg.Register(mcp.ToolSchema{
+			Name:        name,
+			Description: "Real implementation",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name": map[string]any{"type": "string"},
+				},
+				"required": []any{"name"},
+			},
+		}, func(args json.RawMessage) (any, error) {
+			return map[string]any{"ok": true}, nil
+		})
+	}
+
+	t.Run("enforce_schema=true blocks promote on mismatch", func(t *testing.T) {
+		reg, _ := setupWithConfig(t, true)
+		registerMismatch(t, reg, "lh_enforce_block")
+
+		err := callLighthouseExpectErr(t, reg, map[string]any{"action": "promote", "name": "lh_enforce_block"})
+		if !strings.Contains(err.Error(), "promote blocked") {
+			t.Errorf("error = %q, want 'promote blocked'", err.Error())
+		}
+		if !strings.Contains(err.Error(), "enforce_schema=true") {
+			t.Errorf("error = %q, want 'enforce_schema=true'", err.Error())
+		}
+	})
+
+	t.Run("enforce_schema=false allows promote with warnings", func(t *testing.T) {
+		reg, _ := setupWithConfig(t, false)
+		registerMismatch(t, reg, "lh_enforce_warn")
+
+		result := callLighthouse(t, reg, map[string]any{"action": "promote", "name": "lh_enforce_warn"})
+		if result["success"] != true {
+			t.Fatalf("promote failed: %v", result)
+		}
+		warnings, ok := result["schema_warnings"].([]string)
+		if !ok || len(warnings) == 0 {
+			t.Fatal("expected schema_warnings when enforce_schema=false")
+		}
+	})
 }
 
 func TestLighthousePromoteTaskCompletion(t *testing.T) {

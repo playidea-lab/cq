@@ -687,6 +687,14 @@ func lighthousePromote(reg *mcp.Registry, store *SQLiteStore, name, agentID stri
 		}
 	}
 
+	// enforce_schema: block promote if schema warnings exist and config says so
+	if len(schemaWarnings) > 0 && store.config != nil {
+		cfg := store.config.GetConfig()
+		if cfg.Lighthouse.EnforceSchema {
+			return nil, fmt.Errorf("promote blocked: schema mismatch (enforce_schema=true): %s", strings.Join(schemaWarnings, "; "))
+		}
+	}
+
 	if err := store.promoteLighthouse(name, agentID); err != nil {
 		return nil, err
 	}

@@ -279,6 +279,16 @@ type NotificationsConfig struct {
 	Channels []NotificationChannel `mapstructure:"channels" yaml:"channels"`
 }
 
+// LighthouseConfig holds settings for the Lighthouse tool contract system.
+type LighthouseConfig struct {
+	// EnforceSchema blocks promote when schema mismatch is detected.
+	// Default: true.
+	EnforceSchema    bool `mapstructure:"enforce_schema"    yaml:"enforce_schema"`
+	// RequireStubFirst requires a lighthouse stub to exist before a real tool can be promoted.
+	// Default: false.
+	RequireStubFirst bool `mapstructure:"require_stub_first" yaml:"require_stub_first"`
+}
+
 // RiskPathsConfig holds scope path lists for risk classification.
 type RiskPathsConfig struct {
 	High []string `mapstructure:"high" yaml:"high"`
@@ -413,6 +423,7 @@ type C4Config struct {
 	Sessions         SessionsConfig             `mapstructure:"sessions"             yaml:"sessions"`
 	RiskRouting      RiskRoutingConfig          `mapstructure:"risk_routing"         yaml:"risk_routing"`
 	Notifications    NotificationsConfig        `mapstructure:"notifications"        yaml:"notifications"`
+	Lighthouse       LighthouseConfig           `mapstructure:"lighthouse"           yaml:"lighthouse"`
 }
 
 // presetConfigs defines the economic mode presets.
@@ -497,6 +508,10 @@ func defaultConfig() C4Config {
 		Sessions: SessionsConfig{
 			Limit:   4,
 			Enabled: true,
+		},
+		Lighthouse: LighthouseConfig{
+			EnforceSchema:    true,
+			RequireStubFirst: false,
 		},
 	}
 }
@@ -595,6 +610,8 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("risk_routing.models.high", "opus")
 	v.SetDefault("risk_routing.models.low", "sonnet")
 	v.SetDefault("risk_routing.models.default", "opus")
+	v.SetDefault("lighthouse.enforce_schema", true)
+	v.SetDefault("lighthouse.require_stub_first", false)
 
 	// Config file location — 2-tier: global (~/.c4/) then project (.c4/)
 	v.SetConfigName("config")
