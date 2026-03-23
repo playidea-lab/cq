@@ -13,7 +13,7 @@ func TestHubUploader_SuccessfulUpload(t *testing.T) {
 	var received []collectivePatternRow
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" || r.URL.Path != "/collective_patterns" {
+		if r.Method != "POST" || r.URL.Path != "/rest/v1/collective_patterns" {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 			return
