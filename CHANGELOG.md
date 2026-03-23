@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.16.0] - 2026-03-23 — Cloud-First CQ
+
+### ✨ Features
+- **cloud**: LLM Proxy Edge Function — 사용자 API 키 없이 Haiku 호출 (Supabase Edge Function)
+- **cloud**: Tasks → Supabase SSOT — CloudStore 7개 필드 추가 + cloud-primary 모드
+- **cloud**: Knowledge → pgvector — SemanticSearch RPC + cloud-primary 검색 분기
+- **cloud**: Ontology → Supabase — L1/L2 CloudStore + persona handler wiring
+- **cloud**: `cq auth` → `cloud.mode: cloud-primary` 자동 설정
+- **doctor**: Cloud 연결 상태 표시 섹션 추가
+- **install**: tier별 next steps 안내 (solo/connected/full)
+- **knowledge**: chunk embedding 클라우드 동기화 (ingest 시 자동)
+- **hook**: permission-reviewer base_url config 지원 (Edge Function 프록시)
+
+### 🐛 Bug Fixes
+- **llm-proxy**: model whitelist에 full ID(`claude-haiku-4-5-20251001`) 추가
+- **ontology**: hub_upload_test URL 경로 수정 (`/rest/v1/` 접두사)
+
+### 📚 Documentation
+- **examples**: Idea-to-Ship, Quality Gates 예제 추가 (EN/KO)
+- **tiers**: connected tier에 `base_url` 필드 + Cloud-First 설명
+- **workflow**: cloud-primary 모드 설명 추가
+- **quickstart**: connected tier "API 키 불필요" 반영
+
+### 🧪 Tests
+- CloudStore round-trip 테스트 3개
+- SemanticSearch + cloud-primary 통합 테스트 7개
+
+---
+
 ## [v1.14.4] - 2026-03-23
 
 ### 🔧 Chore
