@@ -39,10 +39,19 @@ func handleIntelligenceStats(deps *IntelligenceStatsDeps) (any, error) {
 		deps = &IntelligenceStatsDeps{}
 	}
 
+	var l1 *ontology.Ontology
+	if deps.OntologyUser != "" {
+		if o, err := ontology.Load(deps.OntologyUser); err == nil {
+			l1 = o
+		} else {
+			fmt.Fprintf(os.Stderr, "c4_intelligence_stats: load L1 ontology: %v\n", err)
+		}
+	}
+
 	return map[string]any{
 		"knowledge":   buildKnowledgeStats(deps),
-		"ontology":    buildOntologyStats(deps),
-		"circulation": buildCirculationStats(deps),
+		"ontology":    buildOntologyStats(deps, l1),
+		"circulation": buildCirculationStats(deps, l1),
 	}, nil
 }
 
@@ -81,7 +90,7 @@ func buildKnowledgeStats(deps *IntelligenceStatsDeps) map[string]any {
 }
 
 // buildOntologyStats reads L1 (user persona ontology), L2 (project ontology), and L3 (hub) stats.
-func buildOntologyStats(deps *IntelligenceStatsDeps) map[string]any {
+func buildOntologyStats(deps *IntelligenceStatsDeps, l1 *ontology.Ontology) map[string]any {
 	stats := map[string]any{
 		"l1_nodes":       0,
 		"l1_confidence":  map[string]int{},
@@ -91,21 +100,17 @@ func buildOntologyStats(deps *IntelligenceStatsDeps) map[string]any {
 	}
 
 	// L1: user personal ontology
-	if deps.OntologyUser != "" {
-		if o, err := ontology.Load(deps.OntologyUser); err == nil {
-			stats["l1_nodes"] = len(o.Schema.Nodes)
-			confDist := map[string]int{}
-			for _, node := range o.Schema.Nodes {
-				conf := string(node.NodeConfidence)
-				if conf == "" {
-					conf = "unset"
-				}
-				confDist[conf]++
+	if l1 != nil {
+		stats["l1_nodes"] = len(l1.Schema.Nodes)
+		confDist := map[string]int{}
+		for _, node := range l1.Schema.Nodes {
+			conf := string(node.NodeConfidence)
+			if conf == "" {
+				conf = "unset"
 			}
-			stats["l1_confidence"] = confDist
-		} else {
-			fmt.Fprintf(os.Stderr, "c4_intelligence_stats: load L1 ontology: %v\n", err)
+			confDist[conf]++
 		}
+		stats["l1_confidence"] = confDist
 	}
 
 	// L2: project ontology
@@ -134,7 +139,7 @@ func buildOntologyStats(deps *IntelligenceStatsDeps) map[string]any {
 }
 
 // buildCirculationStats reports knowledge flow metrics derived from ontology files.
-func buildCirculationStats(deps *IntelligenceStatsDeps) map[string]any {
+func buildCirculationStats(deps *IntelligenceStatsDeps, l1 *ontology.Ontology) map[string]any {
 	stats := map[string]any{
 		"knowledge_boosts":          0,
 		"personalized_searches":     0,
@@ -143,36 +148,27 @@ func buildCirculationStats(deps *IntelligenceStatsDeps) map[string]any {
 
 	// knowledge_boosts: count L1 nodes with source_role="knowledge"
 	// These nodes were created by BoostFromKnowledge calls.
-	if deps.OntologyUser != "" {
-		if o, err := ontology.Load(deps.OntologyUser); err == nil {
-			boostCount := 0
-			crossCount := 0
-			for _, node := range o.Schema.Nodes {
-				if node.SourceRole == "knowledge" {
-					boostCount++
-				}
-				// cross-position nodes are tagged with scope "cross:*→*"
-				if len(node.Scope) > 5 && node.Scope[:5] == "cross" {
-					crossCount++
-				}
+	if l1 != nil {
+		boostCount := 0
+		crossCount := 0
+		highCount := 0
+		for _, node := range l1.Schema.Nodes {
+			if node.SourceRole == "knowledge" {
+				boostCount++
 			}
-			stats["knowledge_boosts"] = boostCount
-			stats["cross_position_detections"] = crossCount
-		}
-	}
-
-	// personalized_searches: count L1 HIGH/verified nodes (these influence personalized ranking)
-	// This is a proxy metric — actual personalized search calls are not tracked persistently.
-	if deps.OntologyUser != "" {
-		if o, err := ontology.Load(deps.OntologyUser); err == nil {
-			highCount := 0
-			for _, node := range o.Schema.Nodes {
-				if node.NodeConfidence == ontology.ConfidenceHigh || node.NodeConfidence == ontology.ConfidenceVerified {
-					highCount++
-				}
+			// cross-position nodes are tagged with scope "cross:*→*"
+			if len(node.Scope) > 5 && node.Scope[:5] == "cross" {
+				crossCount++
 			}
-			stats["personalized_searches"] = highCount
+			// personalized_searches: count L1 HIGH/verified nodes (these influence personalized ranking)
+			// This is a proxy metric — actual personalized search calls are not tracked persistently.
+			if node.NodeConfidence == ontology.ConfidenceHigh || node.NodeConfidence == ontology.ConfidenceVerified {
+				highCount++
+			}
 		}
+		stats["knowledge_boosts"] = boostCount
+		stats["cross_position_detections"] = crossCount
+		stats["personalized_searches"] = highCount
 	}
 
 	return stats
