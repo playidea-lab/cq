@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/serve"
@@ -199,6 +200,62 @@ func TestMCPHTTP_BearerAuth(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200 with Bearer auth, got %d", w.Code)
+	}
+}
+
+// TestMCPHTTP_SSE_Keepalive verifies the GET /mcp SSE endpoint.
+func TestMCPHTTP_SSE_Keepalive(t *testing.T) {
+	comp := newTestComponent(t, "secret-key")
+
+	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("X-API-Key", "secret-key")
+
+	w := httptest.NewRecorder()
+
+	// Run handleMCP in a goroutine since SSE blocks.
+	done := make(chan struct{})
+	go func() {
+		http.HandlerFunc(comp.withAuth(comp.handleMCP)).ServeHTTP(w, req)
+		close(done)
+	}()
+
+	// Wait briefly for headers to be written.
+	select {
+	case <-done:
+		// Handler returned early — check response.
+	case <-time.After(100 * time.Millisecond):
+		// Expected: handler is still streaming.
+	}
+
+	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Errorf("Content-Type = %q, want text/event-stream", ct)
+	}
+}
+
+// TestMCPHTTP_Notification_202 verifies that JSON-RPC notifications (no id) return 202.
+func TestMCPHTTP_Notification_202(t *testing.T) {
+	comp := newTestComponent(t, "secret-key")
+	w := doRequest(t, comp, "secret-key", map[string]any{
+		"jsonrpc": "2.0", "method": "notifications/cancelled",
+		// no "id" field — this is a notification
+	})
+	if w.Code != http.StatusAccepted {
+		t.Errorf("expected 202 for notification, got %d", w.Code)
+	}
+}
+
+// TestMCPHTTP_MethodNotAllowed verifies non-GET/POST methods are rejected.
+func TestMCPHTTP_MethodNotAllowed(t *testing.T) {
+	comp := newTestComponent(t, "secret-key")
+
+	req := httptest.NewRequest(http.MethodPut, "/mcp", nil)
+	req.Header.Set("X-API-Key", "secret-key")
+
+	w := httptest.NewRecorder()
+	http.HandlerFunc(comp.withAuth(comp.handleMCP)).ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", w.Code)
 	}
 }
 
