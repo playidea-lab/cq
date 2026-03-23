@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nodes Map</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #666666;
+    --accent: #2563eb;
+    --success: #16a34a;
+    --warning: #d97706;
+    --error: #dc2626;
+    --radius: 6px;
+    --gap: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --text-secondary: #888888;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 8px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--gap);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    overflow: hidden;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+  }
+
+  .header-summary {
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 12px 4px;
+  }
+
+  .node-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    max-height: calc(100vh - 60px);
+  }
+
+  .node-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .node-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  .node-icon.worker { color: var(--accent); }
+  .node-icon.agent { color: var(--warning); }
+  .node-icon.edge { color: var(--success); }
+  .node-icon.other { color: var(--text-secondary); }
+
+  .node-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .node-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  .node-id {
+    font-weight: 600;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .node-status {
+    font-size: 9px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .node-status.online {
+    background: var(--success);
+    color: #fff;
+  }
+
+  .node-status.offline {
+    background: var(--border);
+    color: var(--text-secondary);
+  }
+
+  .node-status.busy {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .node-meta {
+    font-size: 10px;
+    color: var(--text-secondary);
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .node-meta span {
+    white-space: nowrap;
+  }
+
+  .gpu-tag {
+    font-size: 9px;
+    font-weight: 500;
+    padding: 0 4px;
+    border-radius: 2px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <span class="header-title">Nodes</span>
+    <span class="header-summary" id="summary"></span>
+  </div>
+  <div id="empty-state" class="empty-state">No nodes connected</div>
+  <div id="node-list" class="node-list" style="display:none"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var TYPE_ICONS = {
+    worker: 'W',
+    agent: 'A',
+    edge: 'E',
+    other: '?'
+  };
+
+  var els = {
+    summary: document.getElementById('summary'),
+    empty: document.getElementById('empty-state'),
+    list: document.getElementById('node-list')
+  };
+
+  function esc(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function classifyNode(id) {
+    if (id.indexOf('worker') === 0) return 'worker';
+    if (id.indexOf('agent') === 0) return 'agent';
+    if (id.indexOf('edge') === 0) return 'edge';
+    return 'other';
+  }
+
+  function statusClass(status) {
+    var s = (status || '').toLowerCase();
+    if (s === 'busy') return 'busy';
+    if (s === 'idle' || s === 'online') return 'online';
+    return 'offline';
+  }
+
+  function statusLabel(status) {
+    var s = (status || '').toLowerCase();
+    if (s === 'busy') return 'busy';
+    if (s === 'idle' || s === 'online') return 'online';
+    if (s === 'offline') return 'offline';
+    return status || 'unknown';
+  }
+
+  function formatAge(lastSeen) {
+    if (!lastSeen) return '';
+    var ts = (typeof lastSeen === 'string') ? new Date(lastSeen).getTime() : lastSeen;
+    if (isNaN(ts)) return '';
+    var sec = Math.floor((Date.now() - ts) / 1000);
+    if (sec < 0) sec = 0;
+    if (sec < 60) return sec + 's ago';
+    if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
+    if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
+    return Math.floor(sec / 86400) + 'd ago';
+  }
+
+  function render(nodes) {
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      els.empty.style.display = '';
+      els.list.style.display = 'none';
+      els.summary.textContent = '';
+      return;
+    }
+
+    els.empty.style.display = 'none';
+    els.list.style.display = '';
+
+    var counts = { worker: 0, agent: 0, edge: 0 };
+    var online = 0;
+    nodes.forEach(function (n) {
+      var t = classifyNode(n.worker_id || n.id || '');
+      if (counts[t] !== undefined) counts[t]++;
+      var sc = statusClass(n.status);
+      if (sc === 'online' || sc === 'busy') online++;
+    });
+
+    var parts = [];
+    if (counts.worker > 0) parts.push(counts.worker + ' worker');
+    if (counts.agent > 0) parts.push(counts.agent + ' agent');
+    if (counts.edge > 0) parts.push(counts.edge + ' edge');
+    parts.push(online + '/' + nodes.length + ' online');
+    els.summary.textContent = parts.join(' / ');
+
+    var html = '';
+    nodes.forEach(function (node) {
+      var id = node.worker_id || node.id || 'unknown';
+      var nodeType = classifyNode(id);
+      var sc = statusClass(node.status);
+      var label = statusLabel(node.status);
+      var age = formatAge(node.last_seen);
+      var task = node.current_task || '';
+      var gpu = node.gpu || '';
+
+      html += '<div class="node-item">';
+      html += '<div class="node-icon ' + nodeType + '">' + TYPE_ICONS[nodeType] + '</div>';
+      html += '<div class="node-info">';
+      html += '<div class="node-row">';
+      html += '<span class="node-id">' + esc(id) + '</span>';
+      html += '<span class="node-status ' + sc + '">' + esc(label) + '</span>';
+      html += '</div>';
+      html += '<div class="node-meta">';
+      if (age) html += '<span>' + age + '</span>';
+      if (task) html += '<span>' + esc(task) + '</span>';
+      if (gpu) html += '<span class="gpu-tag">' + esc(gpu) + '</span>';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+    });
+
+    els.list.innerHTML = html;
+  }
+
+  window.addEventListener('message', function (event) {
+    var msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.type === 'cq:nodes-map:data') {
+      render(msg.payload);
+    } else if (msg.type === 'cq:nodes-map:clear') {
+      render([]);
+    }
+  });
+
+  // Also check for inline data (for direct rendering)
+  if (window.__CQ_NODES_MAP_DATA) {
+    render(window.__CQ_NODES_MAP_DATA);
+  }
+
+  // Initial empty state
+  render(null);
+})();
+</script>
+</body>
+</html>
