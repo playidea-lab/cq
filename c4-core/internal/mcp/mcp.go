@@ -13,11 +13,23 @@ import (
 	"sync"
 )
 
+// ToolSchemaMeta carries optional MCP Apps metadata for a tool.
+// When set, tool responses may include _meta.ui.resourceUri pointing to a ui:// resource.
+type ToolSchemaMeta struct {
+	UI *ToolSchemaUI `json:"ui,omitempty"`
+}
+
+// ToolSchemaUI describes the UI resource associated with a tool's response.
+type ToolSchemaUI struct {
+	ResourceUri string `json:"resourceUri"` // e.g. "ui://c4/task-card"
+}
+
 // ToolSchema describes a single MCP tool's metadata.
 type ToolSchema struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema map[string]any  `json:"inputSchema"`
+	Meta        *ToolSchemaMeta `json:"_meta,omitempty"` // optional MCP Apps metadata
 }
 
 // toolNameKey is an unexported context key used to carry the dispatched tool name
