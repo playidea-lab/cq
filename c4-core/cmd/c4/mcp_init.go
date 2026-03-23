@@ -535,8 +535,11 @@ func newMCPServer() (*mcpServer, error) {
 			if ctx.cloudTP != nil {
 				tokenFunc = ctx.cloudTP.Token
 			}
-			// relayMCPHandler parses a JSON-RPC tools/call request and dispatches it
-			// to the local MCP registry, returning a JSON-RPC response envelope.
+			// relayMCPHandler handles JSON-RPC requests over relay:
+			// - initialize: return server capabilities
+			// - tools/list: return all registered tool schemas
+			// - tools/call: dispatch to local MCP registry
+			// - notifications/initialized: acknowledge (no response needed)
 			relayHandler := relay.MCPHandler(func(rctx context.Context, request json.RawMessage) (json.RawMessage, error) {
 				var req struct {
 					JSONRPC string          `json:"jsonrpc"`
@@ -547,31 +550,88 @@ func newMCPServer() (*mcpServer, error) {
 				if err := json.Unmarshal(request, &req); err != nil {
 					return nil, fmt.Errorf("relay: invalid JSON-RPC request: %w", err)
 				}
-				var params struct {
-					Name      string          `json:"name"`
-					Arguments json.RawMessage `json:"arguments"`
-				}
-				if err := json.Unmarshal(req.Params, &params); err != nil {
-					return nil, fmt.Errorf("relay: invalid tools/call params: %w", err)
-				}
-				result, err := reg.CallWithContext(rctx, params.Name, params.Arguments)
-				if err != nil {
-					return nil, err
-				}
-				resultJSON, err := json.Marshal(result)
-				if err != nil {
-					return nil, fmt.Errorf("relay: marshal result: %w", err)
-				}
-				resp := map[string]interface{}{
-					"jsonrpc": "2.0",
-					"id":      req.ID,
-					"result": map[string]interface{}{
-						"content": []map[string]interface{}{
-							{"type": "text", "text": string(resultJSON)},
+
+				switch req.Method {
+				case "initialize":
+					return json.Marshal(map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      req.ID,
+						"result": map[string]interface{}{
+							"protocolVersion": "2025-03-26",
+							"capabilities": map[string]interface{}{
+								"tools": map[string]interface{}{},
+							},
+							"serverInfo": map[string]interface{}{
+								"name":    "cq-relay-worker",
+								"version": version,
+							},
 						},
-					},
+					})
+
+				case "notifications/initialized":
+					// Client acknowledgement — no response needed for notifications
+					return json.Marshal(map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      req.ID,
+					})
+
+				case "tools/list":
+					tools := reg.ListTools()
+					toolList := make([]map[string]interface{}, 0, len(tools))
+					for _, t := range tools {
+						tool := map[string]interface{}{
+							"name":        t.Name,
+							"description": t.Description,
+						}
+						if t.InputSchema != nil {
+							tool["inputSchema"] = t.InputSchema
+						}
+						toolList = append(toolList, tool)
+					}
+					return json.Marshal(map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      req.ID,
+						"result": map[string]interface{}{
+							"tools": toolList,
+						},
+					})
+
+				case "tools/call":
+					var params struct {
+						Name      string          `json:"name"`
+						Arguments json.RawMessage `json:"arguments"`
+					}
+					if err := json.Unmarshal(req.Params, &params); err != nil {
+						return nil, fmt.Errorf("relay: invalid tools/call params: %w", err)
+					}
+					result, err := reg.CallWithContext(rctx, params.Name, params.Arguments)
+					if err != nil {
+						return nil, err
+					}
+					resultJSON, err := json.Marshal(result)
+					if err != nil {
+						return nil, fmt.Errorf("relay: marshal result: %w", err)
+					}
+					return json.Marshal(map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      req.ID,
+						"result": map[string]interface{}{
+							"content": []map[string]interface{}{
+								{"type": "text", "text": string(resultJSON)},
+							},
+						},
+					})
+
+				default:
+					return json.Marshal(map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      req.ID,
+						"error": map[string]interface{}{
+							"code":    -32601,
+							"message": fmt.Sprintf("method not found: %s", req.Method),
+						},
+					})
 				}
-				return json.Marshal(resp)
 			})
 			rc := relay.NewRelayClient(relayCfg.URL, workerID, tokenFunc, relayHandler)
 			relayCtx, relayCancel := context.WithCancel(context.Background())

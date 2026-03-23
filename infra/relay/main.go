@@ -286,9 +286,31 @@ func (s *server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleMCP handles POST /w/{id}/mcp — HTTP→WSS relay.
+// handleMCP handles POST and GET /w/{id}/mcp — MCP Streamable HTTP relay.
+// POST: forwards JSON-RPC requests (initialize, tools/list, tools/call) to worker via WSS.
+// GET: returns 405 (SSE not supported through relay; notifications delivered via POST response).
+// DELETE: returns 200 (session termination acknowledgement).
 // Requires Bearer token authentication (same JWT as worker connect).
 func (s *server) handleMCP(w http.ResponseWriter, r *http.Request) {
+	// Handle GET (SSE endpoint) — relay doesn't support server-initiated events
+	if r.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		// Send a keep-alive comment and close — client will fall back to POST-only mode
+		fmt.Fprint(w, ": relay does not support SSE\n\n")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		return
+	}
+
+	// Handle DELETE (session termination)
+	if r.Method == http.MethodDelete {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// POST: relay JSON-RPC to worker
 	// Authenticate client request
 	authHeader := r.Header.Get("Authorization")
 	if s.supabaseURL != "" {
@@ -534,6 +556,8 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /connect", srv.handleConnect)
 	mux.HandleFunc("POST /w/{id}/mcp", srv.handleMCP)
+	mux.HandleFunc("GET /w/{id}/mcp", srv.handleMCP)
+	mux.HandleFunc("DELETE /w/{id}/mcp", srv.handleMCP)
 	mux.HandleFunc("GET /w/{id}/health", srv.handleWorkerHealth)
 	mux.HandleFunc("GET /health", srv.handleHealth)
 	mux.HandleFunc("POST /tunnel", srv.handleCreateTunnel)
