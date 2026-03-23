@@ -33,6 +33,21 @@ func clearBuiltinURLs(t *testing.T) {
 	})
 }
 
+// setupHubTestEnv creates an isolated test env with mock Supabase config.
+func setupHubTestEnv(t *testing.T, srvURL string) string {
+	t.Helper()
+	clearBuiltinURLs(t)
+	tmpDir := t.TempDir()
+	c4Dir := filepath.Join(tmpDir, ".c4")
+	os.MkdirAll(c4Dir, 0o755)
+	cfg := "hub:\n  enabled: true\n  url: " + srvURL + "\ncloud:\n  enabled: true\n  url: " + srvURL + "\n  anon_key: test-key\n"
+	os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644)
+	origDir := projectDir
+	projectDir = tmpDir
+	t.Cleanup(func() { projectDir = origDir })
+	return tmpDir
+}
+
 // TestHubSubmit verifies that runHubSubmit POSTs the correct body to the Hub.
 func TestHubSubmit(t *testing.T) {
 	// Capture the request body from /v1/jobs/submit.
@@ -133,33 +148,20 @@ func TestHubSubmitExperiment(t *testing.T) {
 	var captured hub.JobSubmitRequest
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health", "/v1/health":
-			w.WriteHeader(http.StatusOK)
-		case "/jobs/submit", "/v1/jobs/submit":
+		switch {
+		case r.URL.Path == "/rest/v1/hub_jobs" && r.Method == http.MethodPost:
 			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
 				t.Errorf("decode body: %v", err)
 			}
-			json.NewEncoder(w).Encode(hub.JobSubmitResponse{
-				JobID:         "job-exp-001",
-				Status:        "QUEUED",
-				QueuePosition: 1,
-			})
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]hub.Job{{ID: "job-exp-001", Status: "QUEUED"}})
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer srv.Close()
 
-	tmpDir := t.TempDir()
-	c4Dir := filepath.Join(tmpDir, ".c4")
-	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
-	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	tmpDir := setupHubTestEnv(t, srv.URL)
 
 	cqYamlContent := `run: python3 train.py
 experiment:
@@ -172,11 +174,6 @@ experiment:
 	if err := os.WriteFile(filepath.Join(tmpDir, "cq.yaml"), []byte(cqYamlContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	clearBuiltinURLs(t)
-	origDir := projectDir
-	projectDir = tmpDir
-	defer func() { projectDir = origDir }()
 
 	origRun := hubSubmitRun
 	hubSubmitRun = "" // use cq.yaml run
@@ -220,34 +217,17 @@ func TestHubSubmitExperiment_NoExperiment(t *testing.T) {
 	var captured hub.JobSubmitRequest
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health", "/v1/health":
-			w.WriteHeader(http.StatusOK)
-		case "/jobs/submit", "/v1/jobs/submit":
-			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
-				t.Errorf("decode body: %v", err)
-			}
-			json.NewEncoder(w).Encode(hub.JobSubmitResponse{JobID: "job-noexp-001", Status: "QUEUED"})
-		default:
-			http.NotFound(w, r)
+		if r.URL.Path == "/rest/v1/hub_jobs" && r.Method == http.MethodPost {
+			json.NewDecoder(r.Body).Decode(&captured)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]hub.Job{{ID: "job-noexp-001", Status: "QUEUED"}})
+			return
 		}
+		http.NotFound(w, r)
 	}))
 	defer srv.Close()
 
-	tmpDir := t.TempDir()
-	c4Dir := filepath.Join(tmpDir, ".c4")
-	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
-	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	clearBuiltinURLs(t)
-	origDir := projectDir
-	projectDir = tmpDir
-	defer func() { projectDir = origDir }()
+	tmpDir := setupHubTestEnv(t, srv.URL)
 
 	origRun := hubSubmitRun
 	hubSubmitRun = "python3 train.py"
@@ -350,10 +330,8 @@ func TestFormatLastJob(t *testing.T) {
 // TestHubWorkers verifies that runHubWorkers outputs a tabwriter table.
 func TestHubWorkers(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health", "/v1/health":
-			w.WriteHeader(http.StatusOK)
-		case "/workers", "/v1/workers":
+		if r.URL.Path == "/rest/v1/hub_workers" {
+			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode([]hub.Worker{
 				{
 					ID:           "w-001",
@@ -364,26 +342,13 @@ func TestHubWorkers(t *testing.T) {
 					Capabilities: []string{"gpu.train", "gpu.inference"},
 				},
 			})
-		default:
-			http.NotFound(w, r)
+			return
 		}
+		http.NotFound(w, r)
 	}))
 	defer srv.Close()
 
-	tmpDir := t.TempDir()
-	c4Dir := filepath.Join(tmpDir, ".c4")
-	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
-	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	clearBuiltinURLs(t)
-	origDir := projectDir
-	projectDir = tmpDir
-	defer func() { projectDir = origDir }()
+	setupHubTestEnv(t, srv.URL)
 
 	// Capture stdout
 	origStdout := os.Stdout
@@ -422,31 +387,16 @@ func TestHubWorkers(t *testing.T) {
 // TestHubWorkers_Empty verifies message when no workers registered.
 func TestHubWorkers_Empty(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health", "/v1/health":
-			w.WriteHeader(http.StatusOK)
-		case "/workers", "/v1/workers":
+		if r.URL.Path == "/rest/v1/hub_workers" {
+			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode([]hub.Worker{})
-		default:
-			http.NotFound(w, r)
+			return
 		}
+		http.NotFound(w, r)
 	}))
 	defer srv.Close()
 
-	tmpDir := t.TempDir()
-	c4Dir := filepath.Join(tmpDir, ".c4")
-	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
-	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	clearBuiltinURLs(t)
-	origDir := projectDir
-	projectDir = tmpDir
-	defer func() { projectDir = origDir }()
+	setupHubTestEnv(t, srv.URL)
 
 	origStdout := os.Stdout
 	r2, w2, _ := os.Pipe()
@@ -472,33 +422,18 @@ func TestHubWorkers_Empty(t *testing.T) {
 // TestHubWorkers_FallbackHostname verifies name fallback when Name is empty.
 func TestHubWorkers_FallbackHostname(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health", "/v1/health":
-			w.WriteHeader(http.StatusOK)
-		case "/workers", "/v1/workers":
+		if r.URL.Path == "/rest/v1/hub_workers" {
+			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode([]hub.Worker{
 				{ID: "w-002", Hostname: "my-host", Status: "offline"},
 			})
-		default:
-			http.NotFound(w, r)
+			return
 		}
+		http.NotFound(w, r)
 	}))
 	defer srv.Close()
 
-	tmpDir := t.TempDir()
-	c4Dir := filepath.Join(tmpDir, ".c4")
-	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
-	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	clearBuiltinURLs(t)
-	origDir := projectDir
-	projectDir = tmpDir
-	defer func() { projectDir = origDir }()
+	setupHubTestEnv(t, srv.URL)
 
 	origStdout := os.Stdout
 	r2, w2, _ := os.Pipe()
@@ -527,29 +462,17 @@ func TestHubSubmitExperiment_NoWorkerPath(t *testing.T) {
 	var captured hub.JobSubmitRequest
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health", "/v1/health":
-			w.WriteHeader(http.StatusOK)
-		case "/jobs/submit", "/v1/jobs/submit":
-			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
-				t.Errorf("decode body: %v", err)
-			}
-			json.NewEncoder(w).Encode(hub.JobSubmitResponse{JobID: "job-nowp-001", Status: "QUEUED"})
-		default:
-			http.NotFound(w, r)
+		if r.URL.Path == "/rest/v1/hub_jobs" && r.Method == http.MethodPost {
+			json.NewDecoder(r.Body).Decode(&captured)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]hub.Job{{ID: "job-nowp-001", Status: "QUEUED"}})
+			return
 		}
+		http.NotFound(w, r)
 	}))
 	defer srv.Close()
 
-	tmpDir := t.TempDir()
-	c4Dir := filepath.Join(tmpDir, ".c4")
-	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
-	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	tmpDir := setupHubTestEnv(t, srv.URL)
 
 	// experiment: with name but no datasets.worker_path
 	cqYamlContent := "run: python3 train.py\nexperiment:\n  name: no-dataset-exp\n  tags: [test]\n"
@@ -590,42 +513,20 @@ func TestHubSubmit_CQYamlFallback(t *testing.T) {
 	var captured hub.JobSubmitRequest
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health", "/v1/health":
-			w.WriteHeader(http.StatusOK)
-		case "/jobs/submit", "/v1/jobs/submit":
-			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
-				t.Errorf("decode body: %v", err)
-			}
-			json.NewEncoder(w).Encode(hub.JobSubmitResponse{
-				JobID:         "job-yaml-001",
-				Status:        "QUEUED",
-				QueuePosition: 1,
-			})
-		default:
-			http.NotFound(w, r)
+		if r.URL.Path == "/rest/v1/hub_jobs" && r.Method == http.MethodPost {
+			json.NewDecoder(r.Body).Decode(&captured)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]hub.Job{{ID: "job-yaml-001", Status: "QUEUED"}})
+			return
 		}
+		http.NotFound(w, r)
 	}))
 	defer srv.Close()
 
-	tmpDir := t.TempDir()
-	c4Dir := filepath.Join(tmpDir, ".c4")
-	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
-	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Write cq.yaml with run field in tmpDir (the cwd).
+	tmpDir := setupHubTestEnv(t, srv.URL)
 	if err := os.WriteFile(filepath.Join(tmpDir, "cq.yaml"), []byte("run: python3 train.py\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	clearBuiltinURLs(t)
-	origDir := projectDir
-	projectDir = tmpDir
-	defer func() { projectDir = origDir }()
 
 	origRun := hubSubmitRun
 	hubSubmitRun = "" // --run not provided
@@ -653,12 +554,11 @@ func TestHubSubmit_ExperimentFlag_CallsCreateRun(t *testing.T) {
 	var capturedName string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health", "/v1/health":
-			w.WriteHeader(http.StatusOK)
-		case "/jobs/submit", "/v1/jobs/submit":
-			json.NewEncoder(w).Encode(hub.JobSubmitResponse{JobID: "job-exp-flag-001", Status: "QUEUED"})
-		case "/experiment/run", "/v1/experiment/run":
+		switch {
+		case r.URL.Path == "/rest/v1/hub_jobs" && r.Method == http.MethodPost:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]hub.Job{{ID: "job-exp-flag-001", Status: "QUEUED"}})
+		case r.URL.Path == "/experiment/run" || r.URL.Path == "/v1/experiment/run":
 			experimentCalled = true
 			var body struct {
 				Name       string `json:"name"`
@@ -676,20 +576,7 @@ func TestHubSubmit_ExperimentFlag_CallsCreateRun(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tmpDir := t.TempDir()
-	c4Dir := filepath.Join(tmpDir, ".c4")
-	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
-	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	clearBuiltinURLs(t)
-	origDir := projectDir
-	projectDir = tmpDir
-	defer func() { projectDir = origDir }()
+	tmpDir := setupHubTestEnv(t, srv.URL)
 
 	origRun := hubSubmitRun
 	hubSubmitRun = "python3 train.py"
