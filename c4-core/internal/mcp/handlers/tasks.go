@@ -352,8 +352,7 @@ func handleSubmit(store Store, rawArgs json.RawMessage) (any, error) {
 				if json.Unmarshal([]byte(args.Handoff), &handoff) == nil {
 					if verdict, _ := handoff["verdict"].(string); verdict == "approved" {
 						// Find impl task scope from review task's dependencies
-						implBaseID, baseNum, ver, _ := task.ParseTaskID(taskID)
-						_ = implBaseID
+						_, baseNum, ver, _ := task.ParseTaskID(taskID)
 						implID := fmt.Sprintf("T-%s-%d", baseNum, ver)
 						if t, err := ss.GetTask(implID); err == nil && t != nil && t.Scope != "" {
 							feedbackMeta := map[string]any{
