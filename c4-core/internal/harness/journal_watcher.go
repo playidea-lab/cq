@@ -156,6 +156,14 @@ func (w *JournalWatcher) processFile(ctx context.Context, filePath string) {
 		if !w.pushErrors[filePath] {
 			log.Printf("[journal_watcher] push error for %s: %v", filePath, err)
 			w.pushErrors[filePath] = true
+			// Periodic cleanup: remove entries for files that no longer exist
+			if len(w.pushErrors) > 100 {
+				for k := range w.pushErrors {
+					if _, statErr := os.Stat(k); os.IsNotExist(statErr) {
+						delete(w.pushErrors, k)
+					}
+				}
+			}
 		}
 		return // offset NOT updated -- will retry on next fsnotify event
 	}

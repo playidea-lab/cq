@@ -254,37 +254,8 @@ func (s *SQLiteStore) enrichUnified(assignment *TaskAssignment) {
 				}
 
 				if len(warnings) >= 3 {
-					// Mark as repeated pattern in the context
 					fmt.Fprintf(&b, "\n⚠️ **Repeated rejection pattern** (%d warnings in this scope) — consider adding a validation rule\n", len(warnings))
-
-					// Log for observability
-					slog.Info("learn-loop: scope-warning pattern detected",
-						"scope", assignment.Scope,
-						"count", len(warnings),
-						"task", assignment.TaskID)
-
-					// Record as pattern in knowledge (async, non-fatal)
-					if s.knowledgeWriter != nil {
-						titles := make([]string, 0, len(warnings))
-						for _, w := range warnings {
-							titles = append(titles, w.Title)
-						}
-						scope := assignment.Scope
-						count := len(warnings)
-						go func() {
-							metadata := map[string]any{
-								"title":    fmt.Sprintf("Repeated rejection pattern: %s", scope),
-								"doc_type": "pattern",
-								"tags":     []string{"scope-warning-pattern", scope, "auto-promoted"},
-							}
-							body := fmt.Sprintf("## Repeated Rejection Pattern\n\nScope: %s\nCount: %d\n\nWarnings:\n", scope, count)
-							for _, t := range titles {
-								body += fmt.Sprintf("- %s\n", t)
-							}
-							body += "\nConsider adding a validation rule for this pattern."
-							s.knowledgeWriter.CreateExperiment(metadata, body)
-						}()
-					}
+					s.recordRepeatedPattern(assignment.Scope, assignment.TaskID, warnings)
 				}
 			}
 
@@ -395,5 +366,34 @@ func (s *SQLiteStore) enrichWithOntology(assignment *TaskAssignment) {
 
 	section := "\n\n## Project Ontology (auto-injected)\n" + strings.Join(lines, "\n")
 	assignment.KnowledgeContext += section
+}
+
+// recordRepeatedPattern records a repeated scope-warning pattern as knowledge.
+// Separated from enrichUnified to keep the read path free of write side-effects.
+func (s *SQLiteStore) recordRepeatedPattern(scope, taskID string, warnings []KnowledgeSearchResult) {
+	slog.Info("learn-loop: scope-warning pattern detected",
+		"scope", scope, "count", len(warnings), "task", taskID)
+
+	if s.knowledgeWriter == nil {
+		return
+	}
+	titles := make([]string, 0, len(warnings))
+	for _, w := range warnings {
+		titles = append(titles, w.Title)
+	}
+	count := len(warnings)
+	go func() {
+		metadata := map[string]any{
+			"title":    fmt.Sprintf("Repeated rejection pattern: %s", scope),
+			"doc_type": "pattern",
+			"tags":     []string{"scope-warning-pattern", scope, "auto-promoted"},
+		}
+		body := fmt.Sprintf("## Repeated Rejection Pattern\n\nScope: %s\nCount: %d\n\nWarnings:\n", scope, count)
+		for _, t := range titles {
+			body += fmt.Sprintf("- %s\n", t)
+		}
+		body += "\nConsider adding a validation rule for this pattern."
+		s.knowledgeWriter.CreateExperiment(metadata, body)
+	}()
 }
 
