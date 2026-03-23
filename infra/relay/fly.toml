@@ -1,0 +1,10 @@
+app = "cq-relay"
+primary_region = "nrt"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
