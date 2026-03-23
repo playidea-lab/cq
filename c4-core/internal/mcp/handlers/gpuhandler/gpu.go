@@ -14,6 +14,7 @@ import (
 )
 
 const jobProgressResourceURI = "ui://cq/job-progress"
+const jobResultResourceURI = "ui://cq/job-result"
 
 // Register is the subpackage entry point — registers all GPU tools.
 func Register(reg *mcp.Registry, gpuStore *daemon.Store, scheduler *daemon.Scheduler) {
@@ -25,6 +26,14 @@ func Register(reg *mcp.Registry, gpuStore *daemon.Store, scheduler *daemon.Sched
 func RegisterJobProgressWidget(rs *apps.ResourceStore, html string) {
 	if rs != nil && html != "" {
 		rs.Register(jobProgressResourceURI, html)
+	}
+}
+
+// RegisterJobResultWidget registers the job-result HTML widget in the resource store.
+// Call this after Register() when the apps ResourceStore is available.
+func RegisterJobResultWidget(rs *apps.ResourceStore, html string) {
+	if rs != nil && html != "" {
+		rs.Register(jobResultResourceURI, html)
 	}
 }
 
@@ -386,11 +395,17 @@ func jobStatusHandler(store *daemon.Store, scheduler *daemon.Scheduler) mcp.Hand
 		}
 
 		if params.Format == "widget" {
+			// Use job-result widget for completed jobs, job-progress for active ones
+			widgetURI := jobProgressResourceURI
+			s := job.Status
+			if s == daemon.StatusSucceeded || s == daemon.StatusFailed || s == daemon.StatusCancelled {
+				widgetURI = jobResultResourceURI
+			}
 			return map[string]any{
 				"data": result,
 				"_meta": map[string]any{
 					"ui": map[string]any{
-						"resourceUri": jobProgressResourceURI,
+						"resourceUri": widgetURI,
 					},
 				},
 			}, nil

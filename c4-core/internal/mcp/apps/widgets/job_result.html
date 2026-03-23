@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Result</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #666666;
+    --accent: #2563eb;
+    --success: #16a34a;
+    --warning: #d97706;
+    --error: #dc2626;
+    --gold: #ca8a04;
+    --radius: 6px;
+    --gap: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --text-secondary: #888888;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --gold: #eab308;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 8px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--gap);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    overflow: hidden;
+  }
+
+  .card.best-record {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 1px var(--gold);
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .status-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+    margin-left: 6px;
+  }
+
+  .status-badge.succeeded {
+    background: var(--success);
+    color: #fff;
+  }
+
+  .status-badge.failed {
+    background: var(--error);
+    color: #fff;
+  }
+
+  .status-badge.cancelled {
+    background: var(--border);
+    color: var(--text-secondary);
+  }
+
+  .best-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--gold);
+    margin-left: 6px;
+    flex-shrink: 0;
+  }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 12px 4px;
+  }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .metric-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .metric-label {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .metric-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  .metric-delta {
+    font-size: 10px;
+    font-weight: 500;
+  }
+
+  .metric-delta.positive {
+    color: var(--success);
+  }
+
+  .metric-delta.negative {
+    color: var(--error);
+  }
+
+  .metric-delta.neutral {
+    color: var(--text-secondary);
+  }
+
+  .info-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-secondary);
+    gap: 4px;
+  }
+
+  .info-row span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .duration-value {
+    font-weight: 600;
+    color: var(--text);
+  }
+</style>
+</head>
+<body>
+<div class="card" id="result-card">
+  <div id="empty-state" class="empty-state">No result</div>
+  <div id="result-content" style="display:none">
+    <div class="header">
+      <span class="header-title" id="job-name"></span>
+      <span class="best-label" id="best-label" style="display:none">BEST</span>
+      <span class="status-badge" id="status-badge"></span>
+    </div>
+    <div class="info-row">
+      <span id="job-id"></span>
+      <span class="duration-value" id="duration"></span>
+    </div>
+    <div class="metrics-grid" id="metrics-grid"></div>
+    <div class="info-row" id="footer-row" style="display:none">
+      <span id="exp-id"></span>
+      <span id="finished-at"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var els = {
+    card: document.getElementById('result-card'),
+    empty: document.getElementById('empty-state'),
+    content: document.getElementById('result-content'),
+    jobName: document.getElementById('job-name'),
+    bestLabel: document.getElementById('best-label'),
+    statusBadge: document.getElementById('status-badge'),
+    jobId: document.getElementById('job-id'),
+    duration: document.getElementById('duration'),
+    metricsGrid: document.getElementById('metrics-grid'),
+    footerRow: document.getElementById('footer-row'),
+    expId: document.getElementById('exp-id'),
+    finishedAt: document.getElementById('finished-at'),
+  };
+
+  function esc(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function formatDuration(sec) {
+    if (typeof sec !== 'number' || sec < 0) return '--';
+    if (sec < 60) return Math.round(sec) + 's';
+    if (sec < 3600) return Math.floor(sec / 60) + 'm ' + Math.round(sec % 60) + 's';
+    var h = Math.floor(sec / 3600);
+    var m = Math.floor((sec % 3600) / 60);
+    return h + 'h ' + m + 'm';
+  }
+
+  function statusClass(status) {
+    var s = (status || '').toLowerCase();
+    if (s === 'succeeded') return 'succeeded';
+    if (s === 'failed') return 'failed';
+    if (s === 'cancelled') return 'cancelled';
+    return '';
+  }
+
+  function formatMetricValue(val) {
+    if (typeof val === 'number') {
+      if (Number.isInteger(val)) return String(val);
+      return val.toFixed(4);
+    }
+    return String(val);
+  }
+
+  function formatDelta(delta) {
+    if (typeof delta !== 'number') return null;
+    var sign = delta > 0 ? '+' : '';
+    if (Number.isInteger(delta)) return sign + delta;
+    return sign + delta.toFixed(4);
+  }
+
+  function renderResult(data) {
+    if (!data || typeof data !== 'object') {
+      els.empty.style.display = '';
+      els.content.style.display = 'none';
+      els.card.classList.remove('best-record');
+      return;
+    }
+
+    els.empty.style.display = 'none';
+    els.content.style.display = '';
+
+    // Job name and status
+    var name = data.name || data.job_id || 'unnamed';
+    els.jobName.textContent = name;
+
+    var sc = statusClass(data.status);
+    els.statusBadge.className = 'status-badge ' + sc;
+    els.statusBadge.textContent = data.status || 'unknown';
+
+    // Best record highlight
+    if (data.is_best) {
+      els.bestLabel.style.display = '';
+      els.card.classList.add('best-record');
+    } else {
+      els.bestLabel.style.display = 'none';
+      els.card.classList.remove('best-record');
+    }
+
+    // Job ID
+    els.jobId.textContent = data.job_id || '';
+
+    // Duration
+    els.duration.textContent = formatDuration(data.duration_sec);
+
+    // Metrics
+    var metrics = data.metrics;
+    var deltas = data.deltas || {};
+    if (metrics && typeof metrics === 'object' && Object.keys(metrics).length > 0) {
+      var html = '';
+      var keys = Object.keys(metrics);
+      keys.forEach(function (key) {
+        var val = metrics[key];
+        var delta = deltas[key];
+        var deltaHtml = '';
+        if (delta !== undefined && delta !== null) {
+          var formatted = formatDelta(delta);
+          if (formatted !== null) {
+            var cls = delta > 0 ? 'positive' : (delta < 0 ? 'negative' : 'neutral');
+            deltaHtml = '<span class="metric-delta ' + cls + '">' + esc(formatted) + '</span>';
+          }
+        }
+        html += '<div class="metric-item">';
+        html += '<span class="metric-label">' + esc(key) + '</span>';
+        html += '<span class="metric-value">' + esc(formatMetricValue(val)) + '</span>';
+        html += deltaHtml;
+        html += '</div>';
+      });
+      els.metricsGrid.innerHTML = html;
+      els.metricsGrid.style.display = '';
+    } else {
+      els.metricsGrid.innerHTML = '';
+      els.metricsGrid.style.display = 'none';
+    }
+
+    // Footer: exp_id and finished_at
+    var hasFooter = false;
+    if (data.exp_id) {
+      els.expId.textContent = data.exp_id;
+      hasFooter = true;
+    } else {
+      els.expId.textContent = '';
+    }
+    if (data.finished_at) {
+      els.finishedAt.textContent = data.finished_at;
+      hasFooter = true;
+    } else {
+      els.finishedAt.textContent = '';
+    }
+    els.footerRow.style.display = hasFooter ? '' : 'none';
+  }
+
+  window.addEventListener('message', function (event) {
+    var msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.type === 'cq:job-result:data') {
+      renderResult(msg.payload);
+    } else if (msg.type === 'cq:job-result:clear') {
+      renderResult(null);
+    }
+  });
+
+  // Initial empty state
+  renderResult(null);
+})();
+</script>
+</body>
+</html>
