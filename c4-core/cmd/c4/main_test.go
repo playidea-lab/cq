@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/apps"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	_ "modernc.org/sqlite"
 )
@@ -529,6 +530,102 @@ func TestMCPStdioToolsCallIntegration(t *testing.T) {
 
 	if statusResult["state"] != "EXECUTE" {
 		t.Errorf("state = %v, want EXECUTE", statusResult["state"])
+	}
+}
+
+// TestMCPResourcesRead verifies resources/read returns ui:// content.
+func TestMCPResourcesRead(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	store, err := handlers.NewSQLiteStore(db)
+	if err != nil {
+		t.Fatalf("creating store: %v", err)
+	}
+
+	reg := mcp.NewRegistry()
+	handlers.RegisterAll(reg, store)
+
+	rsStore := apps.NewResourceStore()
+	rsStore.Register("ui://cq/dashboard", "<html>dashboard</html>")
+
+	srv := &mcpServer{
+		registry:      reg,
+		resourceStore: rsStore,
+	}
+
+	reqJSON := `{"jsonrpc":"2.0","id":10,"method":"resources/read","params":{"uri":"ui://cq/dashboard"}}`
+	var req mcpRequest
+	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	resp := srv.handleRequest(&req)
+	if resp == nil {
+		t.Fatal("nil response")
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %v", resp.Error)
+	}
+
+	resultMap, ok := resp.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("result type = %T, want map", resp.Result)
+	}
+	contents, ok := resultMap["contents"].([]map[string]any)
+	if !ok || len(contents) == 0 {
+		t.Fatalf("contents missing or empty: %v", resultMap["contents"])
+	}
+	if contents[0]["text"] != "<html>dashboard</html>" {
+		t.Errorf("text = %q, want <html>dashboard</html>", contents[0]["text"])
+	}
+	if contents[0]["mimeType"] != "text/html" {
+		t.Errorf("mimeType = %q, want text/html", contents[0]["mimeType"])
+	}
+}
+
+// TestMCPResourcesRead_NotFound verifies resources/read returns error for missing resource.
+func TestMCPResourcesRead_NotFound(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	srv := newTestMCPServer(t, db)
+	srv.resourceStore = apps.NewResourceStore()
+
+	reqJSON := `{"jsonrpc":"2.0","id":11,"method":"resources/read","params":{"uri":"ui://cq/missing"}}`
+	var req mcpRequest
+	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	resp := srv.handleRequest(&req)
+	if resp == nil {
+		t.Fatal("nil response")
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error for missing resource")
+	}
+}
+
+// TestMCPResourcesRead_NoStore verifies resources/read returns error when store not configured.
+func TestMCPResourcesRead_NoStore(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	srv := newTestMCPServer(t, db) // resourceStore is nil
+
+	reqJSON := `{"jsonrpc":"2.0","id":12,"method":"resources/read","params":{"uri":"ui://cq/dashboard"}}`
+	var req mcpRequest
+	if err := json.Unmarshal([]byte(reqJSON), &req); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	resp := srv.handleRequest(&req)
+	if resp == nil {
+		t.Fatal("nil response")
+	}
+	if resp.Error == nil {
+		t.Fatal("expected error when resource store is nil")
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/changmin/c4-core/internal/bridge"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/apps"
 	"github.com/changmin/c4-core/internal/secrets"
 )
 
@@ -68,6 +69,7 @@ type mcpServer struct {
 	knowledgeStore *knowledge.Store        // Go native knowledge store (Tier 2)
 	knowledgeUsage *knowledge.UsageTracker // usage tracking for 3-way RRF
 	secretStore    *secrets.Store          // global encrypted secret store (~/.c4/secrets.db)
+	resourceStore  *apps.ResourceStore     // MCP Apps ui:// resource store
 }
 
 // serve runs the stdio MCP server loop with concurrent request handling.
@@ -282,6 +284,42 @@ func (s *mcpServer) handleRequestWithCtx(req *mcpRequest, ctx context.Context) *
 			Result: map[string]any{
 				"content": []map[string]any{
 					{"type": "text", "text": string(resultJSON)},
+				},
+			},
+		}
+
+	case "resources/read":
+		var params struct {
+			URI string `json:"uri"`
+		}
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return &mcpResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error:   &mcpError{Code: -32602, Message: "invalid params"},
+			}
+		}
+		if s.resourceStore == nil {
+			return &mcpResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error:   &mcpError{Code: -32000, Message: "resource store not available"},
+			}
+		}
+		content, mimeType, err := s.resourceStore.HandleResourcesRead(params.URI)
+		if err != nil {
+			return &mcpResponse{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error:   &mcpError{Code: -32000, Message: err.Error()},
+			}
+		}
+		return &mcpResponse{
+			JSONRPC: "2.0",
+			ID:      req.ID,
+			Result: map[string]any{
+				"contents": []map[string]any{
+					{"uri": params.URI, "mimeType": mimeType, "text": content},
 				},
 			},
 		}
