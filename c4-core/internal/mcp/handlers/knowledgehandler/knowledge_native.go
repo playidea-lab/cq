@@ -230,7 +230,23 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 		},
 	}, knowledgePublishNativeHandler(opts))
 
-	// 14. c4_research_suggest — on-demand hypothesis generation from experiment documents
+	// 14. c4_knowledge_ingest_paper — LLM-based lesson extraction from paper/URL/text
+	if opts.LLM != nil {
+		reg.Register(mcp.ToolSchema{
+			Name:        "c4_knowledge_ingest_paper",
+			Description: "Extract software development lessons from a paper, URL, or text using LLM and save them as knowledge documents",
+			InputSchema: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"source":  map[string]any{"type": "string", "description": "URL, file path, or raw text to extract lessons from"},
+					"context": map[string]any{"type": "string", "description": "Project context for lesson extraction (default: 일반 소프트웨어 프로젝트)"},
+				},
+				"required": []string{"source"},
+			},
+		}, IngestPaperHandler(opts.LLM, &storeKnowledgeWriter{store: opts.Store}))
+	}
+
+	// 15. c4_research_suggest — on-demand hypothesis generation from experiment documents
 	if opts.LLM != nil {
 		reg.Register(mcp.ToolSchema{
 			Name:        "c4_research_suggest",
@@ -261,6 +277,19 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 		}, knowledgeDistillNativeHandler(opts))
 	}
 
+}
+
+// =========================================================================
+// Internal adapters
+// =========================================================================
+
+// storeKnowledgeWriter adapts *knowledge.Store to satisfy PaperKnowledgeWriter.
+type storeKnowledgeWriter struct {
+	store *knowledge.Store
+}
+
+func (a *storeKnowledgeWriter) CreateExperiment(metadata map[string]any, body string) (string, error) {
+	return a.store.Create(knowledge.TypeExperiment, metadata, body)
 }
 
 // =========================================================================
