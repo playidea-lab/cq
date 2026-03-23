@@ -127,6 +127,9 @@
       "WebFetch(domain:api.github.com)",
       "Read(/Users/changmin/git/cq/**)",
       "Read",
+      "Edit",
+      "Write",
+      "NotebookEdit",
       "Glob",
       "Grep",
       "WebFetch"

@@ -95,26 +95,7 @@ _emit_deny() {
 }
 
 # =============================================================================
-# Auto-allow safe tool types (no API call needed)
-# =============================================================================
-
-# File editing tools (Read/Edit/Write/NotebookEdit) on project files are always safe.
-# The AI is writing code, not executing it.
-if [[ "$TOOL_NAME" == "Read" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "NotebookEdit" ]]; then
-    # Block only system paths
-    if [[ -n "$FILE_PATH" && ("$FILE_PATH" == /etc/* || "$FILE_PATH" == /usr/* || "$FILE_PATH" == /System/*) ]]; then
-        _emit_deny "Blocked: writing to system directory $FILE_PATH"
-    fi
-    _emit_allow "File tool on project file"
-fi
-
-# WebFetch/WebSearch are read-only information retrieval — always safe.
-if [[ "$TOOL_NAME" == "WebFetch" || "$TOOL_NAME" == "WebSearch" ]]; then
-    _emit_allow "Web tool (read-only)"
-fi
-
-# =============================================================================
-# Allow patterns (fast path — no API call, Bash commands only)
+# Allow patterns (fast path — no API call)
 # =============================================================================
 TARGET="${COMMAND:-$FILE_PATH}"
 for pattern in "${ALLOW_PATTERNS[@]}"; do
