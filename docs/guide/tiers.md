@@ -28,15 +28,24 @@ Best for: personal projects, offline environments, getting started.
 
 ## connected
 
-**Adds cloud sync, LLM Gateway, EventBus, and Telegram notifications.**
+**Cloud-first. No API key required — just `cq auth`.**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier connected
 ```
 
+Start immediately with:
+
+```sh
+cq auth login   # GitHub OAuth — no API key needed
+```
+
+The CQ cloud (Supabase SSOT) becomes your backend automatically. No manual config file required.
+
 Additional features on top of `solo`:
+- **Cloud SSOT** — tasks, knowledge, and LLM calls routed through the cloud. No API key configuration needed.
 - **Supabase** cloud storage (tasks, documents, team data)
-- **LLM Gateway** — unified API for Anthropic, OpenAI, Gemini, Ollama
+- **LLM Gateway** — unified API for Anthropic, OpenAI, Gemini, Ollama (cloud-managed keys)
 - **C3 EventBus** — gRPC event bus for real-time notifications
 - **C0 Drive** — file storage via Supabase Storage
 - **C9 Knowledge** — semantic search + pgvector for cross-project knowledge sharing
@@ -44,8 +53,6 @@ Additional features on top of `solo`:
 - **C6 Secret Central** — encrypted secret sync (Supabase-backed, cache-first)
 - **Telegram bot** — job completion notifications + slash commands via BotFather (`cq setup`)
 - **Knowledge auto-pull** — knowledge base synced on session start
-
-Requires a cloud config provided by your team or organization. Place it at `~/.c4/config.yaml` before first use.
 
 Best for: teams, multi-machine setups, AI-powered workflows.
 
@@ -98,7 +105,7 @@ Best for: production deployments, ML workflows, large teams.
 
 CQ looks for config at `~/.c4/config.yaml`. For `solo` tier, no config is required — it works out of the box.
 
-For `connected` and `full` tiers, the config file will be provided by your team or organization. Place it at `~/.c4/config.yaml` before running `cq claude` in your project.
+For `connected` and `full` tiers, run `cq auth login` to connect automatically. The cloud config (`~/.c4/config.yaml`) is patched automatically after login — no manual setup required.
 
 ## Config templates
 

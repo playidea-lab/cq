@@ -1,5 +1,7 @@
 # Workflow Overview
 
+CQ operates in **cloud-primary mode** when connected: tasks, knowledge, and LLM calls are routed through the CQ cloud (Supabase SSOT). Local execution happens at the edge — the cloud is the brain, your machine is the hands. For `solo` tier, everything runs locally.
+
 CQ follows a structured loop with **gates at every transition**:
 
 ```

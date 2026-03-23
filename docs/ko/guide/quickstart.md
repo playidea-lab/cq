@@ -37,13 +37,13 @@ cq gemini   # Gemini CLI
 cq auth login
 ```
 
-브라우저에서 GitHub OAuth를 열고 `.c4/config.yaml`에 `cloud.enabled`, `url`, `anon_key`를 자동으로 설정합니다. 로그인 후 시작 시:
+브라우저에서 GitHub OAuth를 엽니다. **API 키 불필요** — `cq auth`만으로 클라우드 연결이 자동으로 설정됩니다. 로그인 후 시작 시:
 
 ```
 ✓ Cloud: user@example.com (expires in 47h)
 ```
 
-`solo` 티어는 이 단계를 건너뛰세요 — 로그인 불필요.
+클라우드가 단일 진실 공급원(SSOT)이 됩니다: 태스크, 지식, LLM 호출이 모두 클라우드를 통해 처리됩니다. `solo` 티어는 이 단계를 건너뛰세요 — 로그인 불필요.
 
 ## 1.6단계: Telegram 봇 설정 (선택 사항)
 

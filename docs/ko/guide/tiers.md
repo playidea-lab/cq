@@ -28,15 +28,24 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 
 ## connected
 
-**클라우드 동기화, LLM Gateway, EventBus, Telegram 알림 추가.**
+**클라우드 우선. API 키 불필요 — `cq auth`만으로 시작.**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier connected
 ```
 
+바로 시작하려면:
+
+```sh
+cq auth login   # GitHub OAuth — API 키 불필요
+```
+
+CQ 클라우드(Supabase SSOT)가 자동으로 백엔드가 됩니다. 수동 설정 파일 불필요.
+
 `solo`에 추가되는 기능:
+- **클라우드 SSOT** — 태스크, 지식, LLM 호출이 클라우드를 통해 처리됩니다. API 키 설정 불필요.
 - **Supabase** 클라우드 스토리지 (태스크, 문서, 팀 데이터)
-- **LLM Gateway** — Anthropic, OpenAI, Gemini, Ollama 통합 API
+- **LLM Gateway** — Anthropic, OpenAI, Gemini, Ollama 통합 API (클라우드 관리 키)
 - **C3 EventBus** — 실시간 알림을 위한 gRPC 이벤트 버스
 - **C0 Drive** — Supabase Storage 파일 스토리지
 - **C9 Knowledge** — 크로스 프로젝트 지식 공유를 위한 시맨틱 검색 + pgvector
@@ -44,8 +53,6 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 - **C6 Secret Central** — 암호화 시크릿 동기화 (Supabase 기반, cache-first)
 - **Telegram 봇** — 잡 완료 알림 + BotFather를 통한 슬래시 명령 (`cq setup`)
 - **지식 자동 pull** — 세션 시작 시 지식 베이스 자동 동기화
-
-팀 또는 조직에서 제공하는 클라우드 설정이 필요합니다. 첫 사용 전 `~/.c4/config.yaml`에 위치시키세요.
 
 적합한 경우: 팀, 다중 머신 설정, AI 기반 워크플로우.
 
@@ -99,7 +106,7 @@ curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | s
 
 CQ는 `~/.c4/config.yaml`에서 설정을 찾습니다. `solo` 티어는 설정이 불필요합니다 — 바로 사용 가능합니다.
 
-`connected` 및 `full` 티어는 팀 또는 조직에서 설정 파일을 제공합니다. `cq claude` 실행 전에 `~/.c4/config.yaml`에 위치시키세요.
+`connected` 및 `full` 티어는 `cq auth login`으로 자동 연결됩니다. 로그인 후 클라우드 설정(`~/.c4/config.yaml`)이 자동으로 구성됩니다 — 수동 설정 불필요.
 
 ## 설정 템플릿
 

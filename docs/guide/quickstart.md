@@ -37,13 +37,13 @@ If you're using the `connected` or `full` tier, authenticate once:
 cq auth login
 ```
 
-This opens GitHub OAuth in your browser and automatically patches `.c4/config.yaml` with `cloud.enabled`, `url`, and `anon_key`. After login, startup prints:
+This opens GitHub OAuth in your browser. **No API key required** — `cq auth` sets up cloud access automatically by connecting to the CQ cloud (SSOT). After login, startup prints:
 
 ```
 ✓ Cloud: user@example.com (expires in 47h)
 ```
 
-Skip this step for the `solo` tier — no login required.
+The cloud becomes your single source of truth: tasks, knowledge, and LLM calls are all routed through the cloud. Skip this step for the `solo` tier — no login required.
 
 ## Step 1.6: Set up Telegram bot (optional)
 
