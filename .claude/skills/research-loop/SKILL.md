@@ -143,6 +143,15 @@ c4_research_record(
 
 ### action = "run_experiments"
 
+**CRITICAL: @key=value metric tracking**
+When writing or modifying experiment scripts, ALL print() that report metrics MUST include
+`@key=value` annotations. cq MetricWriter auto-parses stdout for `@(\w+)=(<number>)` and
+sends to experiment_checkpoint in real-time. Example:
+```python
+print(f'Epoch {epoch} @loss={loss:.4f} @acc={acc:.4f} @val_loss={val_loss:.4f}')
+print(f'Final @hd_gt={hd:.4f} @msd_gt={msd:.4f}')
+```
+
 1. Get current iteration via `c4_research_status`
 2. For each experiment with `status: "planned"`:
    - Submit via `c4_job_submit(command, working_dir, gpu_count)`

@@ -56,6 +56,9 @@ hb_thread.start()
 0. Start heartbeat thread
 1. IF task.knowledge_context exists → READ and APPLY relevant lessons
 2. Implement the task (follow DoD, including Rationale)
+   - **ML/Training scripts**: All print() that report metrics MUST include @key=value annotations.
+     cq MetricWriter auto-parses stdout for @(\w+)=(<number>) and sends to experiment_checkpoint.
+     Example: print(f'Fold {fold} done @loss={loss:.4f} @hd_gt={hd:.4f} @msd={msd:.4f}')
 3. Run validations, fix issues (max 3 retries)
 3.5. **Polish Loop** (skip if diff < 5 lines):
    a. Spawn code-reviewer agent: review changes on 6 axes
