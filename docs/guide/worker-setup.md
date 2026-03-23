@@ -1,25 +1,25 @@
 # Remote Worker Setup
 
-> See also: [Internal worker guide](https://github.com/aspect-build/cq/blob/main/docs/guide/worker.md) for comprehensive CLI/API/troubleshooting reference.
+> See also: [Internal worker guide](https://github.com/PlayIdea-Lab/cq/blob/main/docs/guide/worker.md) for comprehensive CLI/API/troubleshooting reference.
 
-Connect a GPU server (or any machine) to CQ Hub as a stateless job worker.
+Connect a GPU server (or any machine) to CQ as a remote worker.
 
-::: info full tier required
-Worker mode requires the `full` tier binary. [Install with `--tier full`](/guide/install#install-a-specific-tier).
-:::
+## Quick Start (v1.27+)
 
-## Quick Start
-
-Connect a GPU server in 3 commands:
+Connect a GPU server in 2 commands:
 
 ```sh
 # On the GPU server:
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh -s -- --tier full
-cq auth login
-cq hub worker start
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
+cq    # login + service start + relay connect (all automatic)
 ```
 
-That's it. The server is now ready to accept jobs from `cq hub submit`.
+That's it. The server is now:
+- **Relay-connected** — accessible from any machine via `https://cq-relay.fly.dev/w/{hostname}/mcp`
+- **OS service** — auto-starts on boot, auto-restarts on crash
+- **Hub-ready** — accepts jobs from `cq hub submit` (full tier)
+
+Verify with `cq doctor` and `cq relay status`.
 
 ---
 
@@ -87,9 +87,22 @@ No Hub URL to configure. No `C5_HUB_URL` or `C5_API_KEY` environment variables. 
 
 ---
 
-## Run as a persistent service (systemd)
+## Run as a persistent service
 
-For production use, keep the worker alive after SSH disconnect:
+`cq` automatically installs an OS service (LaunchAgent on macOS, systemd on Linux):
+
+```sh
+cq              # auto-installs and starts the service
+cq serve status # check service status
+cq stop         # stop the service
+```
+
+Logs:
+- **macOS**: `~/Library/Logs/cq-serve.{out,err}.log`
+- **Linux**: `~/.local/state/cq/cq-serve.{out,err}.log`
+
+::: details Manual systemd setup (legacy)
+If you need a custom unit file for Hub worker specifically:
 
 ```sh
 cat > ~/.config/systemd/user/cq-worker.service << 'EOF'
@@ -108,14 +121,9 @@ EOF
 
 systemctl --user daemon-reload
 systemctl --user enable --now cq-worker
-systemctl --user status cq-worker
-```
-
-Check logs anytime:
-
-```sh
 journalctl --user -u cq-worker -f
 ```
+:::
 
 ---
 

@@ -1,18 +1,61 @@
 # Remote MCP Access
 
-Expose CQ's MCP server over HTTP so any AI tool — on any machine — can call CQ tools remotely.
+Access CQ tools from any machine — even behind NAT.
 
-::: info connected / full tier recommended
-Remote MCP works on any tier, but is most useful with `connected` or `full` so tools on remote machines share the same cloud project state.
+## Recommended: Relay (v1.27+)
+
+The easiest way to access CQ remotely is the **Relay** — a WSS bridge that traverses NAT automatically.
+
+```
+Your machine (NAT)              Relay (Fly.io)               Remote client
+──────────────────              ──────────────               ─────────────
+cq serve ──WSS──►  cq-relay.fly.dev  ◄──HTTPS──  Claude Code
+                   /w/{worker}/mcp                .mcp.json type:"http"
+```
+
+### Setup
+
+```sh
+cq auth login    # auto-configures relay
+cq               # starts service (relay auto-connects)
+cq relay status  # verify
+```
+
+### Connect from another machine
+
+Add to `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "my-worker": {
+      "type": "http",
+      "url": "https://cq-relay.fly.dev/w/<hostname>/mcp",
+      "headers": {
+        "Authorization": "Bearer <jwt-from-cq-auth-status>"
+      }
+    }
+  }
+}
+```
+
+JWT expires in 1 hour — the relay client auto-refreshes, but the `.mcp.json` header is static. For long-term access, use `cq serve` on the remote machine directly.
+
+---
+
+## Legacy: Direct HTTP (LAN only)
+
+::: warning Legacy Approach
+The HTTP method below requires direct network access (same LAN or VPN). For NAT traversal, use Relay above.
 :::
 
-## How it works
+Expose CQ's MCP server over HTTP so any AI tool on the same network can call CQ tools.
 
 ```
 Remote machine                  Your machine (cq serve)
 ──────────────                  ───────────────────────
 Claude Code                     cq mcp-http
-.mcp.json type:"url"  ────────► POST /mcp  (JSON-RPC 2.0)
+.mcp.json type:"http" ────────► POST /mcp  (JSON-RPC 2.0)
                                 GET  /mcp  (SSE keepalive)
                                 port 4142
 ```

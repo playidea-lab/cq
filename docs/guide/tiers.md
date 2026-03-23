@@ -51,6 +51,7 @@ Additional features on top of `solo`:
 - **C9 Knowledge** — semantic search + pgvector for cross-project knowledge sharing
 - **Persona/Soul Evolution** — coding style pattern learning
 - **C6 Secret Central** — encrypted secret sync (Supabase-backed, cache-first)
+- **Relay** — WSS-based NAT traversal for remote MCP access; any machine behind NAT exposes tools via `https://cq-relay.fly.dev/w/{worker}/mcp`
 - **Telegram bot** — job completion notifications + slash commands via BotFather (`cq setup`)
 - **Knowledge auto-pull** — knowledge base synced on session start
 

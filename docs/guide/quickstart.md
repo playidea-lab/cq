@@ -14,7 +14,7 @@ cq codex    # OpenAI Codex CLI
 cq gemini   # Gemini CLI
 ```
 
-Each command creates `.CLAUDE.md`, `.c4/`, and the MCP config for your tool:
+Each command creates `CLAUDE.md`, `.c4/`, and the MCP config for your tool:
 
 | Command | MCP config | Agent instructions |
 |---------|-----------|-------------------|
@@ -29,31 +29,41 @@ Then **restart your AI tool** so it picks up the new MCP server.
 Any tool that supports the [AGENTS.md standard](https://agents.md) can read `CLAUDE.md` directly — no `cq init` required.
 :::
 
-## Step 1.5: Log in (connected / full tier)
+## Step 1.5: Start CQ service (connected / full tier)
 
-If you're using the `connected` or `full` tier, authenticate once:
+If you're using the `connected` or `full` tier, just run:
 
 ```sh
-cq auth login
+cq
 ```
 
-This opens GitHub OAuth in your browser. **No API key required** — `cq auth` sets up cloud access automatically by connecting to the CQ cloud (SSOT). After login, startup prints:
+This single command handles everything:
+1. **Login** — opens GitHub OAuth if not logged in (no API key needed)
+2. **Service install** — registers cq serve as an OS service (LaunchAgent / systemd)
+3. **Status check** — shows service health
 
 ```
-✓ Cloud: user@example.com (expires in 47h)
+  CQ v1.27.1
+  ----------------------------------------
+  Service: running (7/7 components)
+  ----------------------------------------
+
+  Ready! Next steps:
+    cq claude        Start Claude Code
+    cq status        Service + project status
 ```
 
-The cloud becomes your single source of truth: tasks, knowledge, and LLM calls are all routed through the cloud. Skip this step for the `solo` tier — no login required.
+After this, CQ runs in the background permanently — relay, journal sync, and token refresh all active. Skip this step for the `solo` tier.
 
 ## Step 1.6: Set up Telegram bot (optional)
 
 To connect a Telegram bot for remote access:
 
 ```sh
-cq --bot
+cq claude --bot
 ```
 
-Select "새 봇 만들기" from the menu and follow the wizard (BotFather token + your Telegram ID). After setup, use `cq --bot` or `cq --bot <botname>` to launch with Telegram.
+Select "새 봇 만들기" from the menu and follow the wizard (BotFather token + your Telegram ID). After setup, use `cq claude --bot` or `cq claude --bot <botname>` to launch with Telegram.
 
 ## Step 1.7: Explore ideas first (optional)
 
@@ -78,6 +88,8 @@ This checks and automatically fixes:
 - Hook installation (`.claude/hooks/c4-gate.sh`)
 - Python sidecar (`c4-bridge`) installation
 - MCP server configuration
+- **Relay** connectivity (connected/full tier)
+- **OS service** status (cq serve)
 
 If everything is healthy, you'll see all green checks:
 
@@ -85,7 +97,8 @@ If everything is healthy, you'll see all green checks:
 ✓ CLAUDE.md         present
 ✓ hooks             c4-gate.sh installed
 ✓ sidecar           c4-bridge ready
-✓ mcp               cq registered
+✓ relay             connected (2 workers)
+✓ os-service        installed (running)
 ```
 
 ::: tip
