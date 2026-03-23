@@ -54,6 +54,7 @@ func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store, appS
 	}
 	artifacthandler.Register(reg, rootDir)
 	RegisterPhaseLockHandlers(reg, rootDir)
+	RegisterTaskEventsHandler(reg, rootDir)
 }
 
 // NativeOpts holds optional dependencies for native handler registration.
