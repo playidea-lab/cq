@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.14.4] - 2026-03-23
+
+### 🔧 Chore
+- **sync**: skills, hooks, specs, and standards 동기화
+
+---
+
+## [v1.14.3] - 2026-03-23
+
+### ✨ Features
+- **ontology**: knowledge_record 태그 기반 confidence 부스트
+- **knowledge**: 개인 온톨로지 HIGH 태그로 검색 쿼리 강화
+
+### 📚 Docs
+- **user**: Idea-to-Ship 및 Quality Gates 예제 추가 (user submodule 업데이트)
+
+---
+
+## [v1.14.2] - 2026-03-23
+
+### 🐛 Bug Fixes
+- **auth**: 장시간 실행 워커 세션에서 토큰 만료 방지
+  - Hub Worker: JWT를 시작 시 한 번 읽고 고정하던 것을 TokenProvider 자동 refresh로 변경
+  - MCP: 멀티프로세스 refresh token rotation race 방어 (디스크 fallback)
+  - 데드 코드 `refreshCloudSession()` 삭제 (120줄)
+
+### ✨ Features
+- **ontology**: knowledge + ontology를 단일 워커 컨텍스트 섹션으로 통합
+
+---
+
+## [v1.14.1] - 2026-03-23
+
+### ✨ Features
+- **c4-plan**: 소규모 계획(3개 이하 태스크)에서 critique loop 자동 스킵
+- **ontology**: `persona_learn_from_diff`에서 CrossPositionDetector 트리거
+- **ontology**: c4_get_task에서 개인 L1 HIGH 노드를 Developer Profile로 주입
+- **pop**: DiffSource에 4개 코딩 패턴 감지기 추가
+- **pi**: pipeline-state.json 생성 (auto-run 선택 시)
+- **skill/c4-finish**: 커밋 후 pipeline-state.json 정리
+
+### 🐛 Bug Fixes
+- **reboot**: 세션별 `.reboot-{name}` 파일로 크로스세션 간섭 방지
+- **reboot**: `.reboot` 파일의 UUID 매칭 세션만 리부트
+- **ontology**: Hub 업로드 URL에 `/rest/v1/` 접두사 추가
+- **c4-plan**: FROM_PI 시 Phase 0.5 액션 선택 스킵, AUTO_RUN 시 에디터 스킵
+
+---
+
 ## [v1.14.0] - 2026-03-23
 
 ### ✨ Features
