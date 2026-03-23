@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/botstore"
 	"github.com/changmin/c4-core/internal/cqdata"
 	"github.com/changmin/c4-core/internal/knowledge"
@@ -1212,6 +1213,12 @@ func setupMCPConfig(dir string) error {
 		servers = map[string]any{}
 	}
 	servers["cq"] = c4Entry
+
+	// Auto-register relay workers with fresh JWT token.
+	// Reads relay config + session token, queries relay /health for connected workers,
+	// and adds each remote worker as an HTTP MCP server entry.
+	injectRelayWorkers(servers, dir)
+
 	config["mcpServers"] = servers
 
 	data, err := json.MarshalIndent(config, "", "  ")
@@ -1226,6 +1233,96 @@ func setupMCPConfig(dir string) error {
 
 	fmt.Fprintln(os.Stderr, "cq: .mcp.json configured")
 	return nil
+}
+
+// injectRelayWorkers adds connected relay workers as HTTP MCP server entries.
+// Each worker gets a fresh JWT from session.json. Skips silently on any error.
+func injectRelayWorkers(servers map[string]any, dir string) {
+	// Load relay config
+	cfgMgr, err := config.New(dir)
+	if err != nil {
+		return
+	}
+	cfg := cfgMgr.GetConfig()
+	if !cfg.Relay.Enabled || cfg.Relay.URL == "" {
+		return
+	}
+
+	// Get fresh JWT from session
+	home, _ := os.UserHomeDir()
+	sessionPath := filepath.Join(home, ".c4", "session.json")
+	sessionData, err := os.ReadFile(sessionPath)
+	if err != nil {
+		return
+	}
+	var session struct {
+		AccessToken string `json:"access_token"`
+	}
+	if json.Unmarshal(sessionData, &session) != nil || session.AccessToken == "" {
+		return
+	}
+
+	relayHTTPS := strings.Replace(cfg.Relay.URL, "wss://", "https://", 1)
+	relayHTTPS = strings.Replace(relayHTTPS, "ws://", "http://", 1)
+	hostname, _ := os.Hostname()
+
+	// Query relay for connected workers
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(relayHTTPS + "/health")
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var health struct {
+		Status  string   `json:"status"`
+		Workers int      `json:"workers"`
+		Names   []string `json:"worker_names"`
+	}
+	body, _ := io.ReadAll(resp.Body)
+	json.Unmarshal(body, &health)
+
+	// If relay doesn't expose worker names, try known workers from existing .mcp.json
+	if len(health.Names) == 0 {
+		// Check existing entries for worker-* keys
+		for key := range servers {
+			if strings.HasPrefix(key, "worker-") {
+				existing, ok := servers[key].(map[string]any)
+				if !ok {
+					continue
+				}
+				url, _ := existing["url"].(string)
+				if url == "" {
+					continue
+				}
+				// Refresh token for existing worker entry
+				servers[key] = map[string]any{
+					"type": "http",
+					"url":  url,
+					"headers": map[string]string{
+						"Authorization": "Bearer " + session.AccessToken,
+					},
+				}
+				fmt.Fprintf(os.Stderr, "cq: relay worker %s token refreshed\n", key)
+			}
+		}
+		return
+	}
+
+	// Register each connected worker (except self)
+	for _, name := range health.Names {
+		if name == hostname {
+			continue // skip self
+		}
+		serverName := "worker-" + strings.ReplaceAll(name, ".", "-")
+		servers[serverName] = map[string]any{
+			"type": "http",
+			"url":  relayHTTPS + "/w/" + name + "/mcp",
+			"headers": map[string]string{
+				"Authorization": "Bearer " + session.AccessToken,
+			},
+		}
+		fmt.Fprintf(os.Stderr, "cq: relay worker %s registered (%s)\n", serverName, name)
+	}
 }
 
 // findCQBinary locates the cq Go binary path for .mcp.json configuration.

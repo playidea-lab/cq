@@ -191,6 +191,16 @@ func (s *server) workerCount() int {
 	return len(s.conns)
 }
 
+func (s *server) workerNames() []string {
+	s.workers.RLock()
+	defer s.workers.RUnlock()
+	names := make([]string, 0, len(s.conns))
+	for id := range s.conns {
+		names = append(names, id)
+	}
+	return names
+}
+
 func (s *server) getWorker(id string) (*workerConn, bool) {
 	s.workers.RLock()
 	defer s.workers.RUnlock()
@@ -375,8 +385,9 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "ok",
-		"workers": s.workerCount(),
+		"status":       "ok",
+		"workers":      s.workerCount(),
+		"worker_names": s.workerNames(),
 	})
 }
 
@@ -558,6 +569,9 @@ func main() {
 	mux.HandleFunc("POST /w/{id}/mcp", srv.handleMCP)
 	mux.HandleFunc("GET /w/{id}/mcp", srv.handleMCP)
 	mux.HandleFunc("DELETE /w/{id}/mcp", srv.handleMCP)
+	mux.HandleFunc("POST /w/{id}/mcp/", srv.handleMCP)
+	mux.HandleFunc("GET /w/{id}/mcp/", srv.handleMCP)
+	mux.HandleFunc("DELETE /w/{id}/mcp/", srv.handleMCP)
 	mux.HandleFunc("GET /w/{id}/health", srv.handleWorkerHealth)
 	mux.HandleFunc("GET /health", srv.handleHealth)
 	mux.HandleFunc("POST /tunnel", srv.handleCreateTunnel)
