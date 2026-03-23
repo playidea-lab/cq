@@ -499,6 +499,12 @@ func patchCloudConfigAfterLogin(projDir string) string {
 	}
 
 	result := writeCloudSectionToYAML(existing, desired)
+
+	// Auto-set LLM proxy base_url for connected tier (no user API key needed).
+	if effectiveURL != "" {
+		llmProxyURL := effectiveURL + "/functions/v1/llm-proxy"
+		result = ensureLLMGatewayBaseURL(result, llmProxyURL)
+	}
 	if err := os.WriteFile(configPath, []byte(result), 0644); err != nil {
 		// Non-fatal: login succeeded, config patch failed.
 		fmt.Fprintf(os.Stderr, "Warning: failed to write config: %v\n", err)
@@ -613,4 +619,45 @@ func writeCloudSectionToYAML(existing string, desired map[string]string) string 
 		}
 	}
 	return sb.String()
+}
+
+// ensureLLMGatewayBaseURL ensures the llm_gateway.providers.anthropic.base_url
+// is set in the config YAML. If already set, preserves the existing value.
+// If not present, appends the section.
+func ensureLLMGatewayBaseURL(content, proxyURL string) string {
+	// Check if base_url is already set under llm_gateway
+	if strings.Contains(content, "base_url:") && strings.Contains(content, "llm_gateway:") {
+		return content // already configured
+	}
+
+	// Append llm_gateway section if not present
+	if !strings.Contains(content, "llm_gateway:") {
+		if !strings.HasSuffix(content, "\n") {
+			content += "\n"
+		}
+		content += "\nllm_gateway:\n  providers:\n    anthropic:\n      base_url: " + proxyURL + "\n"
+		return content
+	}
+
+	// llm_gateway exists but no base_url — insert under anthropic provider
+	lines := strings.Split(content, "\n")
+	var result []string
+	inserted := false
+	for i, line := range lines {
+		result = append(result, line)
+		if !inserted && strings.TrimSpace(line) == "anthropic:" {
+			// Check if we're inside llm_gateway.providers
+			for j := i - 1; j >= 0; j-- {
+				if strings.TrimSpace(lines[j]) == "providers:" || strings.TrimSpace(lines[j]) == "llm_gateway:" {
+					result = append(result, "      base_url: "+proxyURL)
+					inserted = true
+					break
+				}
+				if lines[j] != "" && !strings.HasPrefix(lines[j], " ") && !strings.HasPrefix(lines[j], "\t") {
+					break
+				}
+			}
+		}
+	}
+	return strings.Join(result, "\n")
 }

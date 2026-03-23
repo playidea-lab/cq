@@ -7,6 +7,38 @@
 
 ---
 
+## Cloud-First Architecture (v1.16+)
+
+> connected/full tier에서 CQ의 "두뇌"는 클라우드, 로컬은 "손발"만 담당.
+
+```
+┌──────────────┐          ┌──────────────────────┐
+│ 로컬 (Thin    │   JWT    │ 클라우드 (Supabase)    │
+│  Agent)      │◄────────►│                       │
+│              │          │ 두뇌:                  │
+│ 손발:         │          │  ├ Tasks (Postgres)    │
+│  ├ 파일 I/O  │          │  ├ Knowledge (pgvector)│
+│  ├ Git       │          │  ├ Ontology L1/L2/L3   │
+│  ├ 빌드/테스트│          │  ├ LLM Proxy (Edge Fn) │
+│  └ LSP       │          │  ├ Gates (Postgres)    │
+│              │          │  └ piki Standards      │
+│ 캐시:         │          │                       │
+│  └ SQLite    │          └──────────────────────┘
+└──────────────┘
+```
+
+| 모드 | 데이터 SSOT | LLM | 설정 |
+|------|-----------|-----|------|
+| **solo** | 로컬 SQLite | 사용자 API 키 | config.yaml 필요 |
+| **connected** | Supabase (cloud-primary) | PI Lab LLM Proxy | `cq auth`만 |
+| **full** | Supabase (cloud-primary) | PI Lab LLM Proxy | `cq auth`만 |
+
+- `cq auth` → `cloud.mode: cloud-primary` + `llm_gateway.base_url` 자동 설정
+- Cloud 실패 시 SQLite fallback (읽기)
+- ~70개 도구가 클라우드, ~48개 도구가 로컬 필수 (파일/Git/빌드)
+
+---
+
 ## Go Core (c4-core/) — Primary MCP Server
 
 > Go 기반 MCP 서버. ~45.0K LOC(src) + ~38.7K LOC(test). ~1,950개 테스트, 37 패키지.
