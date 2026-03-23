@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CQ Cost Tracker</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #666666;
+    --accent: #2563eb;
+    --success: #16a34a;
+    --warning: #d97706;
+    --error: #dc2626;
+    --radius: 6px;
+    --gap: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --text-secondary: #888888;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 8px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--gap);
+    height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    overflow: hidden;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+  }
+
+  .total-cost {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  /* Summary row: total cost + cache stats */
+  .summary-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: var(--gap);
+    flex-shrink: 0;
+  }
+
+  .stat-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .stat-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.success { color: var(--success); }
+
+  /* Model list with bar chart */
+  .section {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow: hidden;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+
+  .model-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .model-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .model-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 10px;
+  }
+
+  .model-name {
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 70%;
+  }
+
+  .model-cost {
+    font-weight: 600;
+    color: var(--text);
+    flex-shrink: 0;
+    margin-left: 4px;
+  }
+
+  .bar-track {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  .empty-state {
+    font-size: 10px;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 8px 0;
+    opacity: 0.6;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <span class="header-title">LLM 비용</span>
+    <span class="total-cost" id="total-cost">$0.0000</span>
+  </div>
+
+  <div class="summary-row">
+    <div class="stat-box">
+      <div class="stat-label">총 요청</div>
+      <div class="stat-value" id="total-requests">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">캐시 히트율</div>
+      <div class="stat-value success" id="cache-hit-rate">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">캐시 절감율</div>
+      <div class="stat-value success" id="cache-savings-rate">—</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">모델별 비용</div>
+    <div class="model-list" id="model-list">
+      <div class="empty-state">데이터 없음</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var els = {
+    totalCost: document.getElementById('total-cost'),
+    totalRequests: document.getElementById('total-requests'),
+    cacheHitRate: document.getElementById('cache-hit-rate'),
+    cacheSavingsRate: document.getElementById('cache-savings-rate'),
+    modelList: document.getElementById('model-list'),
+  };
+
+  function fmtCost(v) {
+    if (typeof v !== 'number') return '$0.0000';
+    return '$' + v.toFixed(4);
+  }
+
+  function fmtPct(v) {
+    if (typeof v !== 'number') return '—';
+    return (v * 100).toFixed(1) + '%';
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function renderModels(byModel) {
+    if (!byModel || typeof byModel !== 'object' || Object.keys(byModel).length === 0) {
+      els.modelList.innerHTML = '<div class="empty-state">데이터 없음</div>';
+      return;
+    }
+
+    // Sort models by cost desc
+    var entries = Object.entries(byModel).map(function (e) {
+      return { model: e[0], cost: typeof e[1] === 'number' ? e[1] : (e[1] && typeof e[1].total_cost_usd === 'number' ? e[1].total_cost_usd : 0) };
+    });
+    entries.sort(function (a, b) { return b.cost - a.cost; });
+
+    var maxCost = entries.length > 0 ? entries[0].cost : 0;
+
+    var html = '';
+    entries.slice(0, 6).forEach(function (entry) {
+      var pct = maxCost > 0 ? Math.round((entry.cost / maxCost) * 100) : 0;
+      html += '<div class="model-item">';
+      html += '<div class="model-row">';
+      html += '<span class="model-name">' + esc(entry.model) + '</span>';
+      html += '<span class="model-cost">' + fmtCost(entry.cost) + '</span>';
+      html += '</div>';
+      html += '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div>';
+      html += '</div>';
+    });
+    els.modelList.innerHTML = html;
+  }
+
+  function applyData(data) {
+    if (!data) return;
+
+    var totalUSD = typeof data.total_usd === 'number' ? data.total_usd : 0;
+    els.totalCost.textContent = fmtCost(totalUSD);
+
+    var totalReqs = typeof data.total_requests === 'number' ? data.total_requests : 0;
+    els.totalRequests.textContent = totalReqs.toLocaleString();
+
+    els.cacheHitRate.textContent = fmtPct(data.global_cache_hit_rate);
+    els.cacheSavingsRate.textContent = fmtPct(data.global_cache_savings_rate);
+
+    renderModels(data.by_model);
+  }
+
+  // Listen for postMessage from MCP Apps host
+  window.addEventListener('message', function (event) {
+    var msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.type === 'cq:cost-tracker:data') {
+      applyData(msg.payload);
+    }
+  });
+})();
+</script>
+</body>
+</html>

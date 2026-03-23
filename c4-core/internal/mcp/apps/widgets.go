@@ -37,3 +37,9 @@ var TaskGraphHTML string
 //
 //go:embed widgets/nodes_map.html
 var NodesMapHTML string
+
+// CostTrackerHTML is the embedded cost tracker widget HTML content.
+// Served as the ui://cq/cost-tracker resource via MCP resources/read.
+//
+//go:embed widgets/cost_tracker.html
+var CostTrackerHTML string

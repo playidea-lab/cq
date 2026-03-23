@@ -22,6 +22,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp/apps"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/mcp/handlers/gpuhandler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/llmhandler"
 	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/secrets"
 	storepackage "github.com/changmin/c4-core/internal/store"
@@ -358,6 +359,10 @@ func newMCPServer() (*mcpServer, error) {
 	// Register job widgets for GPU handler (job progress + job result).
 	gpuhandler.RegisterJobProgressWidget(appStore, apps.JobProgressHTML)
 	gpuhandler.RegisterJobResultWidget(appStore, apps.JobResultHTML)
+
+	// Register cost tracker widget for LLM handler.
+	llmhandler.RegisterCostTrackerWidget(appStore, apps.CostTrackerHTML)
+	fmt.Fprintln(os.Stderr, "cq: c4_llm_costs widget registered (ui://cq/cost-tracker)")
 
 	// Auto-register CLI commands in lighthouse so agents can discover them.
 	if cliCmds := collectCLICommands(rootCmd, "cq"); len(cliCmds) > 0 {

@@ -11,7 +11,18 @@ import (
 
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/apps"
 )
+
+const costTrackerResourceURI = "ui://cq/cost-tracker"
+
+// RegisterCostTrackerWidget registers the cost-tracker HTML widget in the resource store.
+// Call this after RegisterLLMHandlers when the apps ResourceStore is available.
+func RegisterCostTrackerWidget(rs *apps.ResourceStore, html string) {
+	if rs != nil && html != "" {
+		rs.Register(costTrackerResourceURI, html)
+	}
+}
 
 // RegisterLLMHandlers registers c4_llm_call, c4_llm_providers, c4_llm_costs,
 // and c4_llm_usage_stats tools.
@@ -64,13 +75,41 @@ func RegisterLLMHandlers(reg *mcp.Registry, gateway *llm.Gateway, db *sql.DB) {
 
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_llm_costs",
-		Description: "Get LLM usage cost report for this session",
+		Description: "Get LLM usage cost report for this session — model breakdown, cache hit rate, and total spend",
 		InputSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
+			"type": "object",
+			"properties": map[string]any{
+				"format": map[string]any{
+					"type":        "string",
+					"description": "Response format: 'widget' returns MCP Apps widget with _meta; 'text' returns plain JSON (default)",
+					"enum":        []string{"widget", "text"},
+				},
+			},
 		},
-	}, func(_ json.RawMessage) (any, error) {
-		return handleLLMCosts(gateway)
+	}, func(raw json.RawMessage) (any, error) {
+		var args struct {
+			Format string `json:"format"`
+		}
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &args); err != nil {
+				return nil, fmt.Errorf("invalid arguments: %w", err)
+			}
+		}
+		data, err := handleLLMCosts(gateway)
+		if err != nil {
+			return nil, err
+		}
+		if args.Format == "widget" {
+			return map[string]any{
+				"data": data,
+				"_meta": map[string]any{
+					"ui": map[string]any{
+						"resourceUri": costTrackerResourceURI,
+					},
+				},
+			}, nil
+		}
+		return data, nil
 	})
 
 	reg.Register(mcp.ToolSchema{
