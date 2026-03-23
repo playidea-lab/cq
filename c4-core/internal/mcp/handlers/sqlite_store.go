@@ -818,52 +818,54 @@ func (s *SQLiteStore) SubmitTask(taskID, workerID, commitSHA, handoff string, re
 	// 1. Merge worktree branch to default branch (preserve changes)
 	// 2. Remove worktree directory
 	// 3. Delete the branch
-	cfg := s.config.GetConfig()
-	if s.config != nil && cfg.Worktree.AutoCleanup && s.projectRoot != "" {
-		wtPath := filepath.Join(s.projectRoot, ".c4", "worktrees", workerID)
-		if _, statErr := os.Stat(wtPath); statErr == nil {
-			branch := ""
-			if cfg.WorkBranchPrefix != "" {
-				branch = cfg.WorkBranchPrefix + taskID
-			}
-
-			// Step 1: Merge worktree branch to default branch before cleanup.
-			merged := false
-			if branch != "" && commitSHA != "" {
-				defaultBranch := cfg.DefaultBranch
-				if defaultBranch == "" {
-					defaultBranch = "main"
+	if s.config != nil {
+		cfg := s.config.GetConfig()
+		if cfg.Worktree.AutoCleanup && s.projectRoot != "" {
+			wtPath := filepath.Join(s.projectRoot, ".c4", "worktrees", workerID)
+			if _, statErr := os.Stat(wtPath); statErr == nil {
+				branch := ""
+				if cfg.WorkBranchPrefix != "" {
+					branch = cfg.WorkBranchPrefix + taskID
 				}
-				currentBranch, _ := runGit(s.projectRoot, "rev-parse", "--abbrev-ref", "HEAD")
-				if currentBranch != defaultBranch {
-					fmt.Fprintf(os.Stderr, "c4: warning: skipping auto-merge — HEAD is %q, not %q; branch %s preserved\n", currentBranch, defaultBranch, branch)
-				} else if _, mergeErr := runGit(s.projectRoot, "merge", branch, "--no-ff", "-m",
-					fmt.Sprintf("Merge branch '%s' — C4 auto-merge (%s)", branch, taskID)); mergeErr != nil {
-					fmt.Fprintf(os.Stderr, "c4: warning: failed to merge branch %s to %s: %v\n", branch, defaultBranch, mergeErr)
-				} else {
-					merged = true
-					// Auto-learn coding patterns from the merged diff (best-effort).
-					s.autoLearnFromDiff("HEAD~1..HEAD")
+
+				// Step 1: Merge worktree branch to default branch before cleanup.
+				merged := false
+				if branch != "" && commitSHA != "" {
+					defaultBranch := cfg.DefaultBranch
+					if defaultBranch == "" {
+						defaultBranch = "main"
+					}
+					currentBranch, _ := runGit(s.projectRoot, "rev-parse", "--abbrev-ref", "HEAD")
+					if currentBranch != defaultBranch {
+						fmt.Fprintf(os.Stderr, "c4: warning: skipping auto-merge — HEAD is %q, not %q; branch %s preserved\n", currentBranch, defaultBranch, branch)
+					} else if _, mergeErr := runGit(s.projectRoot, "merge", branch, "--no-ff", "-m",
+						fmt.Sprintf("Merge branch '%s' — C4 auto-merge (%s)", branch, taskID)); mergeErr != nil {
+						fmt.Fprintf(os.Stderr, "c4: warning: failed to merge branch %s to %s: %v\n", branch, defaultBranch, mergeErr)
+					} else {
+						merged = true
+						// Auto-learn coding patterns from the merged diff (best-effort).
+						s.autoLearnFromDiff("HEAD~1..HEAD")
+					}
 				}
-			}
 
-			// Step 2: Remove worktree directory.
-			if _, rmErr := runGit(s.projectRoot, "worktree", "remove", "--force", wtPath); rmErr != nil {
-				fmt.Fprintf(os.Stderr, "c4: warning: failed to remove worktree %s: %v\n", wtPath, rmErr)
-			}
+				// Step 2: Remove worktree directory.
+				if _, rmErr := runGit(s.projectRoot, "worktree", "remove", "--force", wtPath); rmErr != nil {
+					fmt.Fprintf(os.Stderr, "c4: warning: failed to remove worktree %s: %v\n", wtPath, rmErr)
+				}
 
-			// Step 3: Delete branch — skip ancestry check if merge already succeeded.
-			if branch != "" {
-				if merged {
-					if _, branchErr := runGit(s.projectRoot, "branch", "-D", branch); branchErr != nil {
-						fmt.Fprintf(os.Stderr, "c4: warning: failed to delete branch %s: %v\n", branch, branchErr)
+				// Step 3: Delete branch — skip ancestry check if merge already succeeded.
+				if branch != "" {
+					if merged {
+						if _, branchErr := runGit(s.projectRoot, "branch", "-D", branch); branchErr != nil {
+							fmt.Fprintf(os.Stderr, "c4: warning: failed to delete branch %s: %v\n", branch, branchErr)
+						}
+					} else if _, containsErr := runGit(s.projectRoot, "merge-base", "--is-ancestor", branch, "HEAD"); containsErr == nil {
+						if _, branchErr := runGit(s.projectRoot, "branch", "-D", branch); branchErr != nil {
+							fmt.Fprintf(os.Stderr, "c4: warning: failed to delete branch %s: %v\n", branch, branchErr)
+						}
+					} else {
+						fmt.Fprintf(os.Stderr, "c4: warning: branch %s not merged to HEAD, keeping for recovery\n", branch)
 					}
-				} else if _, containsErr := runGit(s.projectRoot, "merge-base", "--is-ancestor", branch, "HEAD"); containsErr == nil {
-					if _, branchErr := runGit(s.projectRoot, "branch", "-D", branch); branchErr != nil {
-						fmt.Fprintf(os.Stderr, "c4: warning: failed to delete branch %s: %v\n", branch, branchErr)
-					}
-				} else {
-					fmt.Fprintf(os.Stderr, "c4: warning: branch %s not merged to HEAD, keeping for recovery\n", branch)
 				}
 			}
 		}

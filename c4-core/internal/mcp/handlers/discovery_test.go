@@ -68,7 +68,7 @@ func TestHandleSaveDoc_Spec(t *testing.T) {
 			}
 
 			// Verify file was created
-			path := filepath.Join(tmpDir, ".c4", "specs", "api-spec.md")
+			path := filepath.Join(tmpDir, "docs", "specs", "api-spec.md")
 			if _, err := os.Stat(path); os.IsNotExist(err) {
 				t.Errorf("file not created at %s", path)
 			}
@@ -196,7 +196,7 @@ func TestHandleListDocs(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create multiple test specs
-	specsDir := filepath.Join(tmpDir, ".c4", "specs")
+	specsDir := filepath.Join(tmpDir, "docs", "specs")
 	if err := os.MkdirAll(specsDir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestHandleSaveDoc_Overwrite(t *testing.T) {
 	}
 
 	// Verify content is updated
-	path := filepath.Join(tmpDir, ".c4", "specs", "overwrite-test.md")
+	path := filepath.Join(tmpDir, "docs", "specs", "overwrite-test.md")
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read file: %v", err)

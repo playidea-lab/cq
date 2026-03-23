@@ -470,12 +470,12 @@ func TestRegisterAllToolCountWithTwin(t *testing.T) {
 	RegisterAll(reg, store)
 
 	tools := reg.ListTools()
-	if len(tools) != 13 {
+	if len(tools) != 14 {
 		names := make([]string, 0, len(tools))
 		for _, tool := range tools {
 			names = append(names, tool.Name)
 		}
-		t.Errorf("registered %d tools, want 13: %v", len(tools), names)
+		t.Errorf("registered %d tools, want 14: %v", len(tools), names)
 	}
 }
 
