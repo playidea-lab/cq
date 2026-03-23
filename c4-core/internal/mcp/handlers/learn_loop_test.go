@@ -144,6 +144,63 @@ func TestLearnLoop_EnrichUnified_InjectsScopeWarnings(t *testing.T) {
 	t.Logf("Wire 3 OK: scope-warnings injected:\n%s", ctx)
 }
 
+// --- Wire 3b Test: 3+ warnings → repeated pattern detection ---
+
+func TestLearnLoop_EnrichUnified_RepeatedPattern_Detected(t *testing.T) {
+	store, db := newTestSQLiteStore(t)
+	defer db.Close()
+
+	kw := &learnLoopKW{}
+	store.knowledgeWriter = kw
+
+	searcher := &scopeAwareSearcher{
+		warnings: []KnowledgeSearchResult{
+			{ID: "sw-1", Title: "Review rejection: R-001-0", Type: "scope-warning"},
+			{ID: "sw-2", Title: "Review rejection: R-002-0", Type: "scope-warning"},
+			{ID: "sw-3", Title: "Review rejection: R-003-0", Type: "scope-warning"},
+		},
+		bodies: map[string]string{
+			"sw-1": "typed-nil interface risk",
+			"sw-2": "missing timeout",
+			"sw-3": "no error wrapping",
+		},
+	}
+	store.knowledgeSearch = searcher
+	store.knowledgeReader = searcher
+
+	assignment := &TaskAssignment{
+		TaskID: "T-NEW-002-0",
+		Title:  "New task with repeated warnings",
+		Scope:  "c4-core/internal/llm/",
+		Domain: "go-backend",
+	}
+
+	store.enrichUnified(assignment)
+
+	ctx := assignment.KnowledgeContext
+	if ctx == "" {
+		t.Fatal("expected non-empty KnowledgeContext")
+	}
+	if !strings.Contains(ctx, "Repeated rejection pattern") {
+		t.Errorf("KnowledgeContext should contain 'Repeated rejection pattern', got:\n%s", ctx)
+	}
+
+	// Wait for async goroutine
+	time.Sleep(200 * time.Millisecond)
+
+	if len(kw.entries) == 0 {
+		t.Fatal("expected pattern to be recorded in knowledge, got 0 entries")
+	}
+	entry := kw.entries[0]
+	if entry.Metadata["doc_type"] != "pattern" {
+		t.Errorf("doc_type = %v, want pattern", entry.Metadata["doc_type"])
+	}
+	if !strings.Contains(entry.Body, "Repeated Rejection Pattern") {
+		t.Errorf("body should contain 'Repeated Rejection Pattern', got: %s", entry.Body)
+	}
+	t.Logf("Wire 3b OK: repeated pattern detected and recorded:\n%s", ctx)
+}
+
 // --- Wire 3 Negative: no scope → no injection (via enrichUnified) ---
 
 func TestLearnLoop_EnrichUnified_NoScope_NoWarnings(t *testing.T) {
