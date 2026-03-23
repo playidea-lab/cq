@@ -260,10 +260,7 @@ All widgets: `format=widget` returns `_meta.ui.resourceUri`, `format=text` retur
 | Language | Source | Tests | Total |
 |----------|--------|-------|-------|
 | Go (`c4-core/`) | ~38.9K | ~36.8K | ~75.7K |
-| Go (`c5/`) | ~6.9K | ~4.8K | ~11.7K |
 | Python (`c4/`) | ~22.9K | ~9.5K | ~32.4K |
-| Rust (`c1/src-tauri/`) | ~9.5K | (built-in) | ~9.5K |
-| TS+CSS (`c1/src/`) | ~11.8K | — | ~11.8K |
 | SQL (`infra/`) | ~1.1K | — | ~1.1K |
 | **Total** | **~90.9K** | **~50.8K** | **~179K LOC** |
 
@@ -300,33 +297,14 @@ worktree:
 | **ultra-economic** | Haiku | Sonnet | Sonnet | Haiku |
 | **quality** | Opus | Opus | Opus | Sonnet |
 
-## C1 Desktop App
-
-Multi-LLM project explorer with 6 views: Sessions, Dashboard, Config, Documents, Channels, Events.
-
-Integrates with Claude Code, Codex CLI, Cursor, and Gemini CLI.
-
-```bash
-cd c1 && pnpm install && pnpm tauri dev
-```
-
-See [c1/README.md](c1/README.md) for details.
-
 ## Development
 
 ```bash
 # Go MCP Server
 cd c4-core && go build ./... && go test -p 1 ./...
 
-# C5 Hub Server
-cd c5 && go build ./... && go test ./...
-
 # Python Sidecar
 uv run pytest tests/
-
-# C1 Desktop
-cd c1 && pnpm test
-cd c1/src-tauri && cargo test
 
 # Environment diagnosis
 cq doctor              # 8-item health check (binary, .c4/, .mcp.json, hooks, hub, ...)
