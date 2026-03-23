@@ -112,16 +112,17 @@ func newServer() *server {
 	}
 }
 
-// validateToken performs minimal HMAC-SHA256 JWT signature verification.
-// When jwtSecret is empty (dev mode), validation is skipped.
+// validateToken performs HMAC-SHA256 JWT signature + exp claim verification.
+// When jwtSecret is empty (dev mode), validation is skipped with a warning.
 func (s *server) validateToken(tokenStr string) error {
 	if s.jwtSecret == "" {
-		return nil // dev mode
+		return nil // dev mode — logged at startup
 	}
 	parts := strings.Split(tokenStr, ".")
 	if len(parts) != 3 {
 		return fmt.Errorf("invalid JWT format")
 	}
+	// Verify signature
 	signingInput := parts[0] + "." + parts[1]
 	mac := hmac.New(sha256.New, []byte(s.jwtSecret))
 	mac.Write([]byte(signingInput))
@@ -133,6 +134,21 @@ func (s *server) validateToken(tokenStr string) error {
 	}
 	if !hmac.Equal(sigBytes, expected) {
 		return fmt.Errorf("invalid JWT signature")
+	}
+
+	// Verify exp claim
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return fmt.Errorf("invalid JWT payload encoding")
+	}
+	var claims struct {
+		Exp int64 `json:"exp"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return fmt.Errorf("invalid JWT claims")
+	}
+	if claims.Exp > 0 && time.Now().Unix() > claims.Exp {
+		return fmt.Errorf("JWT expired")
 	}
 	return nil
 }
@@ -153,6 +169,9 @@ func (s *server) getWorker(id string) (*workerConn, bool) {
 func (s *server) addWorker(id string, w *workerConn) {
 	s.workers.Lock()
 	defer s.workers.Unlock()
+	if old, ok := s.conns[id]; ok {
+		old.conn.Close() // close stale connection to prevent goroutine leak
+	}
 	s.conns[id] = w
 }
 
@@ -187,6 +206,7 @@ func (s *server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	s.addWorker(workerID, wc)
 	log.Printf("worker connected: %s", workerID)
 
+	conn.SetReadLimit(1 << 20) // 1 MiB max message size
 	conn.SetReadDeadline(time.Now().Add(pongWait))
 	conn.SetPongHandler(func(string) error {
 		conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -235,7 +255,22 @@ func (s *server) handleConnect(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMCP handles POST /w/{id}/mcp — HTTP→WSS relay.
+// Requires Bearer token authentication (same JWT as worker connect).
 func (s *server) handleMCP(w http.ResponseWriter, r *http.Request) {
+	// Authenticate client request
+	authHeader := r.Header.Get("Authorization")
+	if s.jwtSecret != "" {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if token == "" || token == authHeader { // no Bearer prefix
+			http.Error(w, "unauthorized: Bearer token required", http.StatusUnauthorized)
+			return
+		}
+		if err := s.validateToken(token); err != nil {
+			http.Error(w, "unauthorized: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+	}
+
 	workerID := r.PathValue("id")
 
 	wc, ok := s.getWorker(workerID)
@@ -303,6 +338,10 @@ func main() {
 	mux.HandleFunc("POST /w/{id}/mcp", srv.handleMCP)
 	mux.HandleFunc("GET /w/{id}/health", srv.handleWorkerHealth)
 	mux.HandleFunc("GET /health", srv.handleHealth)
+
+	if srv.jwtSecret == "" {
+		log.Printf("WARNING: SUPABASE_JWT_SECRET not set — authentication disabled (dev mode)")
+	}
 
 	addr := ":" + port
 	log.Printf("relay server listening on %s", addr)
