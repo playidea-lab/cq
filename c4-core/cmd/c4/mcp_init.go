@@ -163,7 +163,7 @@ func newMCPServer() (*mcpServer, error) {
 		embDim := 1536
 		if cfgMgr != nil && cfgMgr.GetConfig().LLMGateway.Enabled {
 			gwCfg := cfgMgr.GetConfig().LLMGateway
-			embGateway := llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr, secretStore))
+			embGateway := llm.NewGatewayFromConfig(toLLMGatewayConfig(cfgMgr, secretStore, cloudTP))
 
 			// Configure embedding route from config (embedding_provider / embedding_model)
 			embProvider := gwCfg.EmbeddingProvider
@@ -664,7 +664,7 @@ func providerDefaultEnvVar(provider string) string {
 // llm_gateway.providers.*, a deprecation warning is logged via slog.
 // cfgMgr may be nil (config failed to load); in that case no deprecation check is done.
 // ss may be nil (secret store unavailable); env fallback is still attempted.
-func toLLMGatewayConfig(cfgMgr *config.Manager, ss *secrets.Store) llm.GatewayConfig {
+func toLLMGatewayConfig(cfgMgr *config.Manager, ss *secrets.Store, cloudTP *cloud.TokenProvider) llm.GatewayConfig {
 	var cfg config.C4Config
 	if cfgMgr != nil {
 		cfg = cfgMgr.GetConfig()
@@ -704,6 +704,21 @@ func toLLMGatewayConfig(cfgMgr *config.Manager, ss *secrets.Store) llm.GatewayCo
 			APIKey:       apiKey,
 			BaseURL:      p.BaseURL,
 			DefaultModel: p.DefaultModel,
+		}
+	}
+	if cloudTP != nil {
+		// Auto-register cq-proxy provider with JWT token
+		baseURL := ""
+		if p, ok := cfg.LLMGateway.Providers["cq-proxy"]; ok {
+			baseURL = p.BaseURL
+		}
+		if baseURL != "" {
+			providers["cq-proxy"] = llm.GatewayProviderConfig{
+				Enabled:      true,
+				TokenFunc:    cloudTP.Token,
+				BaseURL:      baseURL,
+				DefaultModel: "claude-haiku-4-5-20251001",
+			}
 		}
 	}
 	return llm.GatewayConfig{

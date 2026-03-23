@@ -8,6 +8,7 @@ type GatewayProviderConfig struct {
 	APIKey       string
 	BaseURL      string
 	DefaultModel string
+	TokenFunc    func() string // used by cq-proxy instead of APIKey
 }
 
 // GatewayConfig holds settings needed to construct a Gateway.
@@ -58,6 +59,8 @@ func NewGatewayFromConfig(cfg GatewayConfig) *Gateway {
 			gw.Register(NewGeminiProvider(apiKey, baseURL))
 		case "ollama":
 			gw.Register(NewOllamaProvider(baseURL))
+		case "cq-proxy":
+			gw.Register(NewCQProxyProvider(baseURL, provCfg.TokenFunc))
 		}
 	}
 

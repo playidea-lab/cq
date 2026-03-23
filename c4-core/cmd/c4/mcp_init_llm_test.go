@@ -84,7 +84,7 @@ llm_gateway:
 		t.Fatalf("ss.Set: %v", err)
 	}
 
-	cfg := toLLMGatewayConfig(mgr, ss)
+	cfg := toLLMGatewayConfig(mgr, ss, nil)
 	p, ok := cfg.Providers["anthropic"]
 	if !ok {
 		t.Fatal("anthropic provider not found")
@@ -109,7 +109,7 @@ llm_gateway:
 `)
 	t.Setenv("ANTHROPIC_API_KEY", "sk-env-fallback")
 
-	cfg := toLLMGatewayConfig(mgr, nil)
+	cfg := toLLMGatewayConfig(mgr, nil, nil)
 	p, ok := cfg.Providers["anthropic"]
 	if !ok {
 		t.Fatal("anthropic provider not found")
@@ -139,7 +139,7 @@ llm_gateway:
       api_key: "sk-old-insecure-key"
 `)
 
-	toLLMGatewayConfig(mgr, nil)
+	toLLMGatewayConfig(mgr, nil, nil)
 
 	if !handler.hasWarn("llm_gateway api_key in config deprecated") {
 		t.Error("expected deprecation slog.Warn for api_key in config, got none")
@@ -166,7 +166,7 @@ llm_gateway:
       enabled: true
 `)
 
-	cfg := toLLMGatewayConfig(mgr, nil)
+	cfg := toLLMGatewayConfig(mgr, nil, nil)
 	p, ok := cfg.Providers["anthropic"]
 	if !ok {
 		t.Fatal("anthropic provider not found")
@@ -196,7 +196,7 @@ llm_gateway:
       base_url: "http://localhost:11434"
 `)
 
-	cfg := toLLMGatewayConfig(mgr, nil)
+	cfg := toLLMGatewayConfig(mgr, nil, nil)
 	p, ok := cfg.Providers["ollama"]
 	if !ok {
 		t.Fatal("ollama provider not found")

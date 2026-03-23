@@ -34,7 +34,7 @@ func initC1(ctx *initContext) error {
 	if ctx.llmGateway != nil {
 		keeperGateway = ctx.llmGateway
 	} else if ctx.cfgMgr.GetConfig().LLMGateway.Enabled {
-		keeperGateway = llm.NewGatewayFromConfig(toLLMGatewayConfig(ctx.cfgMgr, ctx.secretStore))
+		keeperGateway = llm.NewGatewayFromConfig(toLLMGatewayConfig(ctx.cfgMgr, ctx.secretStore, ctx.cloudTP))
 	}
 	ctx.keeper = messengerhandler.NewContextKeeper(c1Handler, keeperGateway)
 	if err := ctx.keeper.EnsureSystemChannels(); err != nil {

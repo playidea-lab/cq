@@ -22,7 +22,7 @@ func initLLM(ctx *initContext) error {
 	if ctx.cfgMgr == nil || !ctx.cfgMgr.GetConfig().LLMGateway.Enabled {
 		return nil
 	}
-	gw := llm.NewGatewayFromConfig(toLLMGatewayConfig(ctx.cfgMgr, ctx.secretStore))
+	gw := llm.NewGatewayFromConfig(toLLMGatewayConfig(ctx.cfgMgr, ctx.secretStore, ctx.cloudTP))
 	ctx.llmGateway = gw
 	// Wire async SQLite persistence: DB is opened in core init before pre-store hooks.
 	if ctx.db != nil {
