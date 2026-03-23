@@ -53,7 +53,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		goarch = "arm64"
 	}
 
-	artifact := fmt.Sprintf("cq-%s-%s-%s", t, goos, goarch)
+	artifact := fmt.Sprintf("cq-%s-%s", goos, goarch)
 	url := fmt.Sprintf("https://github.com/PlayIdea-Lab/cq/releases/latest/download/%s", artifact)
 
 	// --check: version comparison only
