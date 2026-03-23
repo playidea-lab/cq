@@ -151,6 +151,14 @@ permission_reviewer:
   mode: hook
   auto_approve: true
 
+# LLM Gateway
+# llm_gateway:
+#   default_provider: anthropic
+#   providers:
+#     anthropic:
+#       api_key_env: ANTHROPIC_API_KEY
+#       base_url: https://your-proxy.example.com  # 선택: LLM 프록시 엔드포인트 오버라이드
+
 # 백그라운드 데몬 (cq serve)
 serve:
   stale_checker:

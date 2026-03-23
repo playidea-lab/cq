@@ -163,6 +163,7 @@ permission_reviewer:
 #   providers:
 #     anthropic:
 #       api_key_env: ANTHROPIC_API_KEY
+#       base_url: https://your-proxy.example.com  # optional: override API endpoint for LLM proxy
 
 # Background daemon (cq serve)
 serve:
