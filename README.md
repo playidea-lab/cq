@@ -183,6 +183,26 @@ c4_lighthouse(action="promote", name="export_api")
 - **7 hooks** — Secret scanning, force-push prevention, auto-lint (Python/TypeScript)
 - **Economic mode** — Model routing presets (standard / economic / ultra-economic / quality)
 
+## MCP Apps Widgets (11)
+
+AI가 도구를 호출하면 채팅 안에 시각적 카드가 자동으로 렌더링됩니다. [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) 스펙 준수.
+
+| Widget | Tool | What it shows |
+|--------|------|---------------|
+| Status Dashboard | `c4_dashboard` | Memory count, nodes, jobs, cluster sync |
+| Job Progress | `c4_job_status` | Progress bar, ETA, worker name |
+| Job Result | `c4_job_summary` | Metrics, duration, delta from previous |
+| Experiment Compare | `c4_experiment_search` | Side-by-side metric table with best highlighting |
+| Task Graph | `c4_task_graph` | SVG dependency graph with status colors |
+| Nodes Map | `c4_nodes_map` | Agent/Worker/Edge cards with online status |
+| Knowledge Feed | `c4_knowledge_search` | Search result cards with type tags and scores |
+| Cost Tracker | `c4_llm_costs` | Model-cost bar chart, cache savings |
+| Test Results | `c4_run_validation` | Pass/fail/skip counts, failure details |
+| Git Diff | `c4_diff_summary` | File change list with +/- bars |
+| Error Trace | `c4_error_trace` | Collapsible stack frames (Go/Python/JS) |
+
+All widgets: `format=widget` returns `_meta.ui.resourceUri`, `format=text` returns plain JSON. Zero external dependencies, dark/light theme, XSS-safe.
+
 ## MCP Tools (133)
 
 | Category | Count | Examples |

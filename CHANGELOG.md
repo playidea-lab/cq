@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.17.0] - 2026-03-23
+
+### ✨ Features
+
+- **mcp-apps**: MCP Apps 위젯 시스템 — 11개 시각적 카드 (채팅 안 인라인 렌더링)
+  - Dashboard (상태 요약), Job Progress/Result (잡 진행률/결과)
+  - Experiment Compare (실험 비교), Task Graph (의존성 그래프)
+  - Nodes Map (노드 상태), Knowledge Feed (지식 검색)
+  - Cost Tracker (LLM 비용), Test Results (테스트 결과)
+  - Git Diff Summary (변경 요약), Error Trace (스택트레이스)
+- **mcp-apps**: ResourceStore 인프라 — ui:// 리소스 서빙, Go embed, resources/read 핸들러
+- **mcp-apps**: `c4_dashboard`, `c4_task_graph`, `c4_nodes_map`, `c4_diff_summary`, `c4_error_trace` 신규 도구
+- **mcp-apps**: 기존 도구에 `format=widget` 파라미터 추가 (c4_job_status, c4_knowledge_search, c4_experiment_search, c4_llm_costs, c4_run_validation)
+
+### 🐛 Bug Fixes
+
+- **dashboard**: Lighthouse promote 순서 문제 수정 (promote-first + register fallback)
+- **dashboard**: Knowledge.List(1M) → COUNT(*) 쿼리로 교체
+
+---
+
 ## [v1.12.1] - 2026-03-23
 
 ### ✨ Features

@@ -66,12 +66,44 @@ Claude Code → Go MCP Server (stdio, 118 base + 26 Hub = 144 tools)
                 └→ JSON-RPC proxy (10) → Python Sidecar (LSP 7 + C2 Doc 2 + Onboard 1)
 ```
 
+### MCP Apps (위젯 시스템)
+
+도구 호출 시 `format=widget`이면 `_meta.ui.resourceUri`를 포함한 응답을 반환.
+클라이언트(Claude, Cursor, VS Code 등)가 `resources/read`로 HTML을 가져와 iframe 렌더링.
+
+```
+Tool call (format=widget)
+  → handler returns {data: {...}, _meta: {ui: {resourceUri: "ui://cq/..."}}}
+  → client calls resources/read("ui://cq/...")
+  → ResourceStore returns embedded HTML
+  → client renders in sandboxed iframe
+```
+
+**인프라**: `internal/mcp/apps/` — ResourceStore (sync.RWMutex), Go embed
+**위젯**: `internal/mcp/apps/widgets/` — 11개 HTML (바닐라, 외부 의존성 0, 다크/라이트 테마)
+**등록**: `cmd/c4/mcp_init.go` — 시작 시 appStore에 ui:// 리소스 등록
+
+| 리소스 URI | 도구 | 용도 |
+|-----------|------|------|
+| `ui://cq/dashboard` | `c4_dashboard` | 상태 요약 |
+| `ui://cq/job-progress` | `c4_job_status` | 잡 진행률 |
+| `ui://cq/job-result` | `c4_job_summary` | 잡 결과 |
+| `ui://cq/experiment-compare` | `c4_experiment_search` | 실험 비교 |
+| `ui://cq/task-graph` | `c4_task_graph` | 태스크 의존성 |
+| `ui://cq/nodes-map` | `c4_nodes_map` | 노드 상태 |
+| `ui://cq/knowledge-feed` | `c4_knowledge_search` | 지식 검색 |
+| `ui://cq/cost-tracker` | `c4_llm_costs` | 비용 추적 |
+| `ui://cq/test-results` | `c4_run_validation` | 테스트 결과 |
+| `ui://cq/git-diff` | `c4_diff_summary` | 변경 요약 |
+| `ui://cq/error-trace` | `c4_error_trace` | 에러 트레이스 |
+
 ### 패키지 구조
 ```
 c4-core/
 ├── cmd/c4/           # CLI (cobra) + MCP server 진입점
 ├── internal/
 │   ├── mcp/          # Registry + stdio transport
+│   │   ├── apps/     # MCP Apps ResourceStore + embedded widget HTML
 │   │   └── handlers/ # 도구별 핸들러 (sqlite_store, files, git, proxy, ...)
 │   ├── bridge/       # Python sidecar 관리 (JSON-RPC/TCP, lazy start)
 │   ├── task/         # TaskStore (SQLite, Memory, Supabase)
