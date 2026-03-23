@@ -31,3 +31,9 @@ var ExperimentCompareHTML string
 //
 //go:embed widgets/task_graph.html
 var TaskGraphHTML string
+
+// NodesMapHTML is the embedded nodes map widget HTML content.
+// Served as the ui://cq/nodes-map resource via MCP resources/read.
+//
+//go:embed widgets/nodes_map.html
+var NodesMapHTML string
