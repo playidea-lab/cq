@@ -149,6 +149,14 @@ type HubConfig struct {
 	TeamID    string `mapstructure:"team_id"     yaml:"team_id"`
 }
 
+// RelayConfig holds WebSocket relay connection settings.
+// When enabled, cq serve connects to the relay server and exposes MCP tools
+// to remote clients without requiring a direct network connection.
+type RelayConfig struct {
+	Enabled bool   `mapstructure:"enabled" yaml:"enabled"`
+	URL     string `mapstructure:"url"     yaml:"url"` // e.g. "wss://cq-relay.fly.dev"
+}
+
 // EventSinkConfig holds EventSink HTTP server settings.
 // EventSink receives events from C5 Hub and publishes them to the local EventBus.
 type EventSinkConfig struct {
@@ -392,6 +400,7 @@ type C4Config struct {
 	EventBus         EventBusConfig   `mapstructure:"eventbus"            yaml:"eventbus"`
 	Hub              HubConfig                `mapstructure:"hub"                  yaml:"hub"`
 	EventSink        EventSinkConfig          `mapstructure:"eventsink"            yaml:"eventsink"`
+	Relay            RelayConfig              `mapstructure:"relay"                yaml:"relay"`
 	PermissionReviewer PermissionReviewerConfig `mapstructure:"permission_reviewer"  yaml:"permission_reviewer"`
 	ReviewAsTask     bool                       `mapstructure:"review_as_task"       yaml:"review_as_task"`
 	CheckpointAsTask bool                       `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`

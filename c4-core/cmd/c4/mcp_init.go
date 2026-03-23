@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -25,6 +27,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp/handlers/knowledgehandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/llmhandler"
 	"github.com/changmin/c4-core/internal/ontology"
+	"github.com/changmin/c4-core/internal/relay"
 	"github.com/changmin/c4-core/internal/secrets"
 	storepackage "github.com/changmin/c4-core/internal/store"
 	_ "modernc.org/sqlite"
@@ -521,6 +524,73 @@ func newMCPServer() (*mcpServer, error) {
 	// Start EventSink HTTP server (config from .c4/config.yaml).
 	// startEventSink is defined in mcp_init_eventbus.go (c3_eventbus) / mcp_init_eventbus_stub.go.
 	startEventSink(ctx)
+
+	// Wire relay client if relay.enabled and relay.url are configured.
+	// The relay client forwards MCP tools/call requests from the relay server to the local registry.
+	if ctx.cfgMgr != nil {
+		relayCfg := ctx.cfgMgr.GetConfig().Relay
+		if relayCfg.Enabled && relayCfg.URL != "" {
+			workerID, _ := os.Hostname()
+			var tokenFunc func() string
+			if ctx.cloudTP != nil {
+				tokenFunc = ctx.cloudTP.Token
+			}
+			// relayMCPHandler parses a JSON-RPC tools/call request and dispatches it
+			// to the local MCP registry, returning a JSON-RPC response envelope.
+			relayHandler := relay.MCPHandler(func(rctx context.Context, request json.RawMessage) (json.RawMessage, error) {
+				var req struct {
+					JSONRPC string          `json:"jsonrpc"`
+					ID      interface{}     `json:"id"`
+					Method  string          `json:"method"`
+					Params  json.RawMessage `json:"params"`
+				}
+				if err := json.Unmarshal(request, &req); err != nil {
+					return nil, fmt.Errorf("relay: invalid JSON-RPC request: %w", err)
+				}
+				var params struct {
+					Name      string          `json:"name"`
+					Arguments json.RawMessage `json:"arguments"`
+				}
+				if err := json.Unmarshal(req.Params, &params); err != nil {
+					return nil, fmt.Errorf("relay: invalid tools/call params: %w", err)
+				}
+				result, err := reg.CallWithContext(rctx, params.Name, params.Arguments)
+				if err != nil {
+					return nil, err
+				}
+				resultJSON, err := json.Marshal(result)
+				if err != nil {
+					return nil, fmt.Errorf("relay: marshal result: %w", err)
+				}
+				resp := map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      req.ID,
+					"result": map[string]interface{}{
+						"content": []map[string]interface{}{
+							{"type": "text", "text": string(resultJSON)},
+						},
+					},
+				}
+				return json.Marshal(resp)
+			})
+			rc := relay.NewRelayClient(relayCfg.URL, workerID, tokenFunc, relayHandler)
+			relayCtx, relayCancel := context.WithCancel(context.Background())
+			go func() {
+				if err := rc.Connect(relayCtx); err != nil {
+					fmt.Fprintf(os.Stderr, "cq: relay connect failed: %v\n", err)
+					relayCancel()
+					return
+				}
+				httpURL := strings.Replace(relayCfg.URL, "wss://", "https://", 1)
+				httpURL = strings.Replace(httpURL, "ws://", "http://", 1)
+				fmt.Fprintf(os.Stderr, "cq: relay connected — %s/w/%s/mcp\n", httpURL, workerID)
+			}()
+			registerShutdownHook(func(_ *initContext) {
+				rc.Close()
+				relayCancel()
+			})
+		}
+	}
 
 	// Start Agent inside MCP server (lazy, no cq serve required).
 	// Defined in mcp_init_agent.go — no build tag.
