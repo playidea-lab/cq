@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -173,6 +174,10 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 	if url != "" {
 		fmt.Fprintf(os.Stderr, "Cloud configured: %s\n", url)
 	}
+
+	// Auto-install/restart cq serve so relay + journal sync start immediately.
+	autoInstallServe()
+
 	return nil
 }
 
@@ -193,6 +198,7 @@ func runAuthLoginHeadless(cmd *cobra.Command, isDevice bool) error {
 			if url != "" {
 				fmt.Fprintf(os.Stderr, "Cloud configured: %s\n", url)
 			}
+			autoInstallServe()
 			return nil
 		}
 		fmt.Fprintf(os.Stderr, "cq: 토큰 갱신 실패: %v\n", refreshErr)
@@ -687,6 +693,14 @@ func ensureLLMGatewayBaseURL(content, proxyURL string) string {
 		}
 	}
 	return strings.Join(result, "\n")
+}
+
+// autoInstallServe installs/restarts cq serve as an OS service after login.
+// Non-fatal: if it fails, the user can run `cq serve install` manually.
+func autoInstallServe() {
+	if err := installServeService(context.Background(), true); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: auto serve install skipped: %v\n", err)
+	}
 }
 
 // ensureRelayConfig adds relay: section to config if not present.
