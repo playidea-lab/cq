@@ -1,6 +1,7 @@
 package ontology
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -238,7 +239,7 @@ func (cs *CloudStore) upsert(table string, body any) error {
 	}
 
 	for attempt := 0; attempt < 2; attempt++ {
-		req, err := http.NewRequest("POST", cs.baseURL+"/"+table, strings.NewReader(string(data)))
+		req, err := http.NewRequest("POST", cs.baseURL+"/"+table, bytes.NewReader(data))
 		if err != nil {
 			return err
 		}

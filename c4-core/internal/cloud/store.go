@@ -262,9 +262,10 @@ func (c *CloudStore) AddTask(task *store.Task) error {
 		FailureSignature:       task.FailureSignature,
 		BlockedAttempts:        task.Attempts,
 		LastError:              task.LastError,
-		CreatedAt:              time.Now().UTC().Format(time.RFC3339),
-		UpdatedAt:              time.Now().UTC().Format(time.RFC3339),
 	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	row.CreatedAt = now
+	row.UpdatedAt = now
 
 	return c.post("c4_tasks", row)
 }
