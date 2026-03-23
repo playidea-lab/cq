@@ -114,69 +114,6 @@ func (s *SQLiteStore) enrichWithReviewContext(assignment *TaskAssignment) {
 	}
 }
 
-// enrichWithKnowledge injects relevant knowledge context (past patterns, insights, experiments).
-func (s *SQLiteStore) enrichWithKnowledge(assignment *TaskAssignment) {
-	if s.knowledgeSearch == nil {
-		return
-	}
-
-	query := assignment.Title
-	if assignment.Domain != "" {
-		query = assignment.Domain + " " + query
-	}
-
-	results, err := s.knowledgeSearch.Search(query, 3, nil)
-	if s.knowledgeHitTracker != nil {
-		resultCount := len(results)
-		if err != nil {
-			resultCount = 0
-		}
-		s.knowledgeHitTracker.Record(assignment.TaskID, query, resultCount)
-	}
-	var b strings.Builder
-	if err == nil && len(results) > 0 {
-		b.WriteString("## Relevant Knowledge (auto-injected)\n\n")
-		for i, r := range results {
-			fmt.Fprintf(&b, "### %d. [%s] %s\n", i+1, r.Type, r.Title)
-			if r.Domain != "" {
-				fmt.Fprintf(&b, "- Domain: %s\n", r.Domain)
-			}
-			// Fetch body summary (first 200 chars) for actionable context
-			if s.knowledgeReader != nil {
-				if body, err := s.knowledgeReader.GetBody(r.ID); err == nil && body != "" {
-					if len(body) > 200 {
-						body = body[:200] + "..."
-					}
-					fmt.Fprintf(&b, "- Summary: %s\n", body)
-				}
-			}
-			b.WriteString("\n")
-		}
-	}
-
-	// Scope-warning injection: past review rejections for this scope
-	if assignment.Scope != "" {
-		warnings, werr := s.knowledgeSearch.Search("scope-warning "+assignment.Scope, 3, nil)
-		if werr == nil && len(warnings) > 0 {
-			b.WriteString("## Past Review Warnings (this scope)\n\n")
-			for _, w := range warnings {
-				fmt.Fprintf(&b, "- **%s**", w.Title)
-				if s.knowledgeReader != nil {
-					if body, berr := s.knowledgeReader.GetBody(w.ID); berr == nil && body != "" {
-						if len(body) > 200 {
-							body = body[:200] + "..."
-						}
-						fmt.Fprintf(&b, ": %s", body)
-					}
-				}
-				b.WriteString("\n")
-			}
-		}
-	}
-
-	assignment.KnowledgeContext = b.String()
-}
-
 // extractFilesChangedFromHandoff is a helper used by enrichWithReviewContext.
 func extractFilesChangedFromHandoff(handoff string) string {
 	if strings.TrimSpace(handoff) == "" {

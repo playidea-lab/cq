@@ -100,9 +100,9 @@ func TestLearnLoop_RequestChanges_RecordsScopeWarning(t *testing.T) {
 	t.Logf("Wire 2 OK: scope-warning recorded, doc_type=%v, tags=%v", meta["doc_type"], tags)
 }
 
-// --- Wire 3 Test: get_task → scope-warning injection ---
+// --- Wire 3 Test: get_task → scope-warning injection (via enrichUnified) ---
 
-func TestLearnLoop_EnrichWithKnowledge_InjectsScopeWarnings(t *testing.T) {
+func TestLearnLoop_EnrichUnified_InjectsScopeWarnings(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
 
@@ -126,7 +126,7 @@ func TestLearnLoop_EnrichWithKnowledge_InjectsScopeWarnings(t *testing.T) {
 		Domain: "go-backend",
 	}
 
-	store.enrichWithKnowledge(assignment)
+	store.enrichUnified(assignment)
 
 	ctx := assignment.KnowledgeContext
 	if ctx == "" {
@@ -144,9 +144,9 @@ func TestLearnLoop_EnrichWithKnowledge_InjectsScopeWarnings(t *testing.T) {
 	t.Logf("Wire 3 OK: scope-warnings injected:\n%s", ctx)
 }
 
-// --- Wire 3 Negative: no scope → no injection ---
+// --- Wire 3 Negative: no scope → no injection (via enrichUnified) ---
 
-func TestLearnLoop_EnrichWithKnowledge_NoScope_NoWarnings(t *testing.T) {
+func TestLearnLoop_EnrichUnified_NoScope_NoWarnings(t *testing.T) {
 	store, db := newTestSQLiteStore(t)
 	defer db.Close()
 
@@ -163,7 +163,7 @@ func TestLearnLoop_EnrichWithKnowledge_NoScope_NoWarnings(t *testing.T) {
 		Scope:  "",
 	}
 
-	store.enrichWithKnowledge(assignment)
+	store.enrichUnified(assignment)
 
 	if strings.Contains(assignment.KnowledgeContext, "Past Review Warnings") {
 		t.Error("should not inject scope-warnings when scope is empty")
