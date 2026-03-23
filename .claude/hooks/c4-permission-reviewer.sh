@@ -121,6 +121,25 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
         exit 0
     fi
 
+    # Read base_url from .c4/config.yaml (llm_gateway.providers.anthropic.base_url)
+    # Falls back to https://api.anthropic.com if not set
+    _config_yaml="${C4_ROOT}/.c4/config.yaml"
+    _base_url=""
+    if [[ -f "$_config_yaml" ]]; then
+        _base_url=$(awk '
+            /^llm_gateway:/ { in_llm=1; next }
+            in_llm && /^[^ ]/ && !/^  / { in_llm=0 }
+            in_llm && /^  providers:/ { in_providers=1; next }
+            in_providers && /^[^ ]/ && !/^    / { in_providers=0 }
+            in_providers && /^    anthropic:/ { in_anthropic=1; next }
+            in_anthropic && /^[^ ]/ && !/^      / { in_anthropic=0 }
+            in_anthropic && /^      base_url:/ {
+                sub(/^      base_url:[[:space:]]*/, ""); print; exit
+            }
+        ' "$_config_yaml" 2>/dev/null | sed 's/[[:space:]]*#.*//' | tr -d "\'\"\n ")
+    fi
+    ANTHROPIC_BASE_URL="${_base_url:-https://api.anthropic.com}"
+
     # Build context string for the model
     if [[ -n "$COMMAND" ]]; then
         CONTEXT="Tool: $TOOL_NAME\nCommand: $COMMAND"
@@ -141,7 +160,7 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
         }')
 
     response=$(curl -s --max-time 8 \
-        "https://api.anthropic.com/v1/messages" \
+        "${ANTHROPIC_BASE_URL}/v1/messages" \
         -H "x-api-key: $api_key" \
         -H "anthropic-version: 2023-06-01" \
         -H "content-type: application/json" \
