@@ -225,9 +225,9 @@ func TestStopTransitionsState(t *testing.T) {
 
 	insertState(t, db, "test-project", "EXECUTE")
 
-	err := runStop(nil, nil)
+	err := runTaskStop(nil, nil)
 	if err != nil {
-		t.Fatalf("runStop returned error: %v", err)
+		t.Fatalf("runTaskStop returned error: %v", err)
 	}
 
 	state, err := loadProjectState(db)

@@ -21,6 +21,9 @@ import (
 )
 
 func main() {
+	// Apply visibility before Execute so --help sees the correct state.
+	applyCommandVisibility()
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

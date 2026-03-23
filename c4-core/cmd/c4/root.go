@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/changmin/c4-core/internal/serve"
 	"github.com/spf13/cobra"
 	_ "modernc.org/sqlite"
 )
@@ -36,11 +38,10 @@ var rootCmd = &cobra.Command{
 	Short:   "CQ - AI orchestration system",
 	Version: version,
 	Long: `CQ is an AI orchestration system that automates project management
-from planning through completion. It manages tasks, workers, checkpoints,
-and knowledge across the entire development lifecycle.
+from planning through completion.
 
-Run 'cq' or 'cq claude' to init a project and launch Claude Code.
-Run 'cq codex' or 'cq cursor' for other AI tools.`,
+Run 'cq' to start the CQ service (login + background service).
+Run 'cq claude' to launch Claude Code, 'cq cursor' for Cursor.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -82,10 +83,8 @@ Run 'cq codex' or 'cq cursor' for other AI tools.`,
 
 		return nil
 	},
-	// Default: no subcommand → launch claude
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return launchClaude(cmd)
-	},
+	// Default: no subcommand → ensure service is running
+	RunE: runCQStart,
 }
 
 // completionCmd generates shell completion scripts.
@@ -127,7 +126,16 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&projectDir, "dir", "", "project root directory (default: current directory)")
 	rootCmd.PersistentFlags().BoolVarP(&yesAll, "yes", "y", false, "skip interactive confirmations (non-interactive/CI mode)")
 	rootCmd.PersistentFlags().BoolVar(&noServe, "no-serve", false, "skip auto-starting cq serve in background")
+
+	// Command groups for --help display
+	rootCmd.AddGroup(&cobra.Group{ID: "ai", Title: "AI Tools:"})
+	rootCmd.AddGroup(&cobra.Group{ID: "mgmt", Title: "Management:"})
+
+	completionCmd.Hidden = true
 	rootCmd.AddCommand(completionCmd)
+
+	// applyCommandVisibility is called from main() before Execute()
+	// so --help sees the correct grouping and hidden state.
 }
 
 // findBestC4Root walks up from dir to find the best project root.
@@ -190,4 +198,74 @@ func openDB() (*sql.DB, error) {
 	db.Exec("PRAGMA journal_mode=WAL")
 	db.Exec("PRAGMA busy_timeout=30000") // 30s: supports up to ~8 concurrent sessions
 	return db, nil
+}
+
+// applyCommandVisibility assigns groups to visible commands and hides the rest.
+func applyCommandVisibility() {
+	aiTools := map[string]bool{"claude": true, "cursor": true, "codex": true, "gemini": true}
+	mgmt := map[string]bool{"status": true, "stop": true, "update": true, "doctor": true}
+
+	for _, c := range rootCmd.Commands() {
+		name := c.Name()
+		switch {
+		case aiTools[name]:
+			c.GroupID = "ai"
+		case mgmt[name]:
+			c.GroupID = "mgmt"
+		case name == "help":
+			// keep visible, no group
+		default:
+			c.Hidden = true
+		}
+	}
+}
+
+// runCQStart is the default command when `cq` is run without subcommands.
+// It ensures login → service install → prints status.
+func runCQStart(cmd *cobra.Command, args []string) error {
+	// Step 1: Check login status. If not logged in, initiate OAuth.
+	authClient, err := newAuthClient()
+	if err == nil {
+		session, getErr := authClient.GetSession()
+		if getErr != nil || session == nil || session.AccessToken == "" {
+			fmt.Println("CQ requires authentication to connect to cloud services.")
+			fmt.Println()
+			if err := runAuthLogin(cmd, nil); err != nil {
+				fmt.Fprintf(os.Stderr, "Login skipped: %v\n", err)
+				fmt.Fprintln(os.Stderr, "Run 'cq auth login' later to enable cloud features.")
+			}
+		}
+	}
+
+	// Step 2: Ensure OS service is installed and running.
+	if serve.IsServeRunning() {
+		fmt.Printf("CQ %s running\n", version)
+	} else {
+		fmt.Println("Starting CQ service...")
+		if err := installServeService(context.Background(), true); err != nil {
+			fmt.Fprintf(os.Stderr, "Service install failed: %v\n", err)
+			fmt.Fprintln(os.Stderr, "Try: cq serve (foreground mode)")
+			return nil
+		}
+	}
+
+	// Step 3: Print status summary.
+	components, healthErr := fetchServeHealth(servePort)
+	if healthErr != nil {
+		fmt.Printf("  (health endpoint not responding on port %d)\n", servePort)
+		return nil
+	}
+	for name, h := range components {
+		if h.Status == "ok" {
+			fmt.Printf("  \u2713 %-16s %s\n", name, h.Status)
+		} else {
+			detail := h.Detail
+			if detail != "" {
+				fmt.Printf("  \u2717 %-16s %s (%s)\n", name, h.Status, detail)
+			} else {
+				fmt.Printf("  \u2717 %-16s %s\n", name, h.Status)
+			}
+		}
+	}
+	return nil
 }

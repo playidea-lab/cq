@@ -84,22 +84,17 @@ var (
 )
 
 func init() {
-	// Register --tier flag on all init-related commands and the root command.
-	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, codexCmd, cursorCmd, geminiCmd} {
+	// Register --tier flag on AI tool commands (not root — root is service start now).
+	for _, cmd := range []*cobra.Command{claudeCmd, codexCmd, cursorCmd, geminiCmd} {
 		cmd.Flags().StringVar(&initTier, "tier", "", "build tier: solo|connected|full (written to .c4/config.yaml)")
 	}
-	// Register -t/--tag flag for named sessions (claude and gemini only, and root default).
-	// -t (no value) = show session picker, -t name = direct.
-	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, geminiCmd} {
+	// Register -t/--tag flag for named sessions (claude and gemini only).
+	for _, cmd := range []*cobra.Command{claudeCmd, geminiCmd} {
 		cmd.Flags().StringVarP(&sessionName, "tag", "t", "", "session name: resume or create named AI session")
-	}
-	// Register -t/--tag flag completion: list named session names.
-	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd, geminiCmd} {
 		_ = cmd.RegisterFlagCompletionFunc("tag", completeSessionNames)
 	}
-	// Register --bot flag for telegram bot selection (claude and root only).
-	// --bot (no value) = show bot menu, --bot=mybot = direct pick.
-	for _, cmd := range []*cobra.Command{rootCmd, claudeCmd} {
+	// Register --bot flag for telegram bot selection (claude only).
+	for _, cmd := range []*cobra.Command{claudeCmd} {
 		cmd.Flags().StringVar(&botName, "bot", "", "select telegram bot by name, or show bot menu if empty")
 		cmd.Flag("bot").NoOptDefVal = " " // sentinel: --bot without value
 	}
