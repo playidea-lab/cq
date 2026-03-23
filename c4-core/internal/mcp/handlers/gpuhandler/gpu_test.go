@@ -144,6 +144,52 @@ func TestJobSubmitHandler_WithExtendedParams(t *testing.T) {
 	}
 }
 
+func TestJobSubmitHandler_WithRoutingParams(t *testing.T) {
+	dir := t.TempDir()
+	store, err := daemon.NewStore(dir + "/daemon.db")
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	defer store.Close()
+
+	handler := jobSubmitHandler(store)
+
+	args, _ := json.Marshal(map[string]any{
+		"command":       "python train.py",
+		"capability":    "gpu-a100",
+		"required_tags": []string{"prod", "high-mem"},
+		"target_worker": "worker-abc123",
+	})
+	result, err := handler(args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	m := result.(map[string]any)
+	if m["success"] != true {
+		t.Errorf("success = %v, want true", m["success"])
+	}
+	jobID, _ := m["job_id"].(string)
+	if jobID == "" {
+		t.Error("expected non-empty job_id")
+	}
+
+	// Verify routing fields were persisted
+	job, err := store.GetJob(jobID)
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if job.Capability != "gpu-a100" {
+		t.Errorf("capability = %q, want 'gpu-a100'", job.Capability)
+	}
+	if len(job.RequiredTags) != 2 || job.RequiredTags[0] != "prod" || job.RequiredTags[1] != "high-mem" {
+		t.Errorf("required_tags = %v, want [prod high-mem]", job.RequiredTags)
+	}
+	if job.TargetWorker != "worker-abc123" {
+		t.Errorf("target_worker = %q, want 'worker-abc123'", job.TargetWorker)
+	}
+}
+
 // TestJobListHandler tests the c4_job_list handler.
 func TestJobListHandler_NoStore(t *testing.T) {
 	handler := jobListHandler(nil)

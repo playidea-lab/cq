@@ -34,27 +34,30 @@ func (s JobStatus) IsTerminal() bool {
 
 // Job represents a scheduled job with its full lifecycle state.
 type Job struct {
-	ID          string            `json:"job_id"`
-	Name        string            `json:"name"`
-	Status      JobStatus         `json:"status"`
-	Priority    int               `json:"priority"`
-	Workdir     string            `json:"workdir"`
-	Command     string            `json:"command"`
-	RequiresGPU bool              `json:"requires_gpu"`
-	GPUCount    int               `json:"gpu_count"`
-	Env         map[string]string `json:"env,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
-	ExpID       string            `json:"exp_id,omitempty"`
-	Memo        string            `json:"memo,omitempty"`
-	TimeoutSec  int               `json:"timeout_sec,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
-	StartedAt   *time.Time        `json:"started_at,omitempty"`
-	FinishedAt  *time.Time        `json:"finished_at,omitempty"`
-	ExitCode    *int              `json:"exit_code,omitempty"`
-	PID         int               `json:"pid,omitempty"`
-	GPUIndices  []int             `json:"gpu_indices,omitempty"`
-	MetricsPath string            `json:"metrics_path,omitempty"`
-	Metrics     map[string]any    `json:"metrics,omitempty"`
+	ID           string            `json:"job_id"`
+	Name         string            `json:"name"`
+	Status       JobStatus         `json:"status"`
+	Priority     int               `json:"priority"`
+	Workdir      string            `json:"workdir"`
+	Command      string            `json:"command"`
+	RequiresGPU  bool              `json:"requires_gpu"`
+	GPUCount     int               `json:"gpu_count"`
+	Env          map[string]string `json:"env,omitempty"`
+	Tags         []string          `json:"tags,omitempty"`
+	ExpID        string            `json:"exp_id,omitempty"`
+	Memo         string            `json:"memo,omitempty"`
+	TimeoutSec   int               `json:"timeout_sec,omitempty"`
+	Capability   string            `json:"capability,omitempty"`
+	RequiredTags []string          `json:"required_tags,omitempty"`
+	TargetWorker string            `json:"target_worker,omitempty"`
+	CreatedAt    time.Time         `json:"created_at"`
+	StartedAt    *time.Time        `json:"started_at,omitempty"`
+	FinishedAt   *time.Time        `json:"finished_at,omitempty"`
+	ExitCode     *int              `json:"exit_code,omitempty"`
+	PID          int               `json:"pid,omitempty"`
+	GPUIndices   []int             `json:"gpu_indices,omitempty"`
+	MetricsPath  string            `json:"metrics_path,omitempty"`
+	Metrics      map[string]any    `json:"metrics,omitempty"`
 }
 
 // DurationSec returns the job duration in seconds, or nil if not yet finished.
@@ -75,18 +78,21 @@ func (j *Job) CommandHash() string {
 
 // JobSubmitRequest is the payload for POST /jobs/submit.
 type JobSubmitRequest struct {
-	Name        string            `json:"name"`
-	Workdir     string            `json:"workdir"`
-	Command     string            `json:"command"`
-	Env         map[string]string `json:"env,omitempty"`
-	Tags        []string          `json:"tags,omitempty"`
-	RequiresGPU bool              `json:"requires_gpu"`
-	GPUCount    int               `json:"gpu_count,omitempty"`
-	Priority    int               `json:"priority,omitempty"`
-	ExpID       string            `json:"exp_id,omitempty"`
-	Memo        string            `json:"memo,omitempty"`
-	TimeoutSec  int               `json:"timeout_sec,omitempty"`
-	MetricsPath string            `json:"metrics_path,omitempty"`
+	Name         string            `json:"name"`
+	Workdir      string            `json:"workdir"`
+	Command      string            `json:"command"`
+	Env          map[string]string `json:"env,omitempty"`
+	Tags         []string          `json:"tags,omitempty"`
+	RequiresGPU  bool              `json:"requires_gpu"`
+	GPUCount     int               `json:"gpu_count,omitempty"`
+	Priority     int               `json:"priority,omitempty"`
+	ExpID        string            `json:"exp_id,omitempty"`
+	Memo         string            `json:"memo,omitempty"`
+	TimeoutSec   int               `json:"timeout_sec,omitempty"`
+	MetricsPath  string            `json:"metrics_path,omitempty"`
+	Capability   string            `json:"capability,omitempty"`
+	RequiredTags []string          `json:"required_tags,omitempty"`
+	TargetWorker string            `json:"target_worker,omitempty"`
 }
 
 // JobSubmitResponse is returned from POST /jobs/submit.

@@ -85,6 +85,8 @@ type JobSubmitRequest struct {
 	GitHash             string            `json:"git_hash,omitempty"`
 	ProjectID           string            `json:"project_id,omitempty"`
 	Capability          string            `json:"capability,omitempty"`
+	RequiredTags        []string          `json:"required_tags,omitempty"`
+	TargetWorker        string            `json:"target_worker,omitempty"`
 	Params              map[string]any    `json:"params,omitempty"`
 	Datasets            []string          `json:"datasets,omitempty"`
 }
