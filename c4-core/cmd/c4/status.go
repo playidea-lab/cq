@@ -13,8 +13,8 @@ import (
 
 var statusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show project state",
-	Long:  "Display the current C4 project status including workflow state, task counts, and worker information.",
+	Short: "Show CQ service and project status",
+	Long:  "Display the CQ service health and C4 project status including workflow state and task counts.",
 	RunE:  runStatus,
 }
 
@@ -38,40 +38,52 @@ type taskCounts struct {
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
+	// Service status
+	fmt.Printf("CQ %s\n", version)
+	components, healthErr := fetchServeHealth(servePort)
+	if healthErr != nil {
+		fmt.Println("Service: not running")
+	} else {
+		fmt.Println("Service: running")
+		for name, h := range components {
+			if h.Status == "ok" {
+				fmt.Printf("  \u2713 %-16s %s\n", name, h.Status)
+			} else if h.Detail != "" {
+				fmt.Printf("  \u2717 %-16s %s (%s)\n", name, h.Status, h.Detail)
+			} else {
+				fmt.Printf("  \u2717 %-16s %s\n", name, h.Status)
+			}
+		}
+	}
+
+	// Project status
 	db, err := openDB()
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		// No project DB — service-only status is fine
+		return nil
 	}
 	defer db.Close()
 
-	// Load project state
 	state, err := loadProjectState(db)
 	if err != nil {
-		return err
+		return nil
 	}
 
-	// Count tasks by status
 	counts, err := countTasks(db)
 	if err != nil {
-		return err
+		return nil
 	}
 
-	// Print status
+	fmt.Println()
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(w, "Project:\t%s\n", state.ProjectID)
-	fmt.Fprintf(w, "Status:\t%s\n", state.Status)
-	fmt.Fprintf(w, "\nTasks:\n")
-	fmt.Fprintf(w, "  Total:\t%d\n", counts.Total)
-	fmt.Fprintf(w, "  Done:\t%d\n", counts.Done)
-	fmt.Fprintf(w, "  In Progress:\t%d\n", counts.InProgress)
-	fmt.Fprintf(w, "  Pending:\t%d\n", counts.Pending)
-	fmt.Fprintf(w, "  Blocked:\t%d\n", counts.Blocked)
-
+	fmt.Fprintf(w, "State:\t%s\n", state.Status)
+	fmt.Fprintf(w, "Tasks:\t%d total, %d done, %d in-progress, %d pending, %d blocked\n",
+		counts.Total, counts.Done, counts.InProgress, counts.Pending, counts.Blocked)
 	if counts.Total > 0 {
 		pct := float64(counts.Done) / float64(counts.Total) * 100
-		fmt.Fprintf(w, "\nProgress:\t%.0f%%\n", pct)
+		fmt.Fprintf(w, "Progress:\t%.0f%%\n", pct)
 	}
-
 	w.Flush()
 	return nil
 }

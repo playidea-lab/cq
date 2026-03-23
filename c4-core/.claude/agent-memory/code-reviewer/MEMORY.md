@@ -71,3 +71,6 @@
 - **filepath.Clean+HasPrefix traversal guard**: requires absolute path as base. Always call `filepath.Abs(base)` before computing the prefix guard, otherwise relative paths break the guard entirely (both blocking legitimate files AND failing to catch traversal).
 - **PostgREST Prefer: resolution=ignore-duplicates**: returns 200/201 on conflict (not 409). The 409 dead-code check is harmless but a sign the response semantics were misunderstood.
 - **validateName empty-string gap**: `validateName("")` returns nil — callers must check for empty separately. Pattern in this codebase: explicit `if args.Name == ""` check at handler level.
+
+### Key Finding: MCP Apps Widget System (2026-03-23)
+- [review_mcp_apps_widgets.md](review_mcp_apps_widgets.md) — 11 widgets, 2 dead (nodes-map, experiment-compare never wired), 4 untested handlers, XSS defense verified
