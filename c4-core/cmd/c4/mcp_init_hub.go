@@ -29,13 +29,17 @@ func initHub(ctx *initContext) error {
 	}
 	hubCfg := ctx.cfgMgr.GetConfig().Hub
 
-	// Apply env/builtin fallback: C5_HUB_URL env → builtinHubURL (ldflags).
+	// Apply env/builtin/cloud fallback: C5_HUB_URL env → builtinHubURL → cloud.url (Supabase).
 	if hubCfg.URL == "" {
 		if v := os.Getenv("C5_HUB_URL"); v != "" {
 			hubCfg.URL = v
 			hubCfg.Enabled = true
 		} else if builtinHubURL != "" {
 			hubCfg.URL = builtinHubURL
+			hubCfg.Enabled = true
+		} else if cloudCfg := ctx.cfgMgr.GetConfig().Cloud; cloudCfg.Enabled && cloudCfg.URL != "" {
+			// Cloud-primary mode: use Supabase as Hub backend
+			hubCfg.URL = cloudCfg.URL
 			hubCfg.Enabled = true
 		}
 	}
