@@ -22,6 +22,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp/apps"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/mcp/handlers/gpuhandler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/knowledgehandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/llmhandler"
 	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/secrets"
@@ -388,6 +389,17 @@ func newMCPServer() (*mcpServer, error) {
 		ErrorTraceHTML: apps.ErrorTraceHTML,
 	})
 	fmt.Fprintln(os.Stderr, "cq: c4_error_trace registered (ui://cq/error-trace)")
+
+	// Register nodes map widget for agent/worker/edge status.
+	handlers.RegisterNodesMapHandler(reg, sqliteStore, &handlers.NodesMapDeps{
+		ResourceStore: appStore,
+		NodesMapHTML:  apps.NodesMapHTML,
+	})
+	fmt.Fprintln(os.Stderr, "cq: c4_nodes_map registered (ui://cq/nodes-map)")
+
+	// Register experiment compare widget for side-by-side results.
+	knowledgehandler.RegisterExperimentCompareWidget(appStore, apps.ExperimentCompareHTML)
+	fmt.Fprintln(os.Stderr, "cq: experiment-compare widget registered (ui://cq/experiment-compare)")
 
 	// Register test results widget (ui://cq/test-results) — c4_run_validation format=widget.
 	if apps.TestResultsHTML != "" {

@@ -127,12 +127,17 @@ func collectDashboardData(store *SQLiteStore, deps *DashboardDeps) map[string]an
 
 	// memory_count from knowledge store
 	if deps.KnowledgeStore != nil {
-		docs, err := deps.KnowledgeStore.List("", "", 1000000)
-		if err == nil {
-			data["memory_count"] = len(docs)
-			data["recent_learnings"] = extractRecentLearnings(docs, 4)
+		// Use COUNT query instead of fetching all docs
+		var count int
+		if err := deps.KnowledgeStore.DB().QueryRow("SELECT COUNT(*) FROM knowledge_docs").Scan(&count); err == nil {
+			data["memory_count"] = count
 		} else {
-			fmt.Fprintf(os.Stderr, "c4_dashboard: knowledge list: %v\n", err)
+			fmt.Fprintf(os.Stderr, "c4_dashboard: knowledge count: %v\n", err)
+		}
+		// Fetch only recent 4 docs for learnings display
+		docs, err := deps.KnowledgeStore.List("", "", 4)
+		if err == nil {
+			data["recent_learnings"] = extractRecentLearnings(docs, 4)
 		}
 	}
 
