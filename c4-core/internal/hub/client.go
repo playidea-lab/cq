@@ -600,6 +600,7 @@ func (c *Client) GetJobLogsCtx(ctx context.Context, jobID string, offset, limit 
 
 // ListWorkers returns registered workers from Supabase hub_workers table.
 // If activeOnly is true (default), only non-offline workers are returned.
+// Each worker's Capabilities field is populated from hub_capabilities.
 func (c *Client) ListWorkers(activeOnly ...bool) ([]Worker, error) {
 	path := "/rest/v1/hub_workers?status=neq.offline&order=registered_at.desc"
 	if len(activeOnly) > 0 && !activeOnly[0] {
@@ -609,6 +610,26 @@ func (c *Client) ListWorkers(activeOnly ...bool) ([]Worker, error) {
 	if err := c.supabaseGet(path, &workers); err != nil {
 		return nil, fmt.Errorf("list workers: %w", err)
 	}
+
+	// Enrich workers with capabilities from hub_capabilities table.
+	type capRow struct {
+		WorkerID string `json:"worker_id"`
+		Name     string `json:"name"`
+	}
+	var caps []capRow
+	capPath := "/rest/v1/hub_capabilities?select=worker_id,name"
+	if err := c.supabaseGet(capPath, &caps); err == nil {
+		capMap := make(map[string][]string)
+		for _, cap := range caps {
+			capMap[cap.WorkerID] = append(capMap[cap.WorkerID], cap.Name)
+		}
+		for i := range workers {
+			if c, ok := capMap[workers[i].ID]; ok {
+				workers[i].Capabilities = c
+			}
+		}
+	}
+
 	return workers, nil
 }
 
