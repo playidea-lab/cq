@@ -73,7 +73,8 @@ Run 'cq codex' or 'cq cursor' for other AI tools.`,
 				cmd.Name() != "version" &&
 				cmd.Name() != "__complete" && cmd.Name() != "__completeNoDesc" &&
 				cmd.Parent() != nil && cmd.Parent().Name() != "hub" && cmd.Parent().Name() != "serve" &&
-				cmd.Parent().Name() != "auth" && cmd.Parent().Name() != "mail" {
+				cmd.Parent().Name() != "auth" && cmd.Parent().Name() != "mail" &&
+				cmd.Parent().Name() != "tunnel" {
 				return fmt.Errorf("not a CQ project: %s (missing .c4/ directory)\n\nRun 'cq claude' to initialize this project.", projectDir)
 			}
 		}
