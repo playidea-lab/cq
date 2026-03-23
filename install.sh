@@ -23,12 +23,14 @@ WITH_HUB=false
 DRY_RUN=false
 GLOBAL_MCP=false
 GLOBAL_SKILLS=false
+TIER="solo"
 for arg in "$@"; do
     case "$arg" in
         --with-hub)      WITH_HUB=true ;;
         --dry-run)       DRY_RUN=true ;;
         --global-mcp)    GLOBAL_MCP=true ;;
         --global-skills) GLOBAL_SKILLS=true ;;
+        --tier=*)        TIER="${arg#--tier=}" ;;
     esac
 done
 
@@ -351,20 +353,24 @@ printf "\n${GREEN}${BOLD}CQ $VERSION installed successfully!${NC}\n"
 printf "  Location: ${BOLD}$C4_ROOT${NC}\n"
 printf "  Binary:   ${BOLD}$C4_ROOT/c4-core/bin/cq${NC}\n"
 printf "\n${BOLD}Next steps:${NC}\n"
-if [ "$GLOBAL_MCP" = true ] && [ "$GLOBAL_INSTALLED" = true ]; then
-    printf "  1. Enable MCP server in Claude Code:\n"
-    printf "       Settings → MCP → enable ${CYAN}cq${NC}  (or add to ~/.claude/settings.json)\n"
-    printf "       ${CYAN}{ \"enabledMcpjsonServers\": [\"cq\"] }${NC}\n"
-    printf "  2. Restart Claude Code to activate MCP tools\n"
-    printf "  3. Run ${CYAN}cq auth login${NC} to sign in (required for cloud features)\n\n"
-    printf "  Per-project isolation: run ${CYAN}cq init${NC} in any project directory.\n"
-    printf "  The project .mcp.json overrides the global entry for that project.\n\n"
-else
-    printf "  1. Restart Claude Code to activate MCP tools\n"
-    printf "  2. Run ${CYAN}cq auth login${NC} to sign in (required for cloud features)\n"
-    printf "  3. (Optional) For global access across all projects:\n"
-    printf "       ${CYAN}./install.sh --global-mcp --global-skills${NC}\n\n"
-fi
+case "$TIER" in
+    connected)
+        printf "  1. Restart Claude Code to activate MCP tools\n"
+        printf "  2. Run ${CYAN}cq auth login${NC} to sign in (API key not required)\n"
+        printf "  3. Start with ${CYAN}cq claude${NC}\n\n"
+        ;;
+    full)
+        printf "  1. Restart Claude Code to activate MCP tools\n"
+        printf "  2. Run ${CYAN}cq auth login${NC} to sign in (API key not required)\n"
+        printf "  3. Start with ${CYAN}cq claude${NC}\n"
+        printf "  4. Connect a worker: ${CYAN}cq hub worker start${NC}\n\n"
+        ;;
+    *)
+        # solo (default)
+        printf "  1. Restart Claude Code to activate MCP tools\n"
+        printf "  2. Start with ${CYAN}cq claude${NC}\n\n"
+        ;;
+esac
 
 if [ "$WITH_HUB" = true ]; then
     printf "${BOLD}C5 Hub:${NC}\n"
