@@ -1,7 +1,10 @@
 package cloud
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"testing"
 
 	"github.com/changmin/c4-core/internal/store"
@@ -533,4 +536,146 @@ type deleteFailStore struct{ mockStore }
 
 func (d *deleteFailStore) DeleteTask(taskID string) error {
 	return errors.New("remote delete failed")
+}
+
+// =========================================================================
+// Round-trip tests for 7 new cloudTaskRow fields
+// =========================================================================
+
+// TestRowToTask_NewFieldsRoundTrip verifies that all 7 new fields survive the
+// cloudTaskRow → store.Task conversion (rowToTask read path).
+func TestRowToTask_NewFieldsRoundTrip(t *testing.T) {
+	row := &cloudTaskRow{
+		TaskID:                 "T-RT-001-0",
+		Title:                  "round-trip task",
+		Status:                 "blocked",
+		ReviewDecisionEvidence: "reviewer rejected: missing tests",
+		FailureSignature:       "sig:build-fail:42",
+		BlockedAttempts:        3,
+		LastError:              "exit status 1",
+		FilesChanged:           "main.go,store.go",
+		SupersededBy:           "R-002-0",
+	}
+
+	task := rowToTask(row)
+
+	if task.ReviewDecisionEvidence != row.ReviewDecisionEvidence {
+		t.Errorf("ReviewDecisionEvidence = %q, want %q", task.ReviewDecisionEvidence, row.ReviewDecisionEvidence)
+	}
+	if task.FailureSignature != row.FailureSignature {
+		t.Errorf("FailureSignature = %q, want %q", task.FailureSignature, row.FailureSignature)
+	}
+	if task.Attempts != row.BlockedAttempts {
+		t.Errorf("Attempts = %d, want %d", task.Attempts, row.BlockedAttempts)
+	}
+	if task.LastError != row.LastError {
+		t.Errorf("LastError = %q, want %q", task.LastError, row.LastError)
+	}
+	if task.FilesChanged != row.FilesChanged {
+		t.Errorf("FilesChanged = %q, want %q", task.FilesChanged, row.FilesChanged)
+	}
+	if task.SupersededBy != row.SupersededBy {
+		t.Errorf("SupersededBy = %q, want %q", task.SupersededBy, row.SupersededBy)
+	}
+}
+
+// TestAddTask_NewFieldsRoundTrip verifies that all 7 new fields are serialised
+// into the JSON payload sent to the cloud (store.Task → cloudTaskRow write path).
+func TestAddTask_NewFieldsRoundTrip(t *testing.T) {
+	var capturedBody string
+	srv := newTestServer(t, map[string]func(r *http.Request) (int, string){
+		"POST /rest/v1/c4_tasks": func(r *http.Request) (int, string) {
+			b, _ := io.ReadAll(r.Body)
+			capturedBody = string(b)
+			return 201, ""
+		},
+	})
+	defer srv.Close()
+
+	cs := newTestStore(srv.URL)
+	input := &store.Task{
+		ID:                     "T-RT-002-0",
+		Title:                  "write round-trip",
+		Status:                 "pending",
+		ReviewDecisionEvidence: "needs more tests",
+		FailureSignature:       "sig:test-fail",
+		Attempts:               2,
+		LastError:              "panic: nil pointer",
+		FilesChanged:           "cloud.go",
+		SupersededBy:           "R-003-0",
+	}
+	if err := cs.AddTask(input); err != nil {
+		t.Fatalf("AddTask() error: %v", err)
+	}
+
+	var payload cloudTaskRow
+	if err := json.Unmarshal([]byte(capturedBody), &payload); err != nil {
+		t.Fatalf("unmarshal captured body: %v", err)
+	}
+
+	if payload.ReviewDecisionEvidence != input.ReviewDecisionEvidence {
+		t.Errorf("review_decision_evidence = %q, want %q", payload.ReviewDecisionEvidence, input.ReviewDecisionEvidence)
+	}
+	if payload.FailureSignature != input.FailureSignature {
+		t.Errorf("failure_signature = %q, want %q", payload.FailureSignature, input.FailureSignature)
+	}
+	if payload.BlockedAttempts != input.Attempts {
+		t.Errorf("blocked_attempts = %d, want %d", payload.BlockedAttempts, input.Attempts)
+	}
+	if payload.LastError != input.LastError {
+		t.Errorf("last_error = %q, want %q", payload.LastError, input.LastError)
+	}
+	if payload.FilesChanged != input.FilesChanged {
+		t.Errorf("files_changed = %q, want %q", payload.FilesChanged, input.FilesChanged)
+	}
+	if payload.SupersededBy != input.SupersededBy {
+		t.Errorf("superseded_by = %q, want %q", payload.SupersededBy, input.SupersededBy)
+	}
+}
+
+// TestGetTask_NewFieldsRoundTrip verifies that all 7 new fields are returned
+// correctly by GetTask through the HTTP→cloudTaskRow→store.Task pipeline.
+func TestGetTask_NewFieldsRoundTrip(t *testing.T) {
+	srv := newTestServer(t, map[string]func(r *http.Request) (int, string){
+		"GET /rest/v1/c4_tasks": func(r *http.Request) (int, string) {
+			return 200, `[{
+				"task_id": "T-RT-003-0",
+				"title": "read round-trip",
+				"status": "blocked",
+				"review_decision_evidence": "missing coverage",
+				"failure_signature": "sig:lint-error",
+				"blocked_attempts": 5,
+				"last_error": "golint: error",
+				"files_changed": "handler.go,mcp.go",
+				"session_id": "sess-abc123",
+				"superseded_by": "R-004-0"
+			}]`
+		},
+	})
+	defer srv.Close()
+
+	cs := newTestStore(srv.URL)
+	task, err := cs.GetTask("T-RT-003-0")
+	if err != nil {
+		t.Fatalf("GetTask() error: %v", err)
+	}
+
+	if task.ReviewDecisionEvidence != "missing coverage" {
+		t.Errorf("ReviewDecisionEvidence = %q, want %q", task.ReviewDecisionEvidence, "missing coverage")
+	}
+	if task.FailureSignature != "sig:lint-error" {
+		t.Errorf("FailureSignature = %q, want %q", task.FailureSignature, "sig:lint-error")
+	}
+	if task.Attempts != 5 {
+		t.Errorf("Attempts = %d, want 5", task.Attempts)
+	}
+	if task.LastError != "golint: error" {
+		t.Errorf("LastError = %q, want %q", task.LastError, "golint: error")
+	}
+	if task.FilesChanged != "handler.go,mcp.go" {
+		t.Errorf("FilesChanged = %q, want %q", task.FilesChanged, "handler.go,mcp.go")
+	}
+	if task.SupersededBy != "R-004-0" {
+		t.Errorf("SupersededBy = %q, want %q", task.SupersededBy, "R-004-0")
+	}
 }
