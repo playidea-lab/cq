@@ -2,6 +2,8 @@ package hub
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -169,5 +171,121 @@ func TestGetID_BothEmpty(t *testing.T) {
 	j := &Job{}
 	if got := j.GetID(); got != "" {
 		t.Errorf("GetID() = %q, want empty string", got)
+	}
+}
+
+// =========================================================================
+// RegisterWorker
+// =========================================================================
+
+func TestRegisterWorker_StoresCapabilities(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rest/v1/rpc/register_worker", func(w http.ResponseWriter, r *http.Request) {
+		// Parse the request body to verify capabilities were sent.
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		json.Unmarshal(body, &req)
+
+		caps, _ := req["p_capabilities"].([]any)
+		if len(caps) != 2 {
+			http.Error(w, "expected 2 capabilities", http.StatusBadRequest)
+			return
+		}
+		jsonResponse(w, map[string]any{"id": "worker-abc"})
+	})
+	client, _ := newTestServer(t, mux)
+
+	id, err := client.RegisterWorker(map[string]any{"gpu": true, "python": true})
+	if err != nil {
+		t.Fatalf("RegisterWorker: %v", err)
+	}
+	if id != "worker-abc" {
+		t.Errorf("worker ID = %q, want worker-abc", id)
+	}
+	// Capabilities must be stored on client after registration.
+	if len(client.capabilities) != 2 {
+		t.Errorf("client.capabilities length = %d, want 2", len(client.capabilities))
+	}
+}
+
+func TestRegisterWorker_EmptyCapabilities(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rest/v1/rpc/register_worker", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, map[string]any{"id": "worker-empty"})
+	})
+	client, _ := newTestServer(t, mux)
+
+	_, err := client.RegisterWorker(map[string]any{})
+	if err != nil {
+		t.Fatalf("RegisterWorker: %v", err)
+	}
+	if len(client.capabilities) != 0 {
+		t.Errorf("client.capabilities = %v, want empty slice", client.capabilities)
+	}
+}
+
+// =========================================================================
+// ClaimJob
+// =========================================================================
+
+func TestClaimJob_SendsRegisteredCapabilities(t *testing.T) {
+	var capturedCaps []any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		json.Unmarshal(body, &req)
+		capturedCaps, _ = req["p_capabilities"].([]any)
+		jsonResponse(w, map[string]any{
+			"lease_id": "lease-cap-1",
+			"job":      map[string]any{"id": "job-cap-1", "name": "train", "status": "RUNNING"},
+		})
+	})
+	client, _ := newTestServer(t, mux)
+	client.capabilities = []string{"gpu", "python"}
+
+	job, leaseID, err := client.ClaimJob(16.0)
+	if err != nil {
+		t.Fatalf("ClaimJob: %v", err)
+	}
+	if job == nil || job.ID != "job-cap-1" {
+		t.Errorf("unexpected job: %+v", job)
+	}
+	if leaseID != "lease-cap-1" {
+		t.Errorf("leaseID = %q, want lease-cap-1", leaseID)
+	}
+	// Verify capabilities were forwarded to the RPC.
+	if len(capturedCaps) != 2 {
+		t.Errorf("p_capabilities sent = %v, want [gpu python]", capturedCaps)
+	}
+}
+
+func TestClaimJob_EmptyCapabilitiesWhenNotRegistered(t *testing.T) {
+	var capturedCaps []any
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		json.Unmarshal(body, &req)
+		capturedCaps, _ = req["p_capabilities"].([]any)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`null`))
+	})
+	client, _ := newTestServer(t, mux)
+	// No capabilities set (nil) — should send empty array, not nil.
+
+	job, leaseID, err := client.ClaimJob(0.0)
+	if err != nil {
+		t.Fatalf("ClaimJob: %v", err)
+	}
+	if job != nil {
+		t.Errorf("expected nil job, got %+v", job)
+	}
+	if leaseID != "" {
+		t.Errorf("expected empty leaseID, got %q", leaseID)
+	}
+	// Empty capabilities must be sent as an empty array (not null/nil).
+	if capturedCaps == nil {
+		t.Errorf("p_capabilities was nil, want empty array []")
 	}
 }

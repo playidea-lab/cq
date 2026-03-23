@@ -23,9 +23,10 @@ type Client struct {
 	apiKey       string        // legacy Hub API key (also used as Supabase anon key for X-API-Key compat)
 	tokenFunc    func() string // optional: overrides apiKey per request (e.g. cloud JWT auto-refresh)
 	teamID       string
-	workerID     string // set after RegisterWorker
-	supabaseURL  string // Supabase project URL (e.g. https://xyz.supabase.co)
-	supabaseKey  string // Supabase anon key
+	workerID     string   // set after RegisterWorker
+	capabilities []string // set after RegisterWorker; passed to claim_job RPC
+	supabaseURL  string   // Supabase project URL (e.g. https://xyz.supabase.co)
+	supabaseKey  string   // Supabase anon key
 	httpClient   *http.Client
 }
 
