@@ -180,8 +180,11 @@ var (
 	hubEdgeName          string
 	hubEdgeTags          string
 	hubEdgeRuntime       string
-	hubSubmitRun         string
-	hubSubmitExperiment  string
+	hubSubmitRun          string
+	hubSubmitExperiment   string
+	hubSubmitTarget       string
+	hubSubmitCapability   string
+	hubSubmitRequiredTags string
 	hubWorkersAll        bool
 	hubPruneDryRun       bool
 	hubEdgeControlParams []string
@@ -203,6 +206,9 @@ func init() {
 
 	hubSubmitCmd.Flags().StringVar(&hubSubmitRun, "run", "", "command to execute on the worker")
 	hubSubmitCmd.Flags().StringVar(&hubSubmitExperiment, "experiment", "", "experiment name to register as a Hub experiment run (requires Hub)")
+	hubSubmitCmd.Flags().StringVar(&hubSubmitTarget, "target", "", "route job to a specific worker ID")
+	hubSubmitCmd.Flags().StringVar(&hubSubmitCapability, "capability", "", "require worker capability (e.g. gpu, cuda)")
+	hubSubmitCmd.Flags().StringVar(&hubSubmitRequiredTags, "tags", "", "comma-separated worker tags required (e.g. gpu,a100)")
 
 	hubWorkersCmd.Flags().BoolVar(&hubWorkersAll, "all", false, "include offline workers")
 	hubWorkersPruneCmd.Flags().BoolVar(&hubPruneDryRun, "dry-run", false, "show what would be pruned without deleting")
@@ -876,6 +882,11 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 		SnapshotVersionHash: snapshotHash,
 		GitHash:             gitHash,
 		ProjectID:           getActiveProjectID(projectDir),
+		TargetWorker:        hubSubmitTarget,
+		Capability:          hubSubmitCapability,
+	}
+	if hubSubmitRequiredTags != "" {
+		req.RequiredTags = strings.Split(hubSubmitRequiredTags, ",")
 	}
 
 	// Apply experiment metadata from cq.yaml experiment: section.
