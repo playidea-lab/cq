@@ -9,11 +9,19 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
+// CloudSemanticSearcher abstracts the semantic search capability of the cloud knowledge client.
+// Implemented by *cloud.KnowledgeCloudClient.
+type CloudSemanticSearcher interface {
+	SemanticSearch(embedding []float32, limit int, similarityThreshold float32) ([]map[string]any, error)
+}
+
 // KnowledgeNativeOpts holds dependencies for native knowledge handlers.
 type KnowledgeNativeOpts struct {
 	Store         *knowledge.Store
 	Searcher      *knowledge.Searcher
 	Cloud         knowledge.CloudSyncer          // nil if cloud disabled
+	CloudSearch   CloudSemanticSearcher          // nil if semantic cloud search unavailable
+	CloudMode     string                         // "cloud-primary" or "local-first" (default)
 	Usage         *knowledge.UsageTracker        // nil if usage tracking disabled
 	LLM           *llm.Gateway                   // nil if LLM gateway disabled (distill unavailable)
 	GlobalManager *knowledge.GlobalKnowledgeManager // nil if global store unavailable
