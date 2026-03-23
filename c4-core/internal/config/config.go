@@ -38,6 +38,12 @@ type EconomicMode struct {
 	ModelRouting ModelRouting `mapstructure:"model_routing" yaml:"model_routing"`
 }
 
+// Cloud mode constants for CloudConfig.Mode.
+const (
+	CloudModePrimary   = "cloud-primary" // writes go to cloud first, async sync to local
+	CloudModeLocalFirst = "local-first"  // writes go to local first, async push to cloud (default)
+)
+
 // CloudConfig holds cloud (Supabase) connection settings.
 type CloudConfig struct {
 	Enabled      bool   `mapstructure:"enabled"       yaml:"enabled"`
@@ -523,7 +529,7 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("cloud.url", "")
 	v.SetDefault("cloud.anon_key", "")
 	v.SetDefault("cloud.project_id", "")
-	v.SetDefault("cloud.mode", "local-first")
+	v.SetDefault("cloud.mode", CloudModeLocalFirst)
 	v.SetDefault("llm_gateway.enabled", false)
 	v.SetDefault("llm_gateway.default", "anthropic")
 	v.SetDefault("llm_gateway.cache_by_default", true)

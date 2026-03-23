@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/mcp"
 )
@@ -34,7 +35,7 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		cloudUsed := false
 
 		// cloud-primary: try cloud semantic search first, fall back to local on failure
-		if opts.CloudMode == "cloud-primary" && opts.CloudSearch != nil && opts.Searcher != nil && opts.Searcher.VectorStore() != nil {
+		if opts.CloudMode == config.CloudModePrimary && opts.CloudSearch != nil && opts.Searcher != nil && opts.Searcher.VectorStore() != nil {
 			queryEmb, _, embedErr := opts.Searcher.VectorStore().EmbedText(context.Background(), query)
 			if embedErr == nil && len(queryEmb) > 0 {
 				cloudDocs, cloudErr := opts.CloudSearch.SemanticSearch(queryEmb, limit, 0.5)

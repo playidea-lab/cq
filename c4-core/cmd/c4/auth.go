@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/cloud"
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -495,7 +496,7 @@ func patchCloudConfigAfterLogin(projDir string) string {
 		"enabled:":  "true",
 		"url:":      effectiveURL,
 		"anon_key:": effectiveAnonKey,
-		"mode:":     "cloud-primary",
+		"mode:":     config.CloudModePrimary,
 	}
 
 	result := writeCloudSectionToYAML(existing, desired)

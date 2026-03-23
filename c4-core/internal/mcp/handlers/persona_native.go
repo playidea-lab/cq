@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/ontology"
@@ -387,7 +388,7 @@ func updateUserOntology(username string, nodes []ontology.Node, cloud *ontologyC
 		updater.AddOrUpdate(path, n)
 	}
 
-	if cloud != nil && cloud.store != nil && cloud.mode == "cloud-primary" {
+	if cloud != nil && cloud.store != nil && cloud.mode == config.CloudModePrimary {
 		// cloud-primary: save to Supabase first, then update local cache
 		if err := cloud.store.CloudSave(username, o); err != nil {
 			slog.Warn("persona: ontology CloudSave failed", "username", username, "error", err)
