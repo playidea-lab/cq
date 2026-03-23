@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CQ Dashboard</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #666666;
+    --accent: #2563eb;
+    --success: #16a34a;
+    --warning: #d97706;
+    --error: #dc2626;
+    --radius: 6px;
+    --gap: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --text-secondary: #888888;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 8px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--gap);
+    height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    overflow: hidden;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--error);
+    flex-shrink: 0;
+  }
+
+  .status-dot.online {
+    background: var(--success);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .offline-banner {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 4px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    flex-shrink: 0;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--gap);
+    flex: 1;
+    min-height: 0;
+  }
+
+  .section {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+
+  .section-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  .section-value.accent {
+    color: var(--accent);
+  }
+
+  .node-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .node-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+  }
+
+  .node-type {
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .node-count {
+    font-weight: 600;
+    color: var(--text);
+    flex-shrink: 0;
+    margin-left: 4px;
+  }
+
+  .progress-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  .progress-fill.warning {
+    background: var(--warning);
+  }
+
+  .job-stats {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+
+  .job-count {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .job-label {
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .sync-time {
+    font-size: 10px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .recent-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .recent-item {
+    font-size: 10px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.4;
+  }
+
+  .recent-item::before {
+    content: "•";
+    margin-right: 3px;
+    color: var(--accent);
+  }
+
+  .dimmed {
+    opacity: 0.4;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <span class="header-title">CQ</span>
+    <div class="status-row">
+      <span id="status-text">오프라인</span>
+      <div class="status-dot" id="status-dot"></div>
+    </div>
+  </div>
+
+  <div class="offline-banner" id="offline-banner">연결 없음</div>
+
+  <div class="grid" id="main-grid" style="display:none">
+    <!-- Memory -->
+    <div class="section">
+      <div class="section-label">기억</div>
+      <div class="section-value accent" id="memory-count">—</div>
+    </div>
+
+    <!-- Nodes -->
+    <div class="section">
+      <div class="section-label">노드</div>
+      <div class="node-list" id="node-list">
+        <div class="node-item dimmed"><span class="node-type">없음</span></div>
+      </div>
+    </div>
+
+    <!-- Jobs -->
+    <div class="section">
+      <div class="section-label">잡</div>
+      <div class="job-stats">
+        <span class="job-count" id="job-count">—</span>
+        <span class="job-label">개</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" id="job-progress" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Cluster -->
+    <div class="section">
+      <div class="section-label">군집</div>
+      <div class="section-value" id="cluster-nodes">—</div>
+      <div class="sync-time" id="cluster-sync">동기화: —</div>
+    </div>
+
+    <!-- Recent Learning (full width) -->
+    <div class="section" style="grid-column: 1 / -1">
+      <div class="section-label">최근 학습</div>
+      <div class="recent-list" id="recent-list">
+        <div class="recent-item dimmed">없음</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var els = {
+    dot: document.getElementById('status-dot'),
+    text: document.getElementById('status-text'),
+    banner: document.getElementById('offline-banner'),
+    grid: document.getElementById('main-grid'),
+    memory: document.getElementById('memory-count'),
+    nodeList: document.getElementById('node-list'),
+    jobCount: document.getElementById('job-count'),
+    jobProgress: document.getElementById('job-progress'),
+    clusterNodes: document.getElementById('cluster-nodes'),
+    clusterSync: document.getElementById('cluster-sync'),
+    recentList: document.getElementById('recent-list'),
+  };
+
+  function setOnline(online) {
+    if (online) {
+      els.dot.classList.add('online');
+      els.text.textContent = '온라인';
+      els.banner.style.display = 'none';
+      els.grid.style.display = 'grid';
+    } else {
+      els.dot.classList.remove('online');
+      els.text.textContent = '오프라인';
+      els.banner.style.display = '';
+      els.grid.style.display = 'none';
+    }
+  }
+
+  function renderNodes(nodes) {
+    if (!nodes || typeof nodes !== 'object' || Object.keys(nodes).length === 0) {
+      els.nodeList.innerHTML = '<div class="node-item dimmed"><span class="node-type">없음</span></div>';
+      return;
+    }
+    var html = '';
+    var entries = Object.entries(nodes).slice(0, 5);
+    entries.forEach(function (entry) {
+      var type = entry[0];
+      var count = entry[1];
+      html += '<div class="node-item"><span class="node-type">' + esc(type) + '</span><span class="node-count">' + esc(String(count)) + '</span></div>';
+    });
+    els.nodeList.innerHTML = html;
+  }
+
+  function renderJobs(total, running) {
+    var t = typeof total === 'number' ? total : 0;
+    var r = typeof running === 'number' ? running : 0;
+    els.jobCount.textContent = String(t);
+    var pct = t > 0 ? Math.min(100, Math.round((r / t) * 100)) : 0;
+    els.jobProgress.style.width = pct + '%';
+    if (pct > 75) {
+      els.jobProgress.classList.add('warning');
+    } else {
+      els.jobProgress.classList.remove('warning');
+    }
+  }
+
+  function renderCluster(nodeCount, syncAt) {
+    els.clusterNodes.textContent = typeof nodeCount === 'number' ? nodeCount + ' 노드' : '—';
+    if (syncAt) {
+      var d = new Date(syncAt);
+      var now = Date.now();
+      var diff = Math.round((now - d.getTime()) / 1000);
+      var label;
+      if (diff < 60) {
+        label = diff + '초 전';
+      } else if (diff < 3600) {
+        label = Math.floor(diff / 60) + '분 전';
+      } else {
+        label = d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+      }
+      els.clusterSync.textContent = '동기화: ' + label;
+    } else {
+      els.clusterSync.textContent = '동기화: —';
+    }
+  }
+
+  function renderRecent(items) {
+    if (!Array.isArray(items) || items.length === 0) {
+      els.recentList.innerHTML = '<div class="recent-item dimmed">없음</div>';
+      return;
+    }
+    var html = '';
+    items.slice(0, 4).forEach(function (item) {
+      html += '<div class="recent-item">' + esc(String(item)) + '</div>';
+    });
+    els.recentList.innerHTML = html;
+  }
+
+  function esc(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function applyData(data) {
+    if (!data) return;
+    setOnline(true);
+
+    var memory = data.memory_count;
+    els.memory.textContent = typeof memory === 'number' ? memory.toLocaleString() : '—';
+
+    renderNodes(data.nodes);
+    renderJobs(data.jobs_total, data.jobs_running);
+    renderCluster(data.cluster_nodes, data.cluster_sync_at);
+    renderRecent(data.recent_learnings);
+  }
+
+  // Listen for postMessage from MCP Apps host
+  window.addEventListener('message', function (event) {
+    var msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.type === 'cq:dashboard:data') {
+      applyData(msg.payload);
+    } else if (msg.type === 'cq:dashboard:offline') {
+      setOnline(false);
+    }
+  });
+
+  // Initial offline state
+  setOnline(false);
+})();
+</script>
+</body>
+</html>
