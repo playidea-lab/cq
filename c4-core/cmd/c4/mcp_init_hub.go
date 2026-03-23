@@ -19,6 +19,7 @@ import (
 func init() {
 	registerInitHook(initHub)
 	registerEBWireHook(wireHubEventBus)
+	registerShutdownHook(shutdownHubCron)
 }
 
 // initHub creates the Hub client and registers Hub + Worker handlers.
@@ -100,11 +101,21 @@ func initHub(ctx *initContext) error {
 				mcpURL = fmt.Sprintf("http://%s:%d", bind, mcpHTTPCfg.Port)
 			}
 		}
+		// Resolve Postgres direct URL for LISTEN/NOTIFY.
+		// Priority: C4_CLOUD_DIRECT_URL env > cloud.direct_url config.
+		directURL := os.Getenv("C4_CLOUD_DIRECT_URL")
+		if directURL == "" && ctx.cfgMgr != nil {
+			directURL = ctx.cfgMgr.GetConfig().Cloud.DirectURL
+		}
+		if directURL == "" {
+			fmt.Fprintln(os.Stderr, "cq: job listener: direct_url not configured, using polling")
+		}
 		handlers.RegisterWorkerHandlers(ctx.reg, &handlers.WorkerDeps{
 			HubClient:     hc,
 			ShutdownStore: shutdownStore,
 			Keeper:        ctx.keeper,
 			MCPURL:        mcpURL,
+			DirectURL:     directURL,
 		})
 		fmt.Fprintln(os.Stderr, "cq: worker standby tools registered (3 tools)")
 	}
@@ -148,4 +159,25 @@ func startHubPoller(ctx *initContext) {
 	poller.SetProjectID(ctx.sqliteStore.GetProjectID())
 	poller.Start(pollerCtx)
 	fmt.Fprintln(os.Stderr, "cq: hub poller started (30s interval)")
+
+	// Start CronScheduler now that hub client is confirmed available.
+	startHubCronScheduler(ctx, hc)
+}
+
+// startHubCronScheduler starts the CronScheduler in a background goroutine.
+// It is called from startHubPoller after the hub client is confirmed available.
+// The scheduler is stopped when ctx.cronCancel is called (via shutdownHubCron).
+func startHubCronScheduler(ctx *initContext, hc *hub.Client) {
+	cronCtx, cronCancel := context.WithCancel(context.Background())
+	ctx.cronCancel = cronCancel
+	scheduler := hub.NewCronScheduler(hc, slog.Default())
+	go scheduler.Start(cronCtx)
+	fmt.Fprintln(os.Stderr, "cq: cron scheduler started")
+}
+
+// shutdownHubCron cancels the CronScheduler goroutine on server shutdown.
+func shutdownHubCron(ctx *initContext) {
+	if ctx.cronCancel != nil {
+		ctx.cronCancel()
+	}
 }

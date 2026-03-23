@@ -61,6 +61,7 @@ type initContext struct {
 	// Hub (set by initHub post-store hook)
 	hubClient       hubClientInterface
 	hubPollerCancel context.CancelFunc
+	cronCancel      context.CancelFunc // cancels CronScheduler goroutine on shutdown
 
 	// C1 (set by initC1 post-store hook)
 	keeper *messengerhandler.ContextKeeper
