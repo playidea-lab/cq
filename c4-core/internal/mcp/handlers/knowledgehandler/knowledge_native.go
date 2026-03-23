@@ -114,6 +114,11 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 			"properties": map[string]any{
 				"query": map[string]any{"type": "string", "description": "Search query"},
 				"limit": map[string]any{"type": "integer", "description": "Max results"},
+				"format": map[string]any{
+					"type":        "string",
+					"description": "Response format: 'widget' returns MCP Apps comparison table with _meta; 'text' returns plain JSON (default)",
+					"enum":        []string{"widget", "text"},
+				},
 			},
 			"required": []string{"query"},
 		},

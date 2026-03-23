@@ -19,3 +19,9 @@ var JobProgressHTML string
 //
 //go:embed widgets/job_result.html
 var JobResultHTML string
+
+// ExperimentCompareHTML is the embedded experiment compare widget HTML content.
+// Served as the ui://cq/experiment-compare resource via MCP resources/read.
+//
+//go:embed widgets/experiment_compare.html
+var ExperimentCompareHTML string
