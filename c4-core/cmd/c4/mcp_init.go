@@ -707,10 +707,14 @@ func toLLMGatewayConfig(cfgMgr *config.Manager, ss *secrets.Store, cloudTP *clou
 		}
 	}
 	if cloudTP != nil {
-		// Auto-register cq-proxy provider with JWT token
+		// Auto-register cq-proxy provider with JWT token.
+		// base_url priority: config > builtinSupabaseURL + /functions/v1/llm-proxy
 		baseURL := ""
 		if p, ok := cfg.LLMGateway.Providers["cq-proxy"]; ok {
 			baseURL = p.BaseURL
+		}
+		if baseURL == "" && builtinSupabaseURL != "" {
+			baseURL = strings.TrimRight(builtinSupabaseURL, "/") + "/functions/v1/llm-proxy"
 		}
 		if baseURL != "" {
 			providers["cq-proxy"] = llm.GatewayProviderConfig{
