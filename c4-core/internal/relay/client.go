@@ -103,6 +103,11 @@ func (c *RelayClient) dial(ctx context.Context) (net.Conn, error) {
 		return nil, fmt.Errorf("relay: invalid URL %q: %w", c.relayURL, err)
 	}
 
+	// Ensure /connect path is present
+	if u.Path == "" || u.Path == "/" {
+		u.Path = "/connect"
+	}
+
 	q := u.Query()
 	q.Set("worker_id", c.workerID)
 	if c.tokenFunc != nil {
