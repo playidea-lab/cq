@@ -19,6 +19,7 @@ import (
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/apps"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/secrets"
@@ -337,6 +338,15 @@ func newMCPServer() (*mcpServer, error) {
 		fmt.Fprintf(os.Stderr, "cq: %d lighthouse stubs loaded\n", n)
 	}
 
+	// Create resource store for MCP Apps ui:// resources and register dashboard handler.
+	appStore := apps.NewResourceStore()
+	handlers.RegisterDashboardHandler(reg, sqliteStore, &handlers.DashboardDeps{
+		KnowledgeStore: knowledgeStore,
+		ResourceStore:  appStore,
+		DashboardHTML:  apps.DashboardHTML,
+	})
+	fmt.Fprintln(os.Stderr, "cq: c4_dashboard registered (ui://cq/dashboard)")
+
 	// Auto-register CLI commands in lighthouse so agents can discover them.
 	if cliCmds := collectCLICommands(rootCmd, "cq"); len(cliCmds) > 0 {
 		if n := handlers.RegisterCLICommands(sqliteStore, cliCmds); n > 0 {
@@ -495,6 +505,7 @@ func newMCPServer() (*mcpServer, error) {
 		knowledgeStore: knowledgeStore,
 		knowledgeUsage: knowledgeUsage,
 		secretStore:    secretStore,
+		resourceStore:  appStore,
 	}, nil
 }
 
