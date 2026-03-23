@@ -7,6 +7,7 @@ import (
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/apps"
 	"github.com/changmin/c4-core/internal/mcp/handlers/artifacthandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/cfghandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/exechandler"
@@ -39,11 +40,15 @@ func RegisterAll(reg *mcp.Registry, store Store) {
 
 // RegisterNativeHandlers registers Go-native file, git, validation, discovery, and artifact handlers.
 // These do not require Python — they operate directly on the filesystem and git.
-func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store) {
+func RegisterNativeHandlers(reg *mcp.Registry, rootDir string, store Store, appStore ...*apps.ResourceStore) {
+	var rs *apps.ResourceStore
+	if len(appStore) > 0 {
+		rs = appStore[0]
+	}
 	fileops.Register(reg, rootDir)
 	gitops.Register(reg, rootDir)
 	exechandler.Register(reg, rootDir)
-	RegisterValidationHandlers(reg, rootDir)
+	RegisterValidationHandlers(reg, rootDir, rs)
 	if store != nil {
 		RegisterDiscoveryHandlers(reg, store, rootDir)
 	}
@@ -67,6 +72,7 @@ type NativeOpts struct {
 	LLMGateway               *llm.Gateway                           // nil if LLM gateway disabled
 	OntologyCloud            *ontology.CloudStore                   // nil if ontology cloud disabled
 	OntologyCloudMode        string                                 // "cloud-primary" or "local-first"
+	AppResourceStore         *apps.ResourceStore                    // nil if MCP Apps infra not wired
 }
 
 // RegisterAllHandlersWithOpts is the full-featured registration with native opts.
@@ -74,7 +80,11 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 	if store != nil {
 		RegisterAll(reg, store)
 	}
-	RegisterNativeHandlers(reg, rootDir, store)
+	var appRS *apps.ResourceStore
+	if opts != nil {
+		appRS = opts.AppResourceStore
+	}
+	RegisterNativeHandlers(reg, rootDir, store, appRS)
 
 	var proxy *BridgeProxy
 	if lazyAddr != nil {

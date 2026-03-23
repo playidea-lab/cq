@@ -232,6 +232,10 @@ func newMCPServer() (*mcpServer, error) {
 	// Initialize global knowledge manager (non-fatal: nil if home dir unavailable)
 	globalKnowledgeManager := knowledge.NewGlobalKnowledgeManager()
 
+	// Create resource store for MCP Apps ui:// resources early so it can be
+	// wired into nativeOpts (for c4_run_validation format=widget support).
+	appStore := apps.NewResourceStore()
+
 	nativeOpts := &handlers.NativeOpts{
 		ResearchStore:          ctx.researchStore,
 		KnowledgeStore:         knowledgeStore,
@@ -241,6 +245,7 @@ func newMCPServer() (*mcpServer, error) {
 		LLMGateway:             ctx.llmGateway,
 		GPUStore:               ctx.daemonStore,
 		GPUScheduler:           ctx.scheduler,
+		AppResourceStore:       appStore,
 	}
 	// Avoid typed-nil interface bug: only assign when concrete pointer is non-nil.
 	// A nil *cloud.KnowledgeCloudClient assigned to an interface field creates a
@@ -340,8 +345,7 @@ func newMCPServer() (*mcpServer, error) {
 		fmt.Fprintf(os.Stderr, "cq: %d lighthouse stubs loaded\n", n)
 	}
 
-	// Create resource store for MCP Apps ui:// resources and register dashboard handler.
-	appStore := apps.NewResourceStore()
+	// Register MCP Apps ui:// resources (appStore created above in Phase 3).
 	handlers.RegisterDashboardHandler(reg, sqliteStore, &handlers.DashboardDeps{
 		KnowledgeStore: knowledgeStore,
 		ResourceStore:  appStore,
@@ -384,6 +388,12 @@ func newMCPServer() (*mcpServer, error) {
 		ErrorTraceHTML: apps.ErrorTraceHTML,
 	})
 	fmt.Fprintln(os.Stderr, "cq: c4_error_trace registered (ui://cq/error-trace)")
+
+	// Register test results widget (ui://cq/test-results) — c4_run_validation format=widget.
+	if apps.TestResultsHTML != "" {
+		appStore.Register("ui://cq/test-results", apps.TestResultsHTML)
+		fmt.Fprintln(os.Stderr, "cq: test-results widget registered (ui://cq/test-results)")
+	}
 
 	// Auto-register CLI commands in lighthouse so agents can discover them.
 	if cliCmds := collectCLICommands(rootCmd, "cq"); len(cliCmds) > 0 {

@@ -11,8 +11,11 @@ import (
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/apps"
 	"github.com/changmin/c4-core/internal/standards"
 )
+
+const testResultsResourceURI = "ui://cq/test-results"
 
 // validationEventPub holds the optional EventBus publisher for validation events.
 var validationEventPub eventbus.Publisher
@@ -32,7 +35,13 @@ func SetValidationConfig(cfg *config.ValidationConfig) {
 }
 
 // RegisterValidationHandlers registers the validation runner tool.
-func RegisterValidationHandlers(reg *mcp.Registry, rootDir string) {
+// rs is optional; when non-nil the tool gains format=widget support.
+func RegisterValidationHandlers(reg *mcp.Registry, rootDir string, rs ...*apps.ResourceStore) {
+	var appStore *apps.ResourceStore
+	if len(rs) > 0 {
+		appStore = rs[0]
+	}
+
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_run_validation",
 		Description: "Run validation commands (tests, linters, type checks)",
@@ -44,10 +53,42 @@ func RegisterValidationHandlers(reg *mcp.Registry, rootDir string) {
 					"items":       map[string]any{"type": "string"},
 					"description": "Validation names to run (e.g. 'pytest', 'go-test', 'ruff'). Empty = run all.",
 				},
+				"format": map[string]any{
+					"type":        "string",
+					"description": "Response format: 'widget' returns MCP Apps widget with _meta; 'text' returns plain JSON (default)",
+					"enum":        []string{"widget", "text"},
+				},
 			},
 		},
-	}, func(args json.RawMessage) (any, error) {
-		return handleRunValidation(rootDir, args)
+	}, func(rawArgs json.RawMessage) (any, error) {
+		var args struct {
+			Names  []string `json:"names"`
+			Format string   `json:"format"`
+		}
+		if len(rawArgs) > 0 {
+			if err := json.Unmarshal(rawArgs, &args); err != nil {
+				return nil, fmt.Errorf("parsing arguments: %w", err)
+			}
+		}
+		// Re-encode names-only args for handleRunValidation
+		namesOnly, _ := json.Marshal(struct {
+			Names []string `json:"names"`
+		}{Names: args.Names})
+		result, err := handleRunValidation(rootDir, namesOnly)
+		if err != nil {
+			return nil, err
+		}
+		if args.Format == "widget" && appStore != nil {
+			return map[string]any{
+				"data": result,
+				"_meta": map[string]any{
+					"ui": map[string]any{
+						"resourceUri": testResultsResourceURI,
+					},
+				},
+			}, nil
+		}
+		return result, nil
 	})
 }
 

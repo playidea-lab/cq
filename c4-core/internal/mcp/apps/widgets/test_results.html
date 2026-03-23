@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CQ Test Results</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #666666;
+    --accent: #2563eb;
+    --success: #16a34a;
+    --warning: #d97706;
+    --error: #dc2626;
+    --radius: 6px;
+    --gap: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --text-secondary: #888888;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 8px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--gap);
+    height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    overflow: hidden;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+  }
+
+  .badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  .badge-pass {
+    background: #dcfce7;
+    color: var(--success);
+  }
+
+  .badge-fail {
+    background: #fee2e2;
+    color: var(--error);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .badge-pass {
+      background: #14532d;
+      color: var(--success);
+    }
+    .badge-fail {
+      background: #450a0a;
+      color: var(--error);
+    }
+  }
+
+  /* Count bar row */
+  .count-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: var(--gap);
+    flex-shrink: 0;
+  }
+
+  .stat-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .stat-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.2;
+  }
+
+  .stat-value.pass  { color: var(--success); }
+  .stat-value.fail  { color: var(--error); }
+  .stat-value.skip  { color: var(--warning); }
+  .stat-value.time  { color: var(--accent); }
+
+  /* Progress bar */
+  .progress-bar {
+    height: 5px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    gap: 0;
+  }
+
+  .progress-fill-pass {
+    height: 100%;
+    background: var(--success);
+    transition: width 0.3s ease;
+  }
+
+  .progress-fill-fail {
+    height: 100%;
+    background: var(--error);
+    transition: width 0.3s ease;
+  }
+
+  .progress-fill-skip {
+    height: 100%;
+    background: var(--warning);
+    transition: width 0.3s ease;
+  }
+
+  /* Suite list (scrollable) */
+  .section {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow: hidden;
+    min-height: 0;
+    flex: 1;
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+
+  .suite-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .suite-item {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .suite-item.pass { border-left: 3px solid var(--success); }
+  .suite-item.fail { border-left: 3px solid var(--error); }
+
+  .suite-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 6px;
+    background: var(--surface);
+  }
+
+  .suite-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .suite-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .suite-status {
+    font-size: 10px;
+    font-weight: 600;
+  }
+
+  .suite-status.pass { color: var(--success); }
+  .suite-status.fail { color: var(--error); }
+
+  .suite-elapsed {
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  /* Failure output (only shown when failed) */
+  .suite-output {
+    padding: 5px 6px;
+    font-family: "Menlo", "Monaco", "Consolas", monospace;
+    font-size: 10px;
+    color: var(--error);
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 80px;
+    overflow-y: auto;
+    line-height: 1.5;
+  }
+
+  .empty-state {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 12px 0;
+    opacity: 0.6;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <span class="header-title">테스트 결과</span>
+    <span class="badge" id="overall-badge">—</span>
+  </div>
+
+  <div class="count-row">
+    <div class="stat-box">
+      <div class="stat-label">통과</div>
+      <div class="stat-value pass" id="count-pass">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">실패</div>
+      <div class="stat-value fail" id="count-fail">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">건너뜀</div>
+      <div class="stat-value skip" id="count-skip">—</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">소요시간</div>
+      <div class="stat-value time" id="elapsed">—</div>
+    </div>
+  </div>
+
+  <div class="progress-bar" id="progress-bar">
+    <div class="progress-fill-pass" id="bar-pass" style="width:0%"></div>
+    <div class="progress-fill-fail" id="bar-fail" style="width:0%"></div>
+    <div class="progress-fill-skip" id="bar-skip" style="width:0%"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-label" id="section-label">스위트</div>
+    <div class="suite-list" id="suite-list">
+      <div class="empty-state">데이터 없음</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var els = {
+    badge: document.getElementById('overall-badge'),
+    countPass: document.getElementById('count-pass'),
+    countFail: document.getElementById('count-fail'),
+    countSkip: document.getElementById('count-skip'),
+    elapsed: document.getElementById('elapsed'),
+    barPass: document.getElementById('bar-pass'),
+    barFail: document.getElementById('bar-fail'),
+    barSkip: document.getElementById('bar-skip'),
+    sectionLabel: document.getElementById('section-label'),
+    suiteList: document.getElementById('suite-list'),
+  };
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function fmtElapsed(sec) {
+    if (typeof sec !== 'number') return '—';
+    if (sec < 1) return Math.round(sec * 1000) + 'ms';
+    if (sec < 60) return sec.toFixed(1) + 's';
+    var m = Math.floor(sec / 60);
+    var s = Math.round(sec % 60);
+    return m + 'm ' + s + 's';
+  }
+
+  function applyData(data) {
+    if (!data) return;
+
+    var results = Array.isArray(data.results) ? data.results : [];
+    var allPassed = !!data.all_passed;
+
+    // Count pass/fail/skip from results array
+    var nPass = 0, nFail = 0, nSkip = 0, totalElapsed = 0;
+    results.forEach(function (r) {
+      if (r.passed) {
+        nPass++;
+      } else {
+        nFail++;
+      }
+      if (typeof r.elapsed_seconds === 'number') {
+        totalElapsed += r.elapsed_seconds;
+      }
+    });
+
+    // Support explicit skip count if present in data
+    if (typeof data.skip_count === 'number') {
+      nSkip = data.skip_count;
+    }
+
+    var total = nPass + nFail + nSkip;
+
+    // Overall badge
+    els.badge.textContent = allPassed ? '통과' : '실패';
+    els.badge.className = 'badge ' + (allPassed ? 'badge-pass' : 'badge-fail');
+
+    // Counts
+    els.countPass.textContent = String(nPass);
+    els.countFail.textContent = String(nFail);
+    els.countSkip.textContent = nSkip > 0 ? String(nSkip) : '—';
+    els.elapsed.textContent = fmtElapsed(totalElapsed);
+
+    // Progress bars
+    if (total > 0) {
+      els.barPass.style.width = Math.round((nPass / total) * 100) + '%';
+      els.barFail.style.width = Math.round((nFail / total) * 100) + '%';
+      els.barSkip.style.width = Math.round((nSkip / total) * 100) + '%';
+    } else {
+      els.barPass.style.width = '0%';
+      els.barFail.style.width = '0%';
+      els.barSkip.style.width = '0%';
+    }
+
+    // Suite list
+    var count = typeof data.count === 'number' ? data.count : results.length;
+    els.sectionLabel.textContent = '스위트 (' + count + ')';
+
+    if (results.length === 0) {
+      els.suiteList.innerHTML = '<div class="empty-state">실행된 테스트 없음</div>';
+      return;
+    }
+
+    // Sort: failures first, then by name
+    var sorted = results.slice().sort(function (a, b) {
+      if (a.passed !== b.passed) return a.passed ? 1 : -1;
+      return String(a.name).localeCompare(String(b.name));
+    });
+
+    var html = '';
+    sorted.forEach(function (r) {
+      var cls = r.passed ? 'pass' : 'fail';
+      var statusText = r.passed ? '통과' : '실패';
+      html += '<div class="suite-item ' + cls + '">';
+      html += '<div class="suite-header">';
+      html += '<span class="suite-name">' + esc(r.name || '(unnamed)') + '</span>';
+      html += '<div class="suite-meta">';
+      html += '<span class="suite-status ' + cls + '">' + statusText + '</span>';
+      if (typeof r.elapsed_seconds === 'number') {
+        html += '<span class="suite-elapsed">' + esc(fmtElapsed(r.elapsed_seconds)) + '</span>';
+      }
+      html += '</div>';
+      html += '</div>';
+
+      // Show output only for failures (truncated to keep widget compact)
+      if (!r.passed && r.output) {
+        var out = String(r.output);
+        if (out.length > 400) {
+          out = out.slice(0, 200) + '\n...\n' + out.slice(out.length - 200);
+        }
+        html += '<div class="suite-output">' + esc(out) + '</div>';
+      }
+
+      html += '</div>';
+    });
+
+    els.suiteList.innerHTML = html;
+  }
+
+  // Listen for postMessage from MCP Apps host
+  window.addEventListener('message', function (event) {
+    var msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.type === 'cq:test-results:data') {
+      applyData(msg.payload);
+    }
+  });
+})();
+</script>
+</body>
+</html>
