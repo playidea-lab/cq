@@ -12,7 +12,18 @@ import (
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/apps"
 )
+
+const experimentCompareResourceURI = "ui://cq/experiment-compare"
+
+// RegisterExperimentCompareWidget registers the experiment-compare HTML widget in the resource store.
+// Call this when the apps ResourceStore is available.
+func RegisterExperimentCompareWidget(rs *apps.ResourceStore, html string) {
+	if rs != nil && html != "" {
+		rs.Register(experimentCompareResourceURI, html)
+	}
+}
 
 func experimentRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
@@ -193,6 +204,18 @@ func experimentSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		if communityCount > 0 {
 			response["local_count"] = localCount
 			response["community_count"] = communityCount
+		}
+
+		format, _ := params["format"].(string)
+		if format == "widget" {
+			return map[string]any{
+				"data": response,
+				"_meta": map[string]any{
+					"ui": map[string]any{
+						"resourceUri": experimentCompareResourceURI,
+					},
+				},
+			}, nil
 		}
 
 		return response, nil
