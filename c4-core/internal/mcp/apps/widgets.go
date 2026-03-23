@@ -13,3 +13,9 @@ var DashboardHTML string
 //
 //go:embed widgets/job_progress.html
 var JobProgressHTML string
+
+// JobResultHTML is the embedded job result widget HTML content.
+// Served as the ui://cq/job-result resource via MCP resources/read.
+//
+//go:embed widgets/job_result.html
+var JobResultHTML string

@@ -13,3 +13,6 @@ func Register(_ *mcp.Registry, _ *daemon.Store, _ *daemon.Scheduler) {}
 
 // RegisterJobProgressWidget is a no-op stub when the gpu build tag is disabled.
 func RegisterJobProgressWidget(_ *apps.ResourceStore, _ string) {}
+
+// RegisterJobResultWidget is a no-op stub when the gpu build tag is disabled.
+func RegisterJobResultWidget(_ *apps.ResourceStore, _ string) {}

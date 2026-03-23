@@ -21,6 +21,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/apps"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/mcp/handlers/gpuhandler"
 	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/secrets"
 	storepackage "github.com/changmin/c4-core/internal/store"
@@ -346,6 +347,10 @@ func newMCPServer() (*mcpServer, error) {
 		DashboardHTML:  apps.DashboardHTML,
 	})
 	fmt.Fprintln(os.Stderr, "cq: c4_dashboard registered (ui://cq/dashboard)")
+
+	// Register job widgets for GPU handler (job progress + job result).
+	gpuhandler.RegisterJobProgressWidget(appStore, apps.JobProgressHTML)
+	gpuhandler.RegisterJobResultWidget(appStore, apps.JobResultHTML)
 
 	// Auto-register CLI commands in lighthouse so agents can discover them.
 	if cliCmds := collectCLICommands(rootCmd, "cq"); len(cliCmds) > 0 {
