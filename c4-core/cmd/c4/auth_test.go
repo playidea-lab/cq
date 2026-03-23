@@ -177,7 +177,7 @@ func TestPatchCloudConfigAfterLogin(t *testing.T) {
 		if !strings.Contains(content, "url: https://builtin.supabase.co") {
 			t.Error("missing url")
 		}
-		if !strings.Contains(content, "mode: local-first") {
+		if !strings.Contains(content, "mode: cloud-primary") {
 			t.Error("missing mode")
 		}
 	})
