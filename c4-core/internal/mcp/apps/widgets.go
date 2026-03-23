@@ -37,3 +37,9 @@ var TaskGraphHTML string
 //
 //go:embed widgets/nodes_map.html
 var NodesMapHTML string
+
+// KnowledgeFeedHTML is the embedded knowledge feed widget HTML content.
+// Served as the ui://cq/knowledge-feed resource via MCP resources/read.
+//
+//go:embed widgets/knowledge_feed.html
+var KnowledgeFeedHTML string
