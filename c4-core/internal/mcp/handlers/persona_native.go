@@ -18,9 +18,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ontologyCloudOpts holds the cloud store and mode for persona ontology persistence.
+type ontologyCloudOpts struct {
+	store *ontology.CloudStore
+	mode  string // "cloud-primary" or "local-first"
+}
+
 // RegisterPersonaNativeHandlers registers c4_persona_* and c4_profile_* tools as Go native handlers.
 // llmGW is optional — when nil, ontology extraction falls back to rule-based extraction.
-func RegisterPersonaNativeHandlers(reg *mcp.Registry, llmGW *llm.Gateway, projectRoot string) {
+// cloud is optional — when nil, ontology is saved local-only.
+func RegisterPersonaNativeHandlers(reg *mcp.Registry, llmGW *llm.Gateway, projectRoot string, cloud *ontologyCloudOpts) {
 	gw := llmGW
 	// Persona learning tools (2)
 	reg.Register(mcp.ToolSchema{
@@ -48,7 +55,7 @@ func RegisterPersonaNativeHandlers(reg *mcp.Registry, llmGW *llm.Gateway, projec
 			},
 			"required": []string{"commit_range"},
 		},
-	}, personaLearnFromDiffHandler(gw, projectRoot))
+	}, personaLearnFromDiffHandler(gw, projectRoot, cloud))
 
 	// Profile tools (2)
 	reg.Register(mcp.ToolSchema{
@@ -117,7 +124,7 @@ func personaLearnHandler() mcp.HandlerFunc {
 	}
 }
 
-func personaLearnFromDiffHandler(llmGW *llm.Gateway, projectRoot string) mcp.HandlerFunc {
+func personaLearnFromDiffHandler(llmGW *llm.Gateway, projectRoot string, cloud *ontologyCloudOpts) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		var params struct {
 			CommitRange string `json:"commit_range"`
@@ -254,7 +261,7 @@ func personaLearnFromDiffHandler(llmGW *llm.Gateway, projectRoot string) mcp.Han
 						}
 					}
 				}
-				ontologyNodesAdded = updateUserOntology(username, nodes)
+				ontologyNodesAdded = updateUserOntology(username, nodes, cloud)
 			}
 		}
 
@@ -362,7 +369,10 @@ func buildPatternSummary(patterns []persona.EditPattern) string {
 
 // updateUserOntology loads the user's ontology, adds the given nodes via Updater, and saves.
 // Returns the number of nodes actually added/updated. Non-fatal: errors are logged.
-func updateUserOntology(username string, nodes []ontology.Node) int {
+// When cloud is non-nil:
+//   - "cloud-primary": CloudSave first, then local Save (L1/L2 changes reflected in Supabase immediately)
+//   - "local-first" (default): local Save first, then async CloudSave
+func updateUserOntology(username string, nodes []ontology.Node, cloud *ontologyCloudOpts) int {
 	o, err := ontology.Load(username)
 	if err != nil {
 		slog.Warn("persona: ontology load failed", "username", username, "error", err)
@@ -376,10 +386,32 @@ func updateUserOntology(username string, nodes []ontology.Node) int {
 		path := strings.ToLower(strings.ReplaceAll(n.Label, " ", "_"))
 		updater.AddOrUpdate(path, n)
 	}
-	if err := ontology.Save(username, o); err != nil {
-		slog.Warn("persona: ontology save failed", "username", username, "error", err)
-		return 0
+
+	if cloud != nil && cloud.store != nil && cloud.mode == "cloud-primary" {
+		// cloud-primary: save to Supabase first, then update local cache
+		if err := cloud.store.CloudSave(username, o); err != nil {
+			slog.Warn("persona: ontology CloudSave failed", "username", username, "error", err)
+			// fall through to local save so data is not lost
+		}
+		if err := ontology.Save(username, o); err != nil {
+			slog.Warn("persona: ontology local save failed (after cloud)", "username", username, "error", err)
+			return 0
+		}
+	} else {
+		// local-first (default): save locally, then async push to cloud
+		if err := ontology.Save(username, o); err != nil {
+			slog.Warn("persona: ontology save failed", "username", username, "error", err)
+			return 0
+		}
+		if cloud != nil && cloud.store != nil {
+			go func() {
+				if err := cloud.store.CloudSave(username, o); err != nil {
+					slog.Warn("persona: ontology async CloudSave failed", "username", username, "error", err)
+				}
+			}()
+		}
 	}
+
 	return len(nodes)
 }
 
