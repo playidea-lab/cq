@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/standards"
 	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
@@ -966,49 +967,6 @@ func parseSkillEvalAccuracy(content string) (float64, bool) {
 	return 0, false
 }
 
-// countOntologyNodes counts top-level node keys under "schema:" → "nodes:" in a YAML file.
-// It also counts confidence levels (low/high/verified) for L1 display.
-// Returns nodeCount, low, high, verified counts.
-func countOntologyNodes(data string) (int, int, int, int) {
-	lines := strings.Split(data, "\n")
-	inSchema := false
-	inNodes := false
-	nodeCount := 0
-	var low, high, verified int
-	// Track indentation depth: schema is at depth 0 (no indent), nodes is depth 1 (4 spaces), node entries depth 2 (8 spaces).
-	for _, line := range lines {
-		if line == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-		trimmed := strings.TrimSpace(line)
-		indent := len(line) - len(strings.TrimLeft(line, " \t"))
-		switch {
-		case indent == 0 && trimmed == "schema:":
-			inSchema = true
-			inNodes = false
-		case indent == 0 && trimmed != "schema:":
-			inSchema = false
-			inNodes = false
-		case inSchema && indent == 4 && trimmed == "nodes:":
-			inNodes = true
-		case inSchema && indent == 4 && trimmed != "nodes:":
-			inNodes = false
-		case inNodes && indent == 8 && strings.HasSuffix(trimmed, ":"):
-			nodeCount++
-		case inNodes && indent > 8 && strings.HasPrefix(trimmed, "confidence:"):
-			val := strings.TrimSpace(strings.TrimPrefix(trimmed, "confidence:"))
-			switch strings.ToLower(val) {
-			case "low":
-				low++
-			case "high":
-				high++
-			case "verified":
-				verified++
-			}
-		}
-	}
-	return nodeCount, low, high, verified
-}
 
 // checkOntologyL1 checks the personal ontology file at ~/.c4/personas/$USER/ontology.yaml.
 func checkOntologyL1() checkResult {
@@ -1021,8 +979,7 @@ func checkOntologyL1() checkResult {
 		return checkResult{Name: "ontology-l1", Status: checkWarn, Message: "cannot determine home directory"}
 	}
 	path := filepath.Join(home, ".c4", "personas", user, "ontology.yaml")
-	data, err := os.ReadFile(path)
-	if err != nil {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return checkResult{
 			Name:    "ontology-l1",
 			Status:  checkWarn,
@@ -1030,13 +987,28 @@ func checkOntologyL1() checkResult {
 			Fix:     "cq tool c4_persona_learn to build personal ontology",
 		}
 	}
-	nodeCount, low, high, verified := countOntologyNodes(string(data))
+	o, err := ontology.Load(user)
+	if err != nil {
+		return checkResult{Name: "ontology-l1", Status: checkWarn, Message: fmt.Sprintf("cannot load: %v", err)}
+	}
+	nodeCount := len(o.Schema.Nodes)
 	if nodeCount == 0 {
 		return checkResult{
 			Name:    "ontology-l1",
 			Status:  checkWarn,
 			Message: fmt.Sprintf("file exists (%s) but 0 nodes", path),
 			Fix:     "cq tool c4_persona_learn to populate ontology",
+		}
+	}
+	var low, high, verified int
+	for _, n := range o.Schema.Nodes {
+		switch n.NodeConfidence {
+		case ontology.ConfidenceLow:
+			low++
+		case ontology.ConfidenceHigh:
+			high++
+		case ontology.ConfidenceVerified:
+			verified++
 		}
 	}
 	return checkResult{
@@ -1049,8 +1021,7 @@ func checkOntologyL1() checkResult {
 // checkOntologyL2 checks the project ontology file at .c4/project-ontology.yaml.
 func checkOntologyL2() checkResult {
 	path := filepath.Join(projectDir, ".c4", "project-ontology.yaml")
-	data, err := os.ReadFile(path)
-	if err != nil {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return checkResult{
 			Name:    "ontology-l2",
 			Status:  checkWarn,
@@ -1058,7 +1029,11 @@ func checkOntologyL2() checkResult {
 			Fix:     "cq tool c4_collective_sync to generate project ontology",
 		}
 	}
-	nodeCount, _, _, _ := countOntologyNodes(string(data))
+	o, err := ontology.LoadProject(projectDir)
+	if err != nil {
+		return checkResult{Name: "ontology-l2", Status: checkWarn, Message: fmt.Sprintf("cannot load: %v", err)}
+	}
+	nodeCount := len(o.Schema.Nodes)
 	if nodeCount == 0 {
 		return checkResult{
 			Name:    "ontology-l2",
