@@ -216,6 +216,94 @@ func TestPatchCloudConfigAfterLogin(t *testing.T) {
 	})
 }
 
+func TestEnsureLLMGatewayBaseURL(t *testing.T) {
+	proxy := "https://example.supabase.co/functions/v1/llm-proxy"
+
+	t.Run("no llm_gateway — appends full section", func(t *testing.T) {
+		content := "cloud:\n  enabled: true\n"
+		result := ensureLLMGatewayBaseURL(content, proxy)
+		if !strings.Contains(result, "llm_gateway:") {
+			t.Error("missing llm_gateway section")
+		}
+		if !strings.Contains(result, "base_url: "+proxy) {
+			t.Errorf("missing base_url, got:\n%s", result)
+		}
+	})
+
+	t.Run("llm_gateway exists with ollama base_url — inserts under anthropic", func(t *testing.T) {
+		content := `llm_gateway:
+  enabled: true
+  providers:
+    openai:
+      enabled: true
+    anthropic:
+      enabled: true
+    ollama:
+      enabled: true
+      base_url: http://localhost:11434
+`
+		result := ensureLLMGatewayBaseURL(content, proxy)
+		if !strings.Contains(result, "base_url: "+proxy) {
+			t.Errorf("anthropic base_url not inserted, got:\n%s", result)
+		}
+		// ollama base_url must still be present
+		if !strings.Contains(result, "base_url: http://localhost:11434") {
+			t.Error("ollama base_url was removed")
+		}
+	})
+
+	t.Run("anthropic already has base_url — preserves existing", func(t *testing.T) {
+		content := `llm_gateway:
+  providers:
+    anthropic:
+      enabled: true
+      base_url: https://existing.com/proxy
+`
+		result := ensureLLMGatewayBaseURL(content, proxy)
+		if strings.Contains(result, proxy) {
+			t.Error("should preserve existing base_url, not overwrite")
+		}
+		if !strings.Contains(result, "https://existing.com/proxy") {
+			t.Error("existing base_url was removed")
+		}
+	})
+
+	t.Run("patchCloudConfigAfterLogin sets base_url", func(t *testing.T) {
+		origURL := builtinSupabaseURL
+		origKey := builtinSupabaseKey
+		defer func() {
+			builtinSupabaseURL = origURL
+			builtinSupabaseKey = origKey
+		}()
+		builtinSupabaseURL = "https://test.supabase.co"
+		builtinSupabaseKey = "test-key"
+
+		tmpDir := t.TempDir()
+		os.MkdirAll(filepath.Join(tmpDir, ".c4"), 0755)
+		// Pre-populate with existing llm_gateway + ollama
+		configPath := filepath.Join(tmpDir, ".c4", "config.yaml")
+		os.WriteFile(configPath, []byte(`llm_gateway:
+  providers:
+    anthropic:
+      enabled: true
+    ollama:
+      base_url: http://localhost:11434
+`), 0644)
+
+		url := patchCloudConfigAfterLogin(tmpDir)
+		if url == "" {
+			t.Fatal("expected URL, got empty")
+		}
+
+		data, _ := os.ReadFile(configPath)
+		content := string(data)
+		expected := "https://test.supabase.co/functions/v1/llm-proxy"
+		if !strings.Contains(content, expected) {
+			t.Errorf("base_url not set after login, got:\n%s", content)
+		}
+	})
+}
+
 // TestEnsureCloudAuth_SoloMode: builtinSupabaseURL="" → returns true immediately (no prompt).
 func TestEnsureCloudAuth_SoloMode(t *testing.T) {
 	origURL := builtinSupabaseURL
