@@ -86,6 +86,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		checkHub,
 		checkCloud,
 		checkSupabase,
+		checkRelay,
 		func() checkResult { return checkOSService(doctorFix) },
 		checkStaleSocket,
 		checkZombieServe,
@@ -591,6 +592,72 @@ func checkSupabase() checkResult {
 		Name:    "Supabase",
 		Status:  checkWarn,
 		Message: fmt.Sprintf("returned HTTP %d at %s", resp.StatusCode, supabaseURL),
+	}
+}
+
+// checkRelay checks relay configuration and connectivity.
+func checkRelay() checkResult {
+	cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return checkResult{
+			Name:    "relay",
+			Status:  checkOK,
+			Message: "skipped (no config)",
+		}
+	}
+
+	enabled := sectionYAMLValue(string(data), "relay", "enabled:")
+	relayURL := sectionYAMLValue(string(data), "relay", "url:")
+	if enabled != "true" || relayURL == "" {
+		return checkResult{
+			Name:    "relay",
+			Status:  checkOK,
+			Message: "not configured",
+			Fix:     "cq auth login to auto-configure relay",
+		}
+	}
+
+	// Check relay server health
+	httpURL := strings.Replace(relayURL, "wss://", "https://", 1)
+	httpURL = strings.Replace(httpURL, "ws://", "http://", 1)
+	healthURL := strings.TrimRight(httpURL, "/") + "/health"
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(healthURL)
+	if err != nil {
+		return checkResult{
+			Name:    "relay",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("server unreachable: %s", relayURL),
+			Fix:     "Check network or relay server status",
+		}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return checkResult{
+			Name:    "relay",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("server returned HTTP %d", resp.StatusCode),
+		}
+	}
+
+	// Parse health response for worker count
+	var health struct {
+		Workers int `json:"workers"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&health); err == nil {
+		return checkResult{
+			Name:    "relay",
+			Status:  checkOK,
+			Message: fmt.Sprintf("connected (%s, %d workers)", httpURL, health.Workers),
+		}
+	}
+
+	return checkResult{
+		Name:    "relay",
+		Status:  checkOK,
+		Message: fmt.Sprintf("server reachable (%s)", httpURL),
 	}
 }
 
