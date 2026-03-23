@@ -324,6 +324,7 @@ func knowledgeIngestNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			Tags:       tags,
 			Visibility: visibility,
 			MaxTokens:  maxTokens,
+			Cloud:      opts.Cloud,
 		}
 
 		// URL path: fetch web content, then ingest as text
