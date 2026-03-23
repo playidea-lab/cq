@@ -2,11 +2,11 @@
 
 # CQ
 
-**AI-Powered Project Orchestration System**
+**AI Orchestration Platform**
 
-Plan, execute, review, and learn — automated end-to-end.
+Install. Login. Build. No API keys, no config files, no setup.
 
-*CQ*: C-series (C0–C1–C2–C3–C4–C5–C9) as one organically connected ecosystem. CLI: `cq`.
+*CQ*: The brain runs in the cloud. Your machine is the hands. CLI: `cq`.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
@@ -18,11 +18,17 @@ Plan, execute, review, and learn — automated end-to-end.
 
 ---
 
-CQ turns Claude Code into a full project management system. It provides **133 MCP tools** (107 base + 26 Hub), plus 15 optional tiered tools (C6/C7/C8), a structured workflow engine, multi-lens code review, knowledge feedback loops, distributed job scheduling, and GPU-aware task management — all through natural language. Run the CLI with `cq`.
+CQ is an AI orchestration platform that plans, builds, reviews, and learns — without you managing API keys, databases, or config files. The brain (tasks, knowledge, ontology, LLM) lives in the cloud. Your local machine handles files, git, and builds.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
+cq auth login    # GitHub OAuth — that's it
+cq claude        # Start building
+```
 
 ```
-You: /c4-plan "Add user authentication with JWT"
-CQ:  Creates 5 tasks with DoD, spawns workers, reviews each PR, learns from decisions.
+You: "JWT 인증 추가해줘"
+CQ:  5 tasks created → parallel workers → 6-axis review → knowledge recorded → committed
 ```
 
 ## C Series Ecosystem (CQ)
@@ -50,33 +56,25 @@ INIT ─▶ DISCOVERY ─▶ DESIGN ─▶ PLAN ─▶ EXECUTE ⇄ CHECKPOINT �
 
 CQ breaks features into tasks, assigns them to workers (parallel) or claims them directly (sequential), auto-generates review tasks, and accumulates decisions as organizational knowledge.
 
-## Architecture
+## Architecture — Cloud-First (v1.16+)
 
 ```
-Claude Code ──stdio──▶ Go MCP Server (107 base + 26 Hub = 133 tools, +15 optional tiered)
-                        │
-                        ├── Go Native ──────── State, Tasks, Files, Git, Validation
-                        ├── SQLite Store ───── Specs, Designs, Checkpoints, Artifacts
-                        ├── Knowledge (Go) ─── FTS5 + pgvector + Embedding + 3-way RRF
-                        │                      ├── Usage Tracking (view/cite/search_hit)
-                        │                      ├── Document Ingestion (chunker + RAG)
-                        │                      └── Visibility (private/team/public)
-                        ├── Research (Go) ──── Research Loop, C2 Workspace, GPU
-                        ├── Soul Engine ────── Persona evolution (Analysis-Persistence-Evolution loop), Digital Twin, Reflection
-                        ├── LLM Gateway ────── Claude / GPT / Gemini / Ollama + Embeddings
-                        ├── CDP Runner ─────── Browser automation (DevTools Protocol)
-                        ├── EventBus ──gRPC──▶ Event daemon (UDS + WebSocket + DLQ)
-                        ├── Cloud Layer ────── Supabase (Auth, CloudStore, HybridStore)
-                        ├── Drive ─────────── Supabase Storage (upload/download/mkdir)
-                        ├── C1 Context Hub ─── Search, Mentions, Briefing
-                        ├── Hub Client ─HTTP─▶ C5 Hub Server (distributed job queue)
-                        │                      ├── Multi-tenant isolation (project_id)
-                        │                      ├── DAG Orchestration
-                        │                      └── Edge Deployment
-                        │
-                        └── JSON-RPC ──TCP──▶ Python Sidecar (10 tools)
-                                              ├── LSP (Multilspy/Jedi — Python/JS/TS)
-                                              └── C2 Document Parsing
+┌─────────────────┐          ┌───────────────────────────┐
+│ Local (Thin Agent)│  JWT    │ Cloud (Supabase)           │
+│                  │◄───────►│                            │
+│ Hands:           │         │ Brain:                     │
+│  ├ Files / Git   │         │  ├ Tasks (Postgres)        │
+│  ├ Build / Test  │         │  ├ Knowledge (pgvector)    │
+│  ├ LSP analysis  │         │  ├ Ontology L1/L2/L3      │
+│  └ MCP bridge    │         │  ├ LLM Proxy (Edge Fn)    │
+│                  │         │  ├ Quality Gates           │
+│ Cache:           │         │  └ Hub (distributed jobs)  │
+│  └ SQLite        │         │                            │
+└─────────────────┘          └───────────────────────────┘
+
+solo tier:  everything local (SQLite + your API key)
+connected:  brain in cloud, hands local (cq auth → done)
+full:       connected + GPU workers + research loop
 ```
 
 | Component | Directory | Stack |
@@ -89,28 +87,18 @@ Claude Code ──stdio──▶ Go MCP Server (107 base + 26 Hub = 133 tools, +
 
 ## Quick Start
 
-**Prerequisites:** Go 1.22+, Python 3.11+, [uv](https://docs.astral.sh/uv/)
-
 ```bash
-# One-line remote install
-curl -sSL https://git.pilab.co.kr/pi/cq/raw/main/install.sh | bash
+# Install (2 minutes)
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
 
-# Or clone + install
-git clone https://git.pilab.co.kr/pi/cq.git && cd cq
-./install.sh
+# Login (no API key needed)
+cq auth login
 
-# Optional: install C5 Hub Server
-./install.sh --with-hub
+# Start building
+cq claude        # or: cq cursor / cq codex / cq gemini
 ```
 
-Restart Claude Code, then:
-
-```bash
-cq doctor           # Verify installation (8 health checks)
-/c4-status          # Verify connection (133 tools registered)
-/c4-plan "feature"  # Start planning
-/c4-run             # Execute tasks
-```
+Then describe what you want. CQ handles the rest.
 
 ## Features
 
