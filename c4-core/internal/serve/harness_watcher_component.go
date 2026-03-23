@@ -20,6 +20,9 @@ type HarnessWatcherConfig struct {
 	SupabaseURL string
 	// AnonKey is the Supabase anon key.
 	AnonKey string
+	// TokenFunc returns a fresh user JWT for RLS-authenticated Supabase requests.
+	// If nil, anonKey is used (which may fail RLS checks).
+	TokenFunc func() string
 	// TenantID defaults to "default" if empty.
 	TenantID string
 	// DB is an optional *sql.DB for TraceCollector persistence.
@@ -74,6 +77,12 @@ func (h *HarnessWatcherComponent) Start(ctx context.Context) error {
 	if pusher == nil {
 		fmt.Fprintf(os.Stderr, "cq serve: [harness_watcher] missing supabase credentials — journal push skipped, trace recording active\n")
 		return nil
+	}
+	if h.cfg.TokenFunc != nil {
+		pusher.SetTokenFunc(h.cfg.TokenFunc)
+	}
+	if h.cfg.TenantID != "" {
+		pusher.SetProjectID(h.cfg.TenantID)
 	}
 
 	home, err := os.UserHomeDir()

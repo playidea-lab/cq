@@ -71,6 +71,7 @@ func (c *RelayClient) Connect(ctx context.Context) error {
 
 	go c.readLoop(ctx, conn)
 	go c.reconnectLoop(ctx)
+	go c.pingLoop(ctx)
 	return nil
 }
 
@@ -140,6 +141,10 @@ func (c *RelayClient) readLoop(ctx context.Context, conn net.Conn) {
 		if ctx.Err() != nil {
 			return
 		}
+
+		// Read deadline: server sends pings every 30s. If we get nothing in 90s,
+		// the connection is dead (NAT rebind, silent TCP drop, etc.).
+		conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 
 		data, op, err := wsutil.ReadServerData(conn)
 		if err != nil {
@@ -251,6 +256,9 @@ func (c *RelayClient) reconnectLoop(ctx context.Context) {
 
 		fmt.Printf("relay: reconnecting (backoff=%s)…\n", backoff)
 
+		// tokenFunc() triggers TokenProvider.Token() which auto-refreshes
+		// if within 5 min of expiry — no extra action needed here.
+
 		conn, err := c.dial(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -268,6 +276,39 @@ func (c *RelayClient) reconnectLoop(ctx context.Context) {
 
 		backoff = 1 * time.Second
 		go c.readLoop(ctx, conn)
+	}
+}
+
+// pingLoop sends WebSocket pings every 30s to keep the connection alive.
+// Intermediate proxies (Fly.io, NAT) may close idle connections without keepalive.
+func (c *RelayClient) pingLoop(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-c.done:
+			return
+		case <-ticker.C:
+			c.mu.Lock()
+			conn := c.conn
+			alive := c.connected
+			c.mu.Unlock()
+
+			if !alive || conn == nil {
+				continue
+			}
+
+			c.mu.Lock()
+			err := wsutil.WriteClientMessage(conn, ws.OpPing, nil)
+			c.mu.Unlock()
+			if err != nil {
+				// Ping failed — connection is dead. readLoop will detect and trigger reconnect.
+				continue
+			}
+		}
 	}
 }
 

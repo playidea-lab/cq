@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS traces (
     id          TEXT    PRIMARY KEY,
     session_id  TEXT    NOT NULL DEFAULT '',
     task_id     TEXT    NOT NULL DEFAULT '',
+    task_type   TEXT    NOT NULL DEFAULT '',
     project_id  TEXT    NOT NULL DEFAULT '',
     created_at  TEXT    NOT NULL,
     ended_at    TEXT,
@@ -71,5 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_trace_steps_model_task_type ON trace_steps (model
 	if err != nil {
 		return fmt.Errorf("observe: create tables: %w", err)
 	}
+	// Migrate: add task_type column to traces if missing (pre-existing DBs).
+	s.db.Exec(`ALTER TABLE traces ADD COLUMN task_type TEXT NOT NULL DEFAULT ''`)
 	return nil
 }

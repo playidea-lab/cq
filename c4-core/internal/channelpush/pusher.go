@@ -34,6 +34,8 @@ type PushMessage struct {
 type Pusher struct {
 	supabaseURL string
 	anonKey     string
+	projectID   string        // Supabase project UUID for RLS
+	tokenFunc   func() string // returns user JWT; if nil, uses anonKey for auth
 	httpClient  *http.Client
 }
 
@@ -47,6 +49,17 @@ func New(supabaseURL, anonKey string) *Pusher {
 		anonKey:     anonKey,
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+// SetTokenFunc sets a function that returns a fresh user JWT for RLS-authenticated requests.
+// When set, the JWT is used for the Authorization header instead of the anonKey.
+func (p *Pusher) SetTokenFunc(fn func() string) {
+	p.tokenFunc = fn
+}
+
+// SetProjectID sets the Supabase project UUID used for RLS checks in message inserts.
+func (p *Pusher) SetProjectID(id string) {
+	p.projectID = id
 }
 
 // EnsureChannel creates or retrieves a channel by (tenant_id, platform, name).
@@ -102,12 +115,14 @@ func (p *Pusher) EnsureChannel(ctx context.Context, tenantID, projectID, name st
 }
 
 // AppendMessages inserts msgs into c1_messages for the given channel UUID.
+// projectID is included for RLS policy checks (c4_is_project_member).
 func (p *Pusher) AppendMessages(ctx context.Context, channelID string, msgs []PushMessage) error {
 	if len(msgs) == 0 {
 		return nil
 	}
 	type row struct {
 		ChannelID  string `json:"channel_id"`
+		ProjectID  string `json:"project_id,omitempty"`
 		SenderName string `json:"sender_name"`
 		SenderType string `json:"sender_type"`
 		Content    string `json:"content"`
@@ -116,6 +131,7 @@ func (p *Pusher) AppendMessages(ctx context.Context, channelID string, msgs []Pu
 	for i, m := range msgs {
 		rows[i] = row{
 			ChannelID:  channelID,
+			ProjectID:  p.projectID,
 			SenderName: m.SenderName,
 			SenderType: m.SenderType,
 			Content:    m.Content,
@@ -184,5 +200,12 @@ func (p *Pusher) findChannel(ctx context.Context, tenantID, platform, name strin
 
 func (p *Pusher) setHeaders(req *http.Request) {
 	req.Header.Set("apikey", p.anonKey)
+	// Use user JWT for RLS-authenticated requests when available.
+	if p.tokenFunc != nil {
+		if jwt := p.tokenFunc(); jwt != "" {
+			req.Header.Set("Authorization", "Bearer "+jwt)
+			return
+		}
+	}
 	req.Header.Set("Authorization", "Bearer "+p.anonKey)
 }

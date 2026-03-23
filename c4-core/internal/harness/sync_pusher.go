@@ -50,7 +50,7 @@ func (s *SyncPusher) ensureChannel(ctx context.Context, filePath string) (string
 		return id, nil
 	}
 	channelName := filePathToChannelName(filePath)
-	id, err := s.pusher.EnsureChannel(ctx, s.tenantID, "", channelName, channelpush.PlatformClaudeCode)
+	id, err := s.pusher.EnsureChannel(ctx, s.tenantID, s.tenantID, channelName, channelpush.PlatformClaudeCode)
 	if err != nil {
 		return "", err
 	}

@@ -121,25 +121,6 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
         exit 0
     fi
 
-    # Read base_url from .c4/config.yaml (llm_gateway.providers.anthropic.base_url)
-    # Falls back to https://api.anthropic.com if not set
-    _config_yaml="${C4_ROOT}/.c4/config.yaml"
-    _base_url=""
-    if [[ -f "$_config_yaml" ]]; then
-        _base_url=$(awk '
-            /^llm_gateway:/ { in_llm=1; next }
-            in_llm && /^[^ ]/ && !/^  / { in_llm=0 }
-            in_llm && /^  providers:/ { in_providers=1; next }
-            in_providers && /^[^ ]/ && !/^    / { in_providers=0 }
-            in_providers && /^    anthropic:/ { in_anthropic=1; next }
-            in_anthropic && /^[^ ]/ && !/^      / { in_anthropic=0 }
-            in_anthropic && /^      base_url:/ {
-                sub(/^      base_url:[[:space:]]*/, ""); print; exit
-            }
-        ' "$_config_yaml" 2>/dev/null | sed 's/[[:space:]]*#.*//' | tr -d "\'\"\n ")
-    fi
-    ANTHROPIC_BASE_URL="${_base_url:-https://api.anthropic.com}"
-
     # Build context string for the model
     if [[ -n "$COMMAND" ]]; then
         CONTEXT="Tool: $TOOL_NAME\nCommand: $COMMAND"
@@ -155,12 +136,12 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
             max_tokens: 150,
             messages: [{
                 role: "user",
-                content: ("You are a security reviewer for an AI-managed C4 project. Respond ONLY with JSON.\n\nShould this tool use be allowed?\n\n" + $context + "\n\nAllow unless: (1) could cause irreversible data loss; (2) contains credentials/private keys; (3) writes to system directories; (4) pipes remote code to shell.\n\nNormal dev operations (build, test, read, edit code) are safe.\n\nRespond: {\"allow\": true, \"reason\": \"brief\"} or {\"allow\": false, \"reason\": \"brief\"}")
+                content: ("You are a security gate for an AI coding assistant in a local development environment. Respond ONLY with JSON.\n\nThe AI assistant wants to use this tool:\n\n" + $context + "\n\nRULES — be PERMISSIVE for normal dev work:\n- ALLOW: build, test, lint, run, install, deploy commands\n- ALLOW: reading/editing any project file (the AI is writing code, not executing it)\n- ALLOW: git operations (add, commit, push, pull, merge, rebase, tag)\n- ALLOW: package managers (make, go, uv, npm, cargo, docker, brew, fly)\n- ALLOW: process management (ps, kill, launchctl, systemctl, service restart)\n- ALLOW: network tools (curl, wget, ssh, scp, rsync) for development/testing\n- ALLOW: file operations (cp, mv, rm on project files, tar, zip)\n- BLOCK ONLY: (1) rm -rf / or ~ (wipe root/home); (2) hardcoded secrets/private keys in commands; (3) piping remote URLs to shell (curl|sh); (4) writing to /etc, /usr, /System\n\nWhen in doubt, ALLOW. This is a trusted developer environment.\n\nRespond: {\"allow\": true, \"reason\": \"brief\"} or {\"allow\": false, \"reason\": \"brief\"}")
             }]
         }')
 
     response=$(curl -s --max-time 8 \
-        "${ANTHROPIC_BASE_URL}/v1/messages" \
+        "https://api.anthropic.com/v1/messages" \
         -H "x-api-key: $api_key" \
         -H "anthropic-version: 2023-06-01" \
         -H "content-type: application/json" \

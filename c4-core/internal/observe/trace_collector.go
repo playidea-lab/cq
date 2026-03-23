@@ -97,6 +97,8 @@ CREATE INDEX IF NOT EXISTS idx_trace_steps_model_task_type ON trace_steps (model
 		slog.Warn("observe: failed to create trace tables", "err", err)
 		return
 	}
+	// Migrate: add task_type column to traces if missing (pre-existing DBs).
+	db.Exec(`ALTER TABLE traces ADD COLUMN task_type TEXT NOT NULL DEFAULT ''`)
 
 	tc.ch = make(chan dbOp, dbChanCap)
 	tc.wg.Add(1)

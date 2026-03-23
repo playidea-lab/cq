@@ -192,3 +192,114 @@ func TestRelayClientMCPHandler(t *testing.T) {
 		t.Fatal("no response received from client within timeout")
 	}
 }
+
+// TestRelayClientPingKeepAlive verifies that the client sends WebSocket pings
+// to keep the connection alive. The test server reads frames until it sees a ping.
+func TestRelayClientPingKeepAlive(t *testing.T) {
+	pingReceived := make(chan struct{}, 1)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn := serveWS(t, w, r)
+		if conn == nil {
+			return
+		}
+		defer conn.Close()
+
+		// Read frames until we get a ping (OpPing).
+		// Use wsutil.ReadClientData-style reading but with control frame interception.
+		for {
+			frame, err := ws.ReadFrame(conn)
+			if err != nil {
+				return
+			}
+			if frame.Header.Masked {
+				ws.Cipher(frame.Payload, frame.Header.Mask, 0)
+			}
+			if frame.Header.OpCode == ws.OpPing {
+				// Respond with pong.
+				pong := ws.NewPongFrame(frame.Payload)
+				if err := ws.WriteFrame(conn, pong); err != nil {
+					return
+				}
+				select {
+				case pingReceived <- struct{}{}:
+				default:
+				}
+				return
+			}
+		}
+	}))
+	defer srv.Close()
+
+	wsURL := "ws://" + srv.Listener.Addr().String()
+	client := NewRelayClient(wsURL, "worker-ping", func() string { return "tok" }, nil)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+
+	if err := client.Connect(ctx); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	// pingLoop fires every 30s.
+	select {
+	case <-pingReceived:
+		// Client sent a ping, server received it.
+	case <-ctx.Done():
+		t.Fatal("did not receive client ping within timeout")
+	}
+}
+
+// TestRelayClientReadDeadline verifies that the client detects a dead connection
+// via the 90s read deadline. We simulate by having the server go silent after upgrade.
+func TestRelayClientReadDeadline(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping long read-deadline test in short mode")
+	}
+
+	var connCount atomic.Int32
+	secondConn := make(chan struct{}, 1)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn := serveWS(t, w, r)
+		if conn == nil {
+			return
+		}
+		n := connCount.Add(1)
+		if n == 1 {
+			// First connection: go silent (no pings, no data).
+			// Client's read deadline (90s) should trigger disconnect.
+			<-r.Context().Done()
+			conn.Close()
+			return
+		}
+		// Second connection: signal reconnect success.
+		select {
+		case secondConn <- struct{}{}:
+		default:
+		}
+		<-r.Context().Done()
+		conn.Close()
+	}))
+	defer srv.Close()
+
+	wsURL := "ws://" + srv.Listener.Addr().String()
+	client := NewRelayClient(wsURL, "worker-deadline", func() string { return "tok" }, nil)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	if err := client.Connect(ctx); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	// Client should detect dead connection via read deadline (90s) and reconnect.
+	select {
+	case <-secondConn:
+		t.Logf("reconnected after read deadline (connections=%d)", connCount.Load())
+	case <-ctx.Done():
+		t.Fatalf("client did not reconnect after read deadline timeout (connections=%d)", connCount.Load())
+	}
+}

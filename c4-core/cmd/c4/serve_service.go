@@ -41,6 +41,16 @@ func newServiceConfig(execPath, configPath string) service.Config {
 	if configPath != "" {
 		args = append(args, "--config", configPath)
 	}
+
+	// Resolve project directory for --dir and WorkingDirectory.
+	dir := projectDir
+	if dir == "" {
+		dir, _ = os.Getwd()
+	}
+	if dir != "" {
+		args = append(args, "--dir", dir)
+	}
+
 	opt := service.KeyValue{}
 	// macOS: user LaunchAgent (~/.Library/LaunchAgents/) — no sudo required.
 	// Linux systemd: user unit (~/.config/systemd/user/) — no sudo required.
@@ -48,7 +58,26 @@ func newServiceConfig(execPath, configPath string) service.Config {
 	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		opt["UserService"] = true
 	}
-	return service.Config{
+	// macOS: KeepAlive restarts the service on crash.
+	if runtime.GOOS == "darwin" {
+		opt["KeepAlive"] = true
+		opt["RunAtLoad"] = true
+	}
+
+	// Log directory: ~/Library/Logs/ (macOS) or ~/.local/state/cq/ (Linux).
+	home, _ := os.UserHomeDir()
+	var logDir string
+	if runtime.GOOS == "darwin" && home != "" {
+		logDir = filepath.Join(home, "Library", "Logs")
+	} else if home != "" {
+		logDir = filepath.Join(home, ".local", "state", "cq")
+	}
+	if logDir != "" {
+		os.MkdirAll(logDir, 0755)
+		opt["LogDirectory"] = logDir
+	}
+
+	cfg := service.Config{
 		Name:        "cq-serve",
 		DisplayName: "CQ Serve",
 		Description: "CQ long-running service (StaleChecker, EventBus, EventSink, HubPoller, Agent, GPU)",
@@ -56,6 +85,10 @@ func newServiceConfig(execPath, configPath string) service.Config {
 		Arguments:   args,
 		Option:      opt,
 	}
+	if dir != "" {
+		cfg.WorkingDirectory = dir
+	}
+	return cfg
 }
 
 // resolveInstallPaths returns the executable path and optional config path.
@@ -102,9 +135,9 @@ var serveStatusCmd = &cobra.Command{
 	RunE:  runServeStatus,
 }
 
-// installServeService registers cq as an OS service.
+// installServeService registers cq as an OS service and optionally starts it.
 // Returns nil if already installed (detected by string-matching the error message).
-func installServeService(_ context.Context, _ bool) error {
+func installServeService(_ context.Context, start bool) error {
 	execPath, configPath, err := resolveInstallPaths()
 	if err != nil {
 		return err
@@ -114,22 +147,60 @@ func installServeService(_ context.Context, _ bool) error {
 	if err != nil {
 		return fmt.Errorf("create service: %w", err)
 	}
+
+	alreadyInstalled := false
 	if err := svc.Install(); err != nil {
 		if strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "already installed") {
-			fmt.Println("WARN: cq-serve service already installed, skipping.")
+			fmt.Println("cq-serve: already installed, updating...")
+			// Uninstall + reinstall to pick up new config.
+			svc.Stop()
+			svc.Uninstall()
+			if err := svc.Install(); err != nil {
+				return fmt.Errorf("reinstall service: %w", err)
+			}
+			alreadyInstalled = true
+		} else {
+			return fmt.Errorf("install service: %w", err)
+		}
+	}
+
+	if !alreadyInstalled {
+		fmt.Println("cq-serve: service installed.")
+	} else {
+		fmt.Println("cq-serve: service reinstalled.")
+	}
+	fmt.Printf("  Executable: %s\n", execPath)
+	fmt.Printf("  Arguments:  %s\n", strings.Join(svcConfig.Arguments, " "))
+	if svcConfig.WorkingDirectory != "" {
+		fmt.Printf("  WorkDir:    %s\n", svcConfig.WorkingDirectory)
+	}
+	if configPath != "" {
+		fmt.Printf("  Config:     %s\n", configPath)
+	}
+	if logDir, ok := svcConfig.Option["LogDirectory"]; ok {
+		fmt.Printf("  Logs:       %s/cq-serve.{out,err}.log\n", logDir)
+	}
+
+	if start {
+		if err := svc.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "cq-serve: start failed: %v\n", err)
+			fmt.Fprintln(os.Stderr, "  Try: cq serve status")
 			return nil
 		}
-		return fmt.Errorf("install service: %w", err)
+		fmt.Println("cq-serve: started.")
 	}
-	fmt.Println("cq-serve service installed.")
-	if configPath != "" {
-		fmt.Printf("Config: %s\n", configPath)
-	}
+
 	return nil
 }
 
+var serveInstallStart bool
+
+func init() {
+	serveInstallCmd.Flags().BoolVar(&serveInstallStart, "start", true, "start the service after install")
+}
+
 func runServeInstall(cmd *cobra.Command, args []string) error {
-	return installServeService(cmd.Context(), false)
+	return installServeService(cmd.Context(), serveInstallStart)
 }
 
 // stopOSService stops the cq-serve OS service via the service manager.

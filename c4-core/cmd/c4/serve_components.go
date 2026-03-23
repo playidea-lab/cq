@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/knowledge"
@@ -66,7 +67,7 @@ func registerCoreServeComponents(mgr *serve.Manager, cfg config.C4Config, home s
 // captures LLM usage from ~/.claude/projects/**/*.jsonl via TraceCollector and
 // (optionally) pushes journal entries to Supabase when cloud.url is configured.
 // db may be nil — persistence is skipped but in-process trace recording still works.
-func registerHarnessWatcherServeComponent(mgr *serve.Manager, cfg config.C4Config, db *sql.DB) {
+func registerHarnessWatcherServeComponent(mgr *serve.Manager, cfg config.C4Config, db *sql.DB, cloudTP *cloud.TokenProvider, cloudProjectID string) {
 	// Open knowledge store for session LLM usage report (optional — non-fatal on failure).
 	var ks *knowledge.Store
 	if db != nil {
@@ -80,10 +81,20 @@ func registerHarnessWatcherServeComponent(mgr *serve.Manager, cfg config.C4Confi
 		}
 	}
 
+	var tokenFunc func() string
+	if cloudTP != nil {
+		tokenFunc = cloudTP.Token
+	}
+	// Use resolved UUID (not slug) for Supabase project_id columns.
+	tenantID := cloudProjectID
+	if tenantID == "" {
+		tenantID = cfg.Cloud.ProjectID
+	}
 	comp := serve.NewHarnessWatcherComponent(serve.HarnessWatcherConfig{
 		SupabaseURL:    cfg.Cloud.URL,
 		AnonKey:        cfg.Cloud.AnonKey,
-		TenantID:       cfg.Cloud.ProjectID,
+		TokenFunc:      tokenFunc,
+		TenantID:       tenantID,
 		DB:             db,
 		KnowledgeStore: ks,
 	})

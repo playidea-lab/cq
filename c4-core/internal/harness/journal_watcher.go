@@ -41,6 +41,8 @@ type JournalWatcher struct {
 	watcher      *fsnotify.Watcher
 	// projectsRoot is overridable in tests; defaults to ~/.claude/projects.
 	projectsRoot string
+	// pushErrors tracks files that have already logged a push error to suppress repeats.
+	pushErrors   map[string]bool
 }
 
 // NewJournalWatcher creates a JournalWatcher.
@@ -50,8 +52,9 @@ func NewJournalWatcher(pusher ChannelPusher, positions *PositionStore, tenantID 
 		syncer = newSyncPusher(pusher, tenantID)
 	}
 	return &JournalWatcher{
-		syncer:    syncer,
-		positions: positions,
+		syncer:     syncer,
+		positions:  positions,
+		pushErrors: make(map[string]bool),
 	}
 }
 
@@ -150,9 +153,14 @@ func (w *JournalWatcher) processFile(ctx context.Context, filePath string) {
 		return
 	}
 	if err := w.syncer.Push(ctx, filePath, msgs); err != nil {
-		log.Printf("[journal_watcher] push error for %s: %v", filePath, err)
+		if !w.pushErrors[filePath] {
+			log.Printf("[journal_watcher] push error for %s: %v", filePath, err)
+			w.pushErrors[filePath] = true
+		}
 		return // offset NOT updated -- will retry on next fsnotify event
 	}
+	// Clear error flag on success (e.g., after token refresh fixed auth).
+	delete(w.pushErrors, filePath)
 	_ = w.positions.SetOffset(filePath, newOffset)
 }
 
