@@ -252,6 +252,42 @@ func (s *SQLiteStore) enrichUnified(assignment *TaskAssignment) {
 					b.WriteByte('\n')
 				}
 			}
+
+			// Validation-rule injection: auto-promoted rules for this scope
+			rules, rerr := s.knowledgeSearch.Search("validation-rule "+assignment.Scope, 2, nil)
+			if rerr == nil && len(rules) > 0 {
+				b.WriteString("\n### Validation Rules (enforced)\n")
+				for _, r := range rules {
+					if s.knowledgeReader != nil {
+						if body, berr := s.knowledgeReader.GetBody(r.ID); berr == nil && body != "" {
+							if len(body) > 300 {
+								body = body[:300] + "..."
+							}
+							fmt.Fprintf(&b, "%s\n", body)
+						}
+					}
+				}
+			}
+		}
+
+		// Similarity-based prevention: search for similar past rejections using DoD embedding
+		if assignment.DoD != "" {
+			similar, serr := s.knowledgeSearch.Search(assignment.DoD, 2, map[string]string{"doc_type": "scope-warning"})
+			if serr == nil && len(similar) > 0 {
+				b.WriteString("\n### Similar Past Rejections\n")
+				for _, sim := range similar {
+					fmt.Fprintf(&b, "  - **%s**", sim.Title)
+					if s.knowledgeReader != nil {
+						if body, berr := s.knowledgeReader.GetBody(sim.ID); berr == nil && body != "" {
+							if len(body) > 150 {
+								body = body[:150] + "..."
+							}
+							fmt.Fprintf(&b, ": %s", body)
+						}
+					}
+					b.WriteByte('\n')
+				}
+			}
 		}
 	}
 

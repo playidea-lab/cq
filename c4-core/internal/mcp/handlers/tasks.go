@@ -336,10 +336,36 @@ func handleSubmit(store Store, rawArgs json.RawMessage) (any, error) {
 	if ss, ok := store.(*SQLiteStore); ok && ss.projectRoot != "" {
 		commitSHA := args.CommitSHA
 		projectRoot := ss.projectRoot
+		taskID := args.TaskID
 		go func() {
 			commitRange := commitSHA + "~1.." + commitSHA
 			if err := runPersonaLearnFromDiff(projectRoot, commitRange); err != nil {
 				slog.Warn("persona: learn_from_diff failed", "commit", commitSHA, "error", err)
+			}
+
+			// Stage 3: Warning validity feedback — if a review was approved,
+			// record that injected warnings helped prevent rejection.
+			_, _, _, taskType := task.ParseTaskID(taskID)
+			if taskType == task.TypeReview && ss.knowledgeWriter != nil && args.Handoff != "" {
+				// Parse handoff JSON string for verdict
+				var handoff map[string]any
+				if json.Unmarshal([]byte(args.Handoff), &handoff) == nil {
+					if verdict, _ := handoff["verdict"].(string); verdict == "approved" {
+						// Find impl task scope from review task's dependencies
+						implBaseID, baseNum, ver, _ := task.ParseTaskID(taskID)
+						_ = implBaseID
+						implID := fmt.Sprintf("T-%s-%d", baseNum, ver)
+						if t, err := ss.GetTask(implID); err == nil && t != nil && t.Scope != "" {
+							feedbackMeta := map[string]any{
+								"title":    fmt.Sprintf("Warning feedback: %s approved (scope: %s)", taskID, t.Scope),
+								"doc_type": "warning-feedback",
+								"tags":     []string{"warning-feedback", t.Scope, "approved"},
+							}
+							feedbackBody := fmt.Sprintf("Review %s approved for scope %s. Injected warnings were effective.", taskID, t.Scope)
+							ss.knowledgeWriter.CreateExperiment(feedbackMeta, feedbackBody)
+						}
+					}
+				}
 			}
 		}()
 	}
@@ -563,10 +589,56 @@ func handleRequestChanges(store Store, rawArgs json.RawMessage) (any, error) {
 			if _, err := ss.knowledgeWriter.CreateExperiment(metadata, content); err != nil {
 				slog.Warn("learn-loop: scope-warning record failed", "error", err, "task", reviewTaskID)
 			}
+
+			// Stage 2: Pattern promotion — 3+ warnings on same scope → validation-rule
+			if scope != "" && ss.knowledgeSearch != nil {
+				warnings, werr := ss.knowledgeSearch.Search("scope-warning "+scope, 10, nil)
+				if werr == nil && len(warnings) >= 3 {
+					// Check if validation-rule already exists for this scope
+					existing, _ := ss.knowledgeSearch.Search("validation-rule "+scope, 1, nil)
+					if len(existing) == 0 {
+						ruleBody := fmt.Sprintf("## Auto-promoted Validation Rule\nScope: %s\nPromoted after %d review rejections.\n\n## Common Issues\n", scope, len(warnings))
+						for i, w := range warnings {
+							if i >= 5 {
+								break
+							}
+							if ss.knowledgeReader != nil {
+								if body, berr := ss.knowledgeReader.GetBody(w.ID); berr == nil && body != "" {
+									ruleBody += fmt.Sprintf("- %s\n", firstLine(body))
+								}
+							}
+						}
+						ruleMeta := map[string]any{
+							"title":    fmt.Sprintf("Validation rule: %s (auto-promoted)", scope),
+							"doc_type": "validation-rule",
+							"tags":     []string{"validation-rule", scope, "auto-promoted"},
+						}
+						if _, err := ss.knowledgeWriter.CreateExperiment(ruleMeta, ruleBody); err != nil {
+							slog.Warn("learn-loop: validation-rule promotion failed", "error", err, "scope", scope)
+						} else {
+							slog.Info("learn-loop: scope-warning promoted to validation-rule", "scope", scope, "warning_count", len(warnings))
+						}
+					}
+				}
+			}
 		}()
 	}
 
 	return result, nil
+}
+
+// firstLine returns the first non-empty line from s (for log summaries).
+func firstLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			return line
+		}
+	}
+	if len(s) > 80 {
+		return s[:80]
+	}
+	return s
 }
 
 func handleMarkBlocked(store Store, rawArgs json.RawMessage) (any, error) {
