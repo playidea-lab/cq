@@ -186,19 +186,13 @@ func (c *CloudStore) Start() error {
 		return fmt.Errorf("reading state: %w", err)
 	}
 
-	// Determine target state based on current
+	// c4_start means "begin execution". Always target EXECUTE.
+	// Phase transitions (INIT→PLAN, DISCOVERY→DESIGN) are handled by
+	// dedicated handlers (c4_plan, c4_discovery_complete, etc.).
 	var targetState string
 	switch currentState {
-	case "INIT":
-		targetState = "PLAN"
-	case "PLAN":
-		targetState = "EXECUTE"
-	case "DISCOVERY":
-		targetState = "DESIGN"
-	case "DESIGN":
-		targetState = "PLAN"
-	case "CHECKPOINT":
-		targetState = "EXECUTE"
+	case "EXECUTE":
+		return nil // already executing
 	default:
 		targetState = "EXECUTE"
 	}
