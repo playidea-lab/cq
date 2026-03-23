@@ -24,15 +24,20 @@ type C1Poster interface {
 	AutoPost(channelName, content string) error
 }
 
+// TelegramSender sends messages via Telegram Bot API.
+type TelegramSender interface {
+	Send(chatID, message string) error
+}
 
 // Dispatcher evaluates rules against events and executes matched actions.
 type Dispatcher struct {
-	store        *Store
-	mu           sync.RWMutex
-	httpClient   *http.Client
-	c1Poster     C1Poster     // optional: for "c1_post" action type
-	hubSubmitter JobSubmitter // optional: for "hub_submit" action type
-	sem          chan struct{} // bounded concurrency for dispatch goroutines
+	store          *Store
+	mu             sync.RWMutex
+	httpClient     *http.Client
+	c1Poster       C1Poster       // optional: for "c1_post" action type
+	hubSubmitter   JobSubmitter   // optional: for "hub_submit" action type
+	telegramSender TelegramSender // optional: for "telegram" action type
+	sem            chan struct{}   // bounded concurrency for dispatch goroutines
 }
 
 // NewDispatcher creates a new event dispatcher.
@@ -66,6 +71,13 @@ func (d *Dispatcher) SetHubSubmitter(s JobSubmitter) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.hubSubmitter = s
+}
+
+// SetTelegramSender sets the Telegram sender for "telegram" action type.
+func (d *Dispatcher) SetTelegramSender(s TelegramSender) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.telegramSender = s
 }
 
 // Dispatch matches rules against an event and executes their actions.
@@ -134,6 +146,8 @@ func (d *Dispatcher) ReplayRule(eventID, eventType string, eventData json.RawMes
 			execErr = d.executeC1Post(eventType, eventData, rule)
 		case "hub_submit":
 			execErr = d.executeHubSubmit(eventType, eventData, rule)
+		case "telegram":
+			execErr = d.executeTelegram(eventType, eventData, rule)
 		default:
 			execErr = fmt.Errorf("unknown action type: %s", rule.ActionType)
 		}
@@ -172,6 +186,8 @@ func (d *Dispatcher) executeRule(eventID, eventType string, eventData json.RawMe
 		err = d.executeC1Post(eventType, eventData, rule)
 	case "hub_submit":
 		err = d.executeHubSubmit(eventType, eventData, rule)
+	case "telegram":
+		err = d.executeTelegram(eventType, eventData, rule)
 	default:
 		err = fmt.Errorf("unknown action type: %s", rule.ActionType)
 	}
@@ -410,6 +426,48 @@ func (d *Dispatcher) executeHubSubmit(eventType string, eventData json.RawMessag
 	}
 	_, err := submitter.Submit(spec)
 	return err
+}
+
+func (d *Dispatcher) executeTelegram(eventType string, eventData json.RawMessage, rule StoredRule) error {
+	d.mu.RLock()
+	sender := d.telegramSender
+	d.mu.RUnlock()
+
+	if sender == nil {
+		return fmt.Errorf("telegram sender not configured")
+	}
+
+	var cfg struct {
+		ChatID   string `json:"chat_id"`
+		Template string `json:"template"`
+	}
+	if err := json.Unmarshal([]byte(rule.ActionConfig), &cfg); err != nil {
+		return fmt.Errorf("parse action_config: %w", err)
+	}
+	if cfg.ChatID == "" {
+		return fmt.Errorf("telegram chat_id not specified in action_config")
+	}
+
+	var data map[string]any
+	if err := json.Unmarshal(eventData, &data); err != nil {
+		data = make(map[string]any)
+	}
+	shortType := eventType
+	if idx := strings.LastIndex(eventType, "."); idx >= 0 {
+		shortType = eventType[idx+1:]
+	}
+	data["event_type"] = shortType
+
+	msg := cfg.Template
+	if msg != "" {
+		msg = resolveTemplateString(msg, data)
+	} else {
+		taskID, _ := data["task_id"].(string)
+		title, _ := data["title"].(string)
+		msg = fmt.Sprintf("[%s] %s: %s", shortType, taskID, title)
+	}
+
+	return sender.Send(cfg.ChatID, msg)
 }
 
 // evaluateFilter checks if event data matches the filter JSON.

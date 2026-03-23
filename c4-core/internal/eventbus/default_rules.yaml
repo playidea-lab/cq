@@ -64,3 +64,26 @@ rules:
     action_config: '{"channel":"#updates","template":"[hub] {{event_type}}: {{job_id}} {{name}}"}'
     enabled: true
     priority: 50
+
+  # Telegram notification rules — enable after configuring c4_notification_set.
+  # chat_id is resolved from notifications.json at startup; placeholder here.
+  - name: telegram-task-updates
+    event_pattern: "task.*"
+    action_type: telegram
+    action_config: '{"chat_id":"","template":"[{{event_type}}] {{task_id}}: {{title}}"}'
+    enabled: false
+    priority: 50
+
+  - name: telegram-checkpoint-events
+    event_pattern: "checkpoint.*"
+    action_type: telegram
+    action_config: '{"chat_id":"","template":"[checkpoint] {{decision}}: {{checkpoint_id}}"}'
+    enabled: false
+    priority: 50
+
+  - name: telegram-hub-events
+    event_pattern: "hub.*"
+    action_type: telegram
+    action_config: '{"chat_id":"","template":"[hub] {{event_type}}: {{job_id}} {{name}}"}'
+    enabled: false
+    priority: 50

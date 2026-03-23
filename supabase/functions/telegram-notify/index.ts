@@ -1,28 +1,18 @@
 // telegram-notify: Supabase Edge Function
-// Triggered by DB webhook when hub_jobs.status changes to 'COMPLETE' (or any terminal state).
-// Sends a Telegram message via Bot API.
+// Triggered by DB webhooks on c4_tasks and hub_jobs status changes.
+// Sends Telegram messages via Bot API.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const CHAT_ID = Deno.env.get("TELEGRAM_CHAT_ID") ?? "";
 
-interface JobRecord {
-  id: string;
-  name: string;
-  status: string;
-  worker_id: string;
-  exit_code: number | null;
-  result: string;
-  started_at: string | null;
-  finished_at: string | null;
-}
-
 interface WebhookPayload {
   type: "INSERT" | "UPDATE" | "DELETE";
   table: string;
-  record: JobRecord;
-  old_record: JobRecord | null;
+  schema: string;
+  record: Record<string, unknown>;
+  old_record: Record<string, unknown> | null;
 }
 
 async function sendTelegramMessage(text: string): Promise<void> {
@@ -51,6 +41,67 @@ function formatDuration(startedAt: string | null, finishedAt: string | null): st
   return `${min}m ${sec % 60}s`;
 }
 
+// --- Table-specific handlers ---
+
+function handleTaskUpdate(record: Record<string, unknown>, oldRecord: Record<string, unknown> | null): string | null {
+  const status = record.status as string;
+  const oldStatus = oldRecord?.status as string | undefined;
+
+  // Only notify on terminal transitions
+  if (oldStatus === status) return null;
+
+  const taskId = record.task_id as string;
+  const title = record.title as string;
+
+  switch (status) {
+    case "done":
+      return `✅ <b>Task done</b>\n<b>${taskId}</b>: ${title}`;
+    case "blocked": {
+      const reason = (record.failure_signature as string) || (record.last_error as string) || "unknown";
+      return `🚫 <b>Task blocked</b>\n<b>${taskId}</b>: ${title}\n<i>${reason}</i>`;
+    }
+    case "in_progress":
+      // Silent — no notification for in_progress
+      return null;
+    default:
+      return null;
+  }
+}
+
+function handleJobUpdate(record: Record<string, unknown>, oldRecord: Record<string, unknown> | null): string | null {
+  const status = record.status as string;
+
+  const terminal = ["COMPLETE", "FAILED", "CANCELLED"];
+  if (!terminal.includes(status)) return null;
+
+  const oldStatus = oldRecord?.status as string | undefined;
+  if (oldStatus && terminal.includes(oldStatus)) return null; // already terminal
+
+  const statusEmoji: Record<string, string> = {
+    COMPLETE: "✅",
+    FAILED: "❌",
+    CANCELLED: "⚠️",
+  };
+
+  const emoji = statusEmoji[status] ?? "ℹ️";
+  const name = record.name as string;
+  const id = record.id as string;
+  const workerId = (record.worker_id as string) || "—";
+  const exitCode = record.exit_code !== null ? ` (exit ${record.exit_code})` : "";
+  const duration = formatDuration(
+    record.started_at as string | null,
+    record.finished_at as string | null,
+  );
+
+  return (
+    `${emoji} <b>Job ${status}${exitCode}</b>\n` +
+    `<b>Name:</b> ${name}\n` +
+    `<b>ID:</b> <code>${id}</code>\n` +
+    `<b>Worker:</b> ${workerId}\n` +
+    `<b>Duration:</b> ${duration}`
+  );
+}
+
 serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
@@ -68,39 +119,28 @@ serve(async (req: Request) => {
     return new Response("Invalid JSON", { status: 400 });
   }
 
-  const { type, record, old_record } = payload;
+  const { type, table, record, old_record } = payload;
 
-  // Only act on UPDATE where status changed to a terminal state
   if (type !== "UPDATE" || !record) {
     return new Response("OK", { status: 200 });
   }
 
-  const terminal = ["COMPLETE", "FAILED", "CANCELLED"];
-  const isTerminal = terminal.includes(record.status);
-  const wasAlreadyTerminal = old_record ? terminal.includes(old_record.status) : false;
+  let message: string | null = null;
 
-  if (!isTerminal || wasAlreadyTerminal) {
-    return new Response("OK", { status: 200 });
+  switch (table) {
+    case "c4_tasks":
+      message = handleTaskUpdate(record, old_record);
+      break;
+    case "hub_jobs":
+      message = handleJobUpdate(record, old_record);
+      break;
+    default:
+      console.log(`Unknown table: ${table}`);
   }
 
-  const statusEmoji: Record<string, string> = {
-    COMPLETE: "✅",
-    FAILED: "❌",
-    CANCELLED: "⚠️",
-  };
-
-  const emoji = statusEmoji[record.status] ?? "ℹ️";
-  const duration = formatDuration(record.started_at, record.finished_at);
-  const exitCode = record.exit_code !== null ? ` (exit ${record.exit_code})` : "";
-
-  const text =
-    `${emoji} <b>Job ${record.status}${exitCode}</b>\n` +
-    `<b>Name:</b> ${record.name}\n` +
-    `<b>ID:</b> <code>${record.id}</code>\n` +
-    `<b>Worker:</b> ${record.worker_id || "—"}\n` +
-    `<b>Duration:</b> ${duration}`;
-
-  await sendTelegramMessage(text);
+  if (message) {
+    await sendTelegramMessage(message);
+  }
 
   return new Response("OK", { status: 200 });
 });

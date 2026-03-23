@@ -881,3 +881,118 @@ func TestDispatchBoundedConcurrency(t *testing.T) {
 	}
 }
 
+// --- Telegram action tests ---
+
+type mockTelegramSender struct {
+	mu       sync.Mutex
+	chatIDs  []string
+	messages []string
+}
+
+func (m *mockTelegramSender) Send(chatID, message string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.chatIDs = append(m.chatIDs, chatID)
+	m.messages = append(m.messages, message)
+	return nil
+}
+
+func TestDispatchTelegram(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+
+	sender := &mockTelegramSender{}
+	d.SetTelegramSender(sender)
+
+	cfg := `{"chat_id":"12345","template":"[{{event_type}}] {{task_id}}: {{title}}"}`
+	s.AddRule("tg-tasks", "task.*", "", "telegram", cfg, true, 0)
+
+	evData := json.RawMessage(`{"task_id":"T-001-0","title":"Implement feature X"}`)
+	evID, _ := s.StoreEvent("task.completed", "c4.core", evData, "")
+	d.DispatchSync(evID, "task.completed", evData)
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+
+	if len(sender.messages) != 1 {
+		t.Fatalf("expected 1 telegram call, got %d", len(sender.messages))
+	}
+	if sender.chatIDs[0] != "12345" {
+		t.Errorf("expected chat_id 12345, got %s", sender.chatIDs[0])
+	}
+	want := "[completed] T-001-0: Implement feature X"
+	if sender.messages[0] != want {
+		t.Errorf("expected message %q, got %q", want, sender.messages[0])
+	}
+
+	var logStatus string
+	s.db.QueryRow(`SELECT status FROM c4_event_log WHERE event_id = ?`, evID).Scan(&logStatus)
+	if logStatus != "ok" {
+		t.Errorf("expected log status ok, got %s", logStatus)
+	}
+}
+
+func TestDispatchTelegramDefaultTemplate(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+
+	sender := &mockTelegramSender{}
+	d.SetTelegramSender(sender)
+
+	s.AddRule("tg-default", "task.*", "", "telegram", `{"chat_id":"99"}`, true, 0)
+
+	evData := json.RawMessage(`{"task_id":"T-002-0","title":"Fix bug"}`)
+	evID, _ := s.StoreEvent("task.started", "c4.core", evData, "")
+	d.DispatchSync(evID, "task.started", evData)
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+
+	if len(sender.messages) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(sender.messages))
+	}
+	want := "[started] T-002-0: Fix bug"
+	if sender.messages[0] != want {
+		t.Errorf("expected %q, got %q", want, sender.messages[0])
+	}
+}
+
+func TestDispatchTelegramNoSender(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+	// No SetTelegramSender — should produce an error in DLQ
+
+	s.AddRule("tg-nosender", "task.*", "", "telegram", `{"chat_id":"99","template":"test"}`, true, 0)
+
+	evData := json.RawMessage(`{"task_id":"T-003-0","title":"Test"}`)
+	evID, _ := s.StoreEvent("task.completed", "c4.core", evData, "")
+	d.DispatchSync(evID, "task.completed", evData)
+
+	var logStatus string
+	s.db.QueryRow(`SELECT status FROM c4_event_log WHERE event_id = ?`, evID).Scan(&logStatus)
+	if logStatus != "error" {
+		t.Errorf("expected log status error, got %s", logStatus)
+	}
+}
+
+func TestDispatchTelegramNoChatID(t *testing.T) {
+	s := tempStore(t)
+	d := NewDispatcher(s)
+
+	sender := &mockTelegramSender{}
+	d.SetTelegramSender(sender)
+
+	// Missing chat_id
+	s.AddRule("tg-nochat", "task.*", "", "telegram", `{"template":"test"}`, true, 0)
+
+	evData := json.RawMessage(`{"task_id":"T-004-0","title":"Test"}`)
+	evID, _ := s.StoreEvent("task.completed", "c4.core", evData, "")
+	d.DispatchSync(evID, "task.completed", evData)
+
+	var logStatus string
+	s.db.QueryRow(`SELECT status FROM c4_event_log WHERE event_id = ?`, evID).Scan(&logStatus)
+	if logStatus != "error" {
+		t.Errorf("expected log status error (no chat_id), got %s", logStatus)
+	}
+}
+

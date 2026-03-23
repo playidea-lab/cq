@@ -18,6 +18,18 @@ func SendTelegram(ctx context.Context, token, chatID, message string) error {
 	return sendTelegram(ctx, "https://api.telegram.org", token, chatID, message)
 }
 
+// BotSender implements eventbus.TelegramSender using a fixed bot token.
+type BotSender struct {
+	Token string
+}
+
+// Send sends a Markdown message to the given chatID via the Telegram Bot API.
+func (b *BotSender) Send(chatID, message string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return SendTelegram(ctx, b.Token, chatID, message)
+}
+
 // sendTelegram is the testable variant that accepts an explicit base URL.
 func sendTelegram(ctx context.Context, baseURL, token, chatID, message string) error {
 	payload := map[string]string{
