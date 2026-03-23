@@ -19,7 +19,7 @@ Your Laptop                          Remote Workers (GPU servers, etc.)
 ┌──────────────────────┐             ┌──────────────────────┐
 │  cq                  │             │  cq hub worker start │
 │  ├── Claude Code     │   Supabase  │  ├── LISTEN/NOTIFY   │
-│  ├── 133 MCP tools   │◄──────────►│  ├── claim job       │
+│  ├── 144 MCP tools   │◄──────────►│  ├── claim job       │
 │  ├── Telegram bot    │   (jobs,    │  ├── execute         │
 │  └── Knowledge DB    │  knowledge) │  └── report result   │
 └──────────────────────┘             └──────────────────────┘
