@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "설치. 로그인. 빌드."
-  tagline: "API 키 없이. 설정 파일 없이. cq auth 하나로 시작. 두뇌는 클라우드에, 당신의 머신은 손과 발."
+  text: "AI가 코드를 쓴다. 누가 확인하지?"
+  tagline: "CQ는 빠진 것을 채웁니다 — 계획, 검증, 학습, 거버넌스. AI가 코딩하고, CQ가 맞는지 확인합니다."
   actions:
     - theme: brand
       text: 시작하기
@@ -14,21 +14,21 @@ hero:
       link: https://github.com/PlayIdea-Lab/cq
 
 features:
-  - icon: ⚡
-    title: 2분 설치
-    details: "curl 설치, cq auth login, 끝. API 키 관리도, 설정 파일 작성도 없습니다. 태스크, 지식, LLM, 품질 게이트 전부 클라우드."
-
-  - icon: 💡
-    title: 아이디어 → 출시 (논스탑)
-    details: "/pi로 토론 → 자동 계획 → 자동 실행 → 자동 마무리. 생각에서 커밋까지 하나의 흐름. 감시 불필요."
+  - icon: 📋
+    title: 코딩 전에 계획
+    details: "AI 도구는 바로 코딩합니다. CQ는 '뭘 만들지' 먼저 묻습니다 — 요구사항, 아키텍처, DoD. 그리고 검증 가능한 태스크로 분해합니다."
 
   - icon: 🔒
-    title: 시스템이 품질 보장
-    details: "Refine, Polish, Review 게이트가 바이너리에 컴파일. 프롬프트도, 제안도 아닌 Go 레벨 강제. 건너뛸 수 없습니다."
+    title: 신뢰가 아닌 게이트
+    details: "Refine 게이트가 나쁜 계획을 차단. Polish 게이트가 미검토 코드를 차단. Review 게이트가 6축 평가. 바이너리에 컴파일 — 선택 아님."
 
   - icon: 🧠
-    title: 당신을 학습
-    details: "3층 온톨로지(개인→프로젝트→집단)가 1,200+ 태스크에서 패턴을 추적합니다. 세션마다 리뷰가 정확해집니다."
+    title: 모든 것을 기억
+    details: "AI 도구는 세션마다 잊습니다. CQ는 3층 온톨로지를 쌓습니다 — 개인 패턴, 팀 패턴, 집단 패턴. 점점 나아집니다."
+
+  - icon: ⚡
+    title: 설정 제로
+    details: "curl 설치 → cq auth → 시작. API 키 없음. 설정 파일 없음. 두뇌는 클라우드에, 손발은 당신의 머신에."
 
 ---
 

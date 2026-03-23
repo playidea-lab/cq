@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "Install. Login. Build."
-  tagline: "No API keys. No config files. Just cq auth and start building. The brain is in the cloud — your machine is the hands."
+  text: "AI writes code. Who checks it?"
+  tagline: "CQ fills what's missing — planning, verification, learning, and governance. Your AI codes. CQ makes sure it's right."
   actions:
     - theme: brand
       text: Get Started
@@ -14,21 +14,21 @@ hero:
       link: https://github.com/PlayIdea-Lab/cq
 
 features:
-  - icon: ⚡
-    title: 2-Minute Setup
-    details: "curl install, cq auth login, done. No API keys to manage, no config to write. Cloud handles tasks, knowledge, LLM, and quality gates."
-
-  - icon: 💡
-    title: Idea → Ship (Nonstop)
-    details: "/pi to brainstorm → auto plan → auto run → auto finish. One flow from thought to committed code. No babysitting."
+  - icon: 📋
+    title: Plans Before Coding
+    details: "AI tools jump to code. CQ asks 'what are we building?' first — requirements, architecture, DoD. Then breaks it into verified tasks."
 
   - icon: 🔒
-    title: Quality by System
-    details: "Refine, polish, and review gates are compiled into the binary. Not prompts, not suggestions — Go-level enforcement that cannot be bypassed."
+    title: Gates, Not Trust
+    details: "Refine gate blocks bad plans. Polish gate blocks unreviewed code. Review gate runs 6-axis evaluation. Compiled into the binary — not optional."
 
   - icon: 🧠
-    title: Learns You
-    details: "3-layer ontology (personal → project → collective) tracks your patterns across 1,200+ tasks. Reviews get sharper every session."
+    title: Remembers Everything
+    details: "AI tools forget every session. CQ builds a 3-layer ontology — your patterns, your team's patterns, everyone's patterns. It gets better."
+
+  - icon: ⚡
+    title: Zero Config
+    details: "curl install → cq auth → start. No API keys. No config files. Brain in the cloud, hands on your machine."
 
 ---
 
