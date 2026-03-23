@@ -39,16 +39,19 @@ func RegisterGPUNativeHandlers(reg *mcp.Registry, gpuStore *daemon.Store, schedu
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"command":     map[string]any{"type": "string", "description": "Command to run"},
-				"name":        map[string]any{"type": "string", "description": "Job name (default: gpu-job)"},
-				"workdir":     map[string]any{"type": "string", "description": "Working directory (default: current directory)"},
-				"gpu_id":      map[string]any{"type": "integer", "description": "Specific GPU ID (optional)"},
-				"priority":    map[string]any{"type": "integer", "description": "Job priority (default: 5)"},
-				"exp_id":      map[string]any{"type": "string", "description": "Experiment ID (optional)"},
-				"tags":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Tags (optional)"},
-				"env":         map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}, "description": "Environment variables (optional)"},
-				"timeout_sec": map[string]any{"type": "integer", "description": "Timeout in seconds (optional, 0 = no timeout)"},
-				"memo":        map[string]any{"type": "string", "description": "Memo/note (optional)"},
+				"command":       map[string]any{"type": "string", "description": "Command to run"},
+				"name":          map[string]any{"type": "string", "description": "Job name (default: gpu-job)"},
+				"workdir":       map[string]any{"type": "string", "description": "Working directory (default: current directory)"},
+				"gpu_id":        map[string]any{"type": "integer", "description": "Specific GPU ID (optional)"},
+				"priority":      map[string]any{"type": "integer", "description": "Job priority (default: 5)"},
+				"exp_id":        map[string]any{"type": "string", "description": "Experiment ID (optional)"},
+				"tags":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Tags (optional)"},
+				"env":           map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}, "description": "Environment variables (optional)"},
+				"timeout_sec":   map[string]any{"type": "integer", "description": "Timeout in seconds (optional, 0 = no timeout)"},
+				"memo":          map[string]any{"type": "string", "description": "Memo/note (optional)"},
+				"capability":    map[string]any{"type": "string", "description": "Worker capability required to run this job (optional, e.g. 'gpu', 'tpu')"},
+				"required_tags": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Worker tags required to claim this job (optional)"},
+				"target_worker": map[string]any{"type": "string", "description": "Target worker ID — route this job to a specific worker (optional)"},
 			},
 			"required": []string{"command"},
 		},
@@ -149,16 +152,19 @@ func gpuStatusHandler(mon *daemon.GpuMonitor) mcp.HandlerFunc {
 func jobSubmitHandler(store *daemon.Store) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		var params struct {
-			Command    string            `json:"command"`
-			Name       string            `json:"name"`
-			Workdir    string            `json:"workdir"`
-			GPUID      *int              `json:"gpu_id"`
-			Priority   int               `json:"priority"`
-			ExpID      string            `json:"exp_id"`
-			Tags       []string          `json:"tags"`
-			Env        map[string]string `json:"env"`
-			TimeoutSec int               `json:"timeout_sec"`
-			Memo       string            `json:"memo"`
+			Command      string            `json:"command"`
+			Name         string            `json:"name"`
+			Workdir      string            `json:"workdir"`
+			GPUID        *int              `json:"gpu_id"`
+			Priority     int               `json:"priority"`
+			ExpID        string            `json:"exp_id"`
+			Tags         []string          `json:"tags"`
+			Env          map[string]string `json:"env"`
+			TimeoutSec   int               `json:"timeout_sec"`
+			Memo         string            `json:"memo"`
+			Capability   string            `json:"capability"`
+			RequiredTags []string          `json:"required_tags"`
+			TargetWorker string            `json:"target_worker"`
 		}
 		if len(rawArgs) > 0 {
 			if err := json.Unmarshal(rawArgs, &params); err != nil {
@@ -188,17 +194,20 @@ func jobSubmitHandler(store *daemon.Store) mcp.HandlerFunc {
 			gpuCount = 1
 		}
 		req := &daemon.JobSubmitRequest{
-			Name:        jobName,
-			Command:     params.Command,
-			Workdir:     workdir,
-			RequiresGPU: requiresGPU,
-			GPUCount:    gpuCount,
-			Priority:    params.Priority,
-			ExpID:       params.ExpID,
-			Tags:        params.Tags,
-			Env:         params.Env,
-			TimeoutSec:  params.TimeoutSec,
-			Memo:        params.Memo,
+			Name:         jobName,
+			Command:      params.Command,
+			Workdir:      workdir,
+			RequiresGPU:  requiresGPU,
+			GPUCount:     gpuCount,
+			Priority:     params.Priority,
+			ExpID:        params.ExpID,
+			Tags:         params.Tags,
+			Env:          params.Env,
+			TimeoutSec:   params.TimeoutSec,
+			Memo:         params.Memo,
+			Capability:   params.Capability,
+			RequiredTags: params.RequiredTags,
+			TargetWorker: params.TargetWorker,
 		}
 
 		job, err := store.CreateJob(req)
