@@ -94,21 +94,66 @@ func (w *workerConn) deliver(relayID string, body json.RawMessage) bool {
 	return true
 }
 
+// tunnel holds a bidirectional binary pipe between a sender and receiver.
+type tunnel struct {
+	id        string
+	sender    *websocket.Conn
+	receiver  *websocket.Conn
+	ready     chan struct{} // closed when both sides connected
+	done      chan struct{} // closed when tunnel finished
+	createdAt time.Time
+	mu        sync.Mutex
+}
+
 // server is the relay server state.
 type server struct {
 	upgrader  websocket.Upgrader
 	workers   sync.RWMutex
 	conns     map[string]*workerConn // worker_id → workerConn
+	tunnels   sync.RWMutex
+	tunnelMap map[string]*tunnel // tunnel_id → tunnel
 	jwtSecret string
 }
 
 func newServer() *server {
-	return &server{
+	srv := &server{
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
 		conns:     make(map[string]*workerConn),
+		tunnelMap: make(map[string]*tunnel),
 		jwtSecret: os.Getenv("SUPABASE_JWT_SECRET"),
+	}
+	go srv.sweepTunnels()
+	return srv
+}
+
+// sweepTunnels periodically removes tunnels older than 5 minutes.
+func (s *server) sweepTunnels() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		s.tunnels.Lock()
+		for id, t := range s.tunnelMap {
+			if time.Since(t.createdAt) > 5*time.Minute {
+				select {
+				case <-t.done:
+				default:
+					close(t.done)
+				}
+				t.mu.Lock()
+				if t.sender != nil {
+					t.sender.Close()
+				}
+				if t.receiver != nil {
+					t.receiver.Close()
+				}
+				t.mu.Unlock()
+				delete(s.tunnelMap, id)
+				log.Printf("tunnel swept (5m): %s", id)
+			}
+		}
+		s.tunnels.Unlock()
 	}
 }
 
@@ -326,6 +371,172 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleCreateTunnel handles POST /tunnel — creates a new tunnel session.
+// Requires Bearer JWT authentication (same as handleMCP).
+func (s *server) handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
+	authHeader := r.Header.Get("Authorization")
+	if s.jwtSecret != "" {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if token == "" || token == authHeader {
+			http.Error(w, "unauthorized: Bearer token required", http.StatusUnauthorized)
+			return
+		}
+		if err := s.validateToken(token); err != nil {
+			http.Error(w, "unauthorized: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+	}
+
+	id := uuid.New().String()
+	t := &tunnel{
+		id:        id,
+		ready:     make(chan struct{}),
+		done:      make(chan struct{}),
+		createdAt: time.Now(),
+	}
+
+	s.tunnels.Lock()
+	s.tunnelMap[id] = t
+	s.tunnels.Unlock()
+
+	log.Printf("tunnel created: %s", id)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"tunnel_id": id})
+}
+
+// handleTunnelConnect handles GET /tunnel/{id}?role=sender|receiver — WSS upgrade for tunnel pipe.
+func (s *server) handleTunnelConnect(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	role := r.URL.Query().Get("role")
+
+	if role != "sender" && role != "receiver" {
+		http.Error(w, "role must be sender or receiver", http.StatusBadRequest)
+		return
+	}
+
+	s.tunnels.RLock()
+	t, ok := s.tunnelMap[id]
+	s.tunnels.RUnlock()
+	if !ok {
+		http.Error(w, "tunnel not found", http.StatusNotFound)
+		return
+	}
+
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("tunnel %s: upgrade error for role %s: %v", id, role, err)
+		return
+	}
+
+	t.mu.Lock()
+	if role == "sender" {
+		if t.sender != nil {
+			t.mu.Unlock()
+			conn.Close()
+			log.Printf("tunnel %s: sender already connected", id)
+			return
+		}
+		t.sender = conn
+	} else {
+		if t.receiver != nil {
+			t.mu.Unlock()
+			conn.Close()
+			log.Printf("tunnel %s: receiver already connected", id)
+			return
+		}
+		t.receiver = conn
+	}
+	bothReady := t.sender != nil && t.receiver != nil
+	t.mu.Unlock()
+
+	log.Printf("tunnel %s: %s connected", id, role)
+
+	if bothReady {
+		close(t.ready)
+		go s.runTunnel(t)
+		return
+	}
+
+	// Wait for the other side or timeout.
+	select {
+	case <-t.ready:
+		// glue started by the other goroutine; this one exits
+	case <-t.done:
+		conn.Close()
+		log.Printf("tunnel %s: done before both sides connected (%s)", id, role)
+	case <-time.After(30 * time.Second):
+		select {
+		case <-t.done:
+		default:
+			close(t.done)
+		}
+		s.tunnels.Lock()
+		delete(s.tunnelMap, id)
+		s.tunnels.Unlock()
+		conn.Close()
+		log.Printf("tunnel %s: timeout waiting for peer (role=%s)", id, role)
+	}
+}
+
+// runTunnel starts the bidirectional binary glue between sender and receiver.
+func (s *server) runTunnel(t *tunnel) {
+	defer func() {
+		select {
+		case <-t.done:
+		default:
+			close(t.done)
+		}
+		t.mu.Lock()
+		if t.sender != nil {
+			t.sender.Close()
+		}
+		if t.receiver != nil {
+			t.receiver.Close()
+		}
+		t.mu.Unlock()
+		s.tunnels.Lock()
+		delete(s.tunnelMap, t.id)
+		s.tunnels.Unlock()
+		log.Printf("tunnel closed: %s", t.id)
+	}()
+
+	errc := make(chan error, 2)
+
+	// goroutine 1: sender → receiver
+	go func() {
+		for {
+			mt, data, err := t.sender.ReadMessage()
+			if err != nil {
+				errc <- err
+				return
+			}
+			if err := t.receiver.WriteMessage(mt, data); err != nil {
+				errc <- err
+				return
+			}
+		}
+	}()
+
+	// goroutine 2: receiver → sender
+	go func() {
+		for {
+			mt, data, err := t.receiver.ReadMessage()
+			if err != nil {
+				errc <- err
+				return
+			}
+			if err := t.sender.WriteMessage(mt, data); err != nil {
+				errc <- err
+				return
+			}
+		}
+	}()
+
+	<-errc
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -338,6 +549,8 @@ func main() {
 	mux.HandleFunc("POST /w/{id}/mcp", srv.handleMCP)
 	mux.HandleFunc("GET /w/{id}/health", srv.handleWorkerHealth)
 	mux.HandleFunc("GET /health", srv.handleHealth)
+	mux.HandleFunc("POST /tunnel", srv.handleCreateTunnel)
+	mux.HandleFunc("GET /tunnel/{id}", srv.handleTunnelConnect)
 
 	if srv.jwtSecret == "" {
 		log.Printf("WARNING: SUPABASE_JWT_SECRET not set — authentication disabled (dev mode)")

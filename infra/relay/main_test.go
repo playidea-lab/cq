@@ -11,6 +11,84 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func TestTunnelRoundtrip(t *testing.T) {
+	srv := newServer()
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /tunnel", srv.handleCreateTunnel)
+	mux.HandleFunc("GET /tunnel/{id}", srv.handleTunnelConnect)
+
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+
+	// 1. Create tunnel via POST /tunnel
+	resp, err := http.Post(ts.URL+"/tunnel", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /tunnel: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+	var created map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode tunnel response: %v", err)
+	}
+	tunnelID := created["tunnel_id"]
+	if tunnelID == "" {
+		t.Fatal("tunnel_id is empty")
+	}
+
+	dialer := websocket.Dialer{}
+	baseWS := "ws" + strings.TrimPrefix(ts.URL, "http") + "/tunnel/" + tunnelID
+
+	// 2. Connect sender
+	senderConn, _, err := dialer.Dial(baseWS+"?role=sender", nil)
+	if err != nil {
+		t.Fatalf("sender dial: %v", err)
+	}
+	defer senderConn.Close()
+
+	// 3. Connect receiver
+	receiverConn, _, err := dialer.Dial(baseWS+"?role=receiver", nil)
+	if err != nil {
+		t.Fatalf("receiver dial: %v", err)
+	}
+	defer receiverConn.Close()
+
+	// Allow glue goroutines to start
+	time.Sleep(50 * time.Millisecond)
+
+	// 4. Send binary data from sender
+	payload := []byte{0x01, 0x02, 0x03, 0xDE, 0xAD, 0xBE, 0xEF}
+	if err := senderConn.WriteMessage(websocket.BinaryMessage, payload); err != nil {
+		t.Fatalf("sender write: %v", err)
+	}
+
+	// 5. Receiver must get the same bytes
+	receiverConn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	mt, got, err := receiverConn.ReadMessage()
+	if err != nil {
+		t.Fatalf("receiver read: %v", err)
+	}
+	if mt != websocket.BinaryMessage {
+		t.Errorf("expected BinaryMessage, got %d", mt)
+	}
+	if string(got) != string(payload) {
+		t.Errorf("payload mismatch: got %x, want %x", got, payload)
+	}
+
+	// 6. Close sender → receiver should also close
+	senderConn.WriteMessage(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	senderConn.Close()
+
+	receiverConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_, _, err = receiverConn.ReadMessage()
+	if err == nil {
+		t.Error("expected receiver to close after sender closed")
+	}
+}
+
 func TestHealthEndpoint(t *testing.T) {
 	srv := newServer()
 	mux := http.NewServeMux()
