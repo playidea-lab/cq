@@ -166,6 +166,14 @@ install_python_sidecar
 if [ -x "${INSTALL_DIR}/cq" ]; then
   echo ""
   "${INSTALL_DIR}/cq" doctor --fix || true
+
+  # Auto-install/restart cq serve as OS service (LaunchAgent/systemd).
+  # Only if cloud is configured (relay, journal sync need cq serve).
+  if "${INSTALL_DIR}/cq" serve status 2>/dev/null | grep -q "installed"; then
+    echo ""
+    echo "Restarting cq serve..."
+    "${INSTALL_DIR}/cq" serve install 2>/dev/null || true
+  fi
 fi
 
 echo ""
