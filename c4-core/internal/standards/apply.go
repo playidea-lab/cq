@@ -1,6 +1,7 @@
 package standards
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"io/fs"
@@ -97,6 +98,11 @@ func Apply(projectDir string, team string, langs []string, opts ApplyOptions) (*
 				existing, err2 := os.ReadFile(dstAbs)
 				if err2 != nil {
 					return fmt.Errorf("standards: read existing %s: %w", dstAbs, err2)
+				}
+				// Skip if content already present (prevents duplicate appends on re-apply)
+				if bytes.Contains(existing, bytes.TrimSpace(data)) {
+					result.FilesSkipped = append(result.FilesSkipped, dst)
+					return nil
 				}
 				sep := []byte{}
 				if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
