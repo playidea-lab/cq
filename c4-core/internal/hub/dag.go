@@ -188,10 +188,89 @@ func (c *Client) AddDAGDependency(dagID string, req *DAGAddDependencyRequest) er
 	return nil
 }
 
-// ExecuteDAG transitions a DAG to running status.
+// topologicalSort performs a Kahn's algorithm topological sort on a set of
+// nodes with their dependencies. nodes is the full list of node IDs; deps maps
+// each node ID to the set of IDs it depends on (predecessors).
+// Returns the sorted order, or an error if a cycle is detected.
+func topologicalSort(nodes []string, deps map[string][]string) ([]string, error) {
+	// Build in-degree map and adjacency list (successor direction).
+	inDegree := make(map[string]int, len(nodes))
+	successors := make(map[string][]string, len(nodes))
+	for _, n := range nodes {
+		if _, ok := inDegree[n]; !ok {
+			inDegree[n] = 0
+		}
+		for _, pre := range deps[n] {
+			successors[pre] = append(successors[pre], n)
+			inDegree[n]++
+		}
+	}
+
+	// Enqueue nodes with no predecessors (roots).
+	queue := []string{}
+	for _, n := range nodes {
+		if inDegree[n] == 0 {
+			queue = append(queue, n)
+		}
+	}
+
+	order := make([]string, 0, len(nodes))
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		order = append(order, cur)
+		for _, suc := range successors[cur] {
+			inDegree[suc]--
+			if inDegree[suc] == 0 {
+				queue = append(queue, suc)
+			}
+		}
+	}
+
+	if len(order) != len(nodes) {
+		return nil, fmt.Errorf("cycle detected in DAG")
+	}
+	return order, nil
+}
+
+// ExecuteDAG performs topological sort on DAG nodes, submits root nodes as Hub
+// jobs, and transitions the DAG to "running" status.
 func (c *Client) ExecuteDAG(dagID string, dryRun bool) (*DAGExecuteResponse, error) {
+	// Fetch nodes.
+	var nodes []DAGNode
+	if err := c.supabaseGet("/rest/v1/hub_dag_nodes?dag_id=eq."+dagID, &nodes); err != nil {
+		return nil, fmt.Errorf("execute dag: fetch nodes: %w", err)
+	}
+
+	// Fetch dependencies.
+	var dbDeps []struct {
+		SourceID string `json:"source_id"`
+		TargetID string `json:"target_id"`
+	}
+	if err := c.supabaseGet("/rest/v1/hub_dag_dependencies?dag_id=eq."+dagID, &dbDeps); err != nil {
+		return nil, fmt.Errorf("execute dag: fetch deps: %w", err)
+	}
+
+	// Build node ID list and predecessor map.
+	nodeIDs := make([]string, 0, len(nodes))
+	nodeByID := make(map[string]*DAGNode, len(nodes))
+	for i := range nodes {
+		nodeIDs = append(nodeIDs, nodes[i].ID)
+		nodeByID[nodes[i].ID] = &nodes[i]
+	}
+	deps := make(map[string][]string, len(nodes))
+	for _, d := range dbDeps {
+		// d.TargetID depends on d.SourceID
+		deps[d.TargetID] = append(deps[d.TargetID], d.SourceID)
+	}
+
+	// Topological sort — cycle detection happens here.
+	order, err := topologicalSort(nodeIDs, deps)
+	if err != nil {
+		return nil, fmt.Errorf("execute dag: %w", err)
+	}
+
 	if dryRun {
-		// Dry run: just return validation without updating state.
 		var rows []DAG
 		if err := c.supabaseGet("/rest/v1/hub_dags?id=eq."+dagID, &rows); err != nil {
 			return nil, fmt.Errorf("execute dag (dry run): %w", err)
@@ -202,17 +281,43 @@ func (c *Client) ExecuteDAG(dagID string, dryRun bool) (*DAGExecuteResponse, err
 		return &DAGExecuteResponse{
 			DAGID:      dagID,
 			Status:     rows[0].Status,
+			NodeOrder:  order,
 			Validation: "valid",
 		}, nil
 	}
 
+	// Submit root nodes (nodes with no predecessors) as Hub jobs.
+	for _, nodeID := range order {
+		if len(deps[nodeID]) > 0 {
+			// Not a root — skip initial submission.
+			continue
+		}
+		node := nodeByID[nodeID]
+		submitResp, err := c.SubmitJob(&JobSubmitRequest{
+			Name:        node.Name,
+			Command:     node.Command,
+			Workdir:     node.WorkingDir,
+			RequiresGPU: node.GPUCount > 0,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("execute dag: submit root node %s: %w", nodeID, err)
+		}
+		// Patch hub_dag_nodes.job_id with the submitted job ID.
+		patch := map[string]any{"job_id": submitResp.JobID}
+		if err := c.supabasePatch("/rest/v1/hub_dag_nodes?id=eq."+nodeID, patch, nil); err != nil {
+			return nil, fmt.Errorf("execute dag: patch node job_id %s: %w", nodeID, err)
+		}
+	}
+
+	// Transition DAG to "running".
 	body := map[string]any{"status": "running", "started_at": time.Now().UTC().Format(time.RFC3339)}
 	if err := c.supabasePatch("/rest/v1/hub_dags?id=eq."+dagID, body, nil); err != nil {
 		return nil, fmt.Errorf("execute dag: %w", err)
 	}
 	return &DAGExecuteResponse{
-		DAGID:  dagID,
-		Status: "running",
+		DAGID:     dagID,
+		Status:    "running",
+		NodeOrder: order,
 	}, nil
 }
 

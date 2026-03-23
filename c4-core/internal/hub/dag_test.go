@@ -8,6 +8,248 @@ import (
 )
 
 // =========================================================================
+// topologicalSort (pure function — no HTTP)
+// =========================================================================
+
+func TestTopologicalSort_Linear(t *testing.T) {
+	// A → B → C
+	nodes := []string{"A", "B", "C"}
+	deps := map[string][]string{
+		"B": {"A"},
+		"C": {"B"},
+	}
+	order, err := topologicalSort(nodes, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(order) != 3 {
+		t.Fatalf("len = %d, want 3", len(order))
+	}
+	// A must come before B, B before C
+	pos := map[string]int{}
+	for i, n := range order {
+		pos[n] = i
+	}
+	if pos["A"] >= pos["B"] || pos["B"] >= pos["C"] {
+		t.Errorf("order = %v, want A before B before C", order)
+	}
+}
+
+func TestTopologicalSort_Diamond(t *testing.T) {
+	// A → B, A → C, B → D, C → D
+	nodes := []string{"A", "B", "C", "D"}
+	deps := map[string][]string{
+		"B": {"A"},
+		"C": {"A"},
+		"D": {"B", "C"},
+	}
+	order, err := topologicalSort(nodes, deps)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(order) != 4 {
+		t.Fatalf("len = %d, want 4", len(order))
+	}
+	pos := map[string]int{}
+	for i, n := range order {
+		pos[n] = i
+	}
+	if pos["A"] >= pos["B"] || pos["A"] >= pos["C"] {
+		t.Errorf("A must precede B and C: %v", order)
+	}
+	if pos["B"] >= pos["D"] || pos["C"] >= pos["D"] {
+		t.Errorf("B and C must precede D: %v", order)
+	}
+}
+
+func TestTopologicalSort_NoEdges(t *testing.T) {
+	nodes := []string{"X", "Y", "Z"}
+	order, err := topologicalSort(nodes, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(order) != 3 {
+		t.Fatalf("len = %d, want 3", len(order))
+	}
+}
+
+func TestTopologicalSort_Cycle(t *testing.T) {
+	// A → B → C → A  (cycle)
+	nodes := []string{"A", "B", "C"}
+	deps := map[string][]string{
+		"B": {"A"},
+		"C": {"B"},
+		"A": {"C"},
+	}
+	_, err := topologicalSort(nodes, deps)
+	if err == nil {
+		t.Fatal("expected cycle error, got nil")
+	}
+}
+
+func TestTopologicalSort_SingleNode(t *testing.T) {
+	order, err := topologicalSort([]string{"solo"}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(order) != 1 || order[0] != "solo" {
+		t.Errorf("order = %v", order)
+	}
+}
+
+// =========================================================================
+// ExecuteDAG with topological sort + root node submission
+// =========================================================================
+
+func TestExecuteDAG_WithRootNodeSubmission(t *testing.T) {
+	submittedJobs := []map[string]any{}
+	patchedNodes := []string{}
+
+	mux := http.NewServeMux()
+
+	// GET hub_dag_nodes
+	mux.HandleFunc("/rest/v1/hub_dag_nodes", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			jsonResponse(w, []map[string]any{
+				{"id": "node-A", "name": "preprocess", "command": "python preprocess.py", "gpu_count": 0},
+				{"id": "node-B", "name": "train", "command": "python train.py", "gpu_count": 1},
+			})
+			return
+		}
+		// PATCH node job_id
+		if r.Method == "PATCH" {
+			patchedNodes = append(patchedNodes, r.URL.RawQuery)
+			w.WriteHeader(200)
+			w.Write([]byte(`[]`))
+			return
+		}
+		w.WriteHeader(405)
+	})
+
+	// GET hub_dag_dependencies
+	mux.HandleFunc("/rest/v1/hub_dag_dependencies", func(w http.ResponseWriter, r *http.Request) {
+		// node-B depends on node-A → only node-A is root
+		jsonResponse(w, []map[string]any{
+			{"source_id": "node-A", "target_id": "node-B"},
+		})
+	})
+
+	// POST hub_jobs (SubmitJob)
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("hub_jobs method = %s, want POST", r.Method)
+		}
+		var row map[string]any
+		json.NewDecoder(r.Body).Decode(&row)
+		submittedJobs = append(submittedJobs, row)
+		jsonResponse(w, []map[string]any{
+			{"id": "job-root-1", "status": "QUEUED"},
+		})
+	})
+
+	// PATCH hub_dag_nodes and PATCH hub_dags
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PATCH" {
+			t.Errorf("hub_dags method = %s, want PATCH", r.Method)
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["status"] != "running" {
+			t.Errorf("dag status = %v, want running", body["status"])
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`[]`))
+	})
+
+	client, _ := newTestServer(t, mux)
+
+	resp, err := client.ExecuteDAG("dag-1", false)
+	if err != nil {
+		t.Fatalf("ExecuteDAG: %v", err)
+	}
+	if resp.Status != "running" {
+		t.Errorf("Status = %q, want running", resp.Status)
+	}
+	if len(resp.NodeOrder) != 2 {
+		t.Errorf("NodeOrder len = %d, want 2", len(resp.NodeOrder))
+	}
+	// Only root node (node-A) should be submitted
+	if len(submittedJobs) != 1 {
+		t.Errorf("submitted jobs = %d, want 1 (root only)", len(submittedJobs))
+	}
+	if submittedJobs[0]["name"] != "preprocess" {
+		t.Errorf("submitted job name = %v, want preprocess", submittedJobs[0]["name"])
+	}
+	// node-A patch should have happened
+	if len(patchedNodes) != 1 || !strings.Contains(patchedNodes[0], "node-A") {
+		t.Errorf("patched nodes = %v, want [id=eq.node-A]", patchedNodes)
+	}
+}
+
+func TestExecuteDAG_CycleReturnsError(t *testing.T) {
+	mux := http.NewServeMux()
+
+	// Return nodes forming a cycle
+	mux.HandleFunc("/rest/v1/hub_dag_nodes", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{
+			{"id": "n1", "name": "a", "command": "echo a"},
+			{"id": "n2", "name": "b", "command": "echo b"},
+		})
+	})
+	mux.HandleFunc("/rest/v1/hub_dag_dependencies", func(w http.ResponseWriter, r *http.Request) {
+		// n1→n2 and n2→n1 = cycle
+		jsonResponse(w, []map[string]any{
+			{"source_id": "n1", "target_id": "n2"},
+			{"source_id": "n2", "target_id": "n1"},
+		})
+	})
+
+	client, _ := newTestServer(t, mux)
+
+	_, err := client.ExecuteDAG("dag-cycle", false)
+	if err == nil {
+		t.Fatal("expected cycle error, got nil")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("error = %q, want cycle mention", err.Error())
+	}
+}
+
+func TestExecuteDAG_DryRunReturnsNodeOrder(t *testing.T) {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/rest/v1/hub_dag_nodes", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{
+			{"id": "n1", "name": "step1", "command": "echo 1"},
+			{"id": "n2", "name": "step2", "command": "echo 2"},
+		})
+	})
+	mux.HandleFunc("/rest/v1/hub_dag_dependencies", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{
+			{"source_id": "n1", "target_id": "n2"},
+		})
+	})
+	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{
+			{"id": "dag-dr", "status": "pending"},
+		})
+	})
+
+	client, _ := newTestServer(t, mux)
+
+	resp, err := client.ExecuteDAG("dag-dr", true)
+	if err != nil {
+		t.Fatalf("ExecuteDAG dry run: %v", err)
+	}
+	if resp.Validation != "valid" {
+		t.Errorf("Validation = %q", resp.Validation)
+	}
+	if len(resp.NodeOrder) != 2 {
+		t.Errorf("NodeOrder len = %d, want 2", len(resp.NodeOrder))
+	}
+}
+
+// =========================================================================
 // CreateDAG
 // =========================================================================
 
