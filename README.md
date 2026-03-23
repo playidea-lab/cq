@@ -9,7 +9,7 @@ CQ is the brain it's missing. CLI: `cq`.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
-![Tools](https://img.shields.io/badge/MCP_Tools-133-blueviolet)
+![Tools](https://img.shields.io/badge/MCP_Tools-144-blueviolet)
 ![Tests](https://img.shields.io/badge/Tests-3%2C628+-brightgreen)
 ![License](https://img.shields.io/badge/License-Personal_Study-orange)
 
@@ -36,11 +36,10 @@ C1·C2·C3·C4·C5·C9가 유기적으로 연결된 생태계.
 
 ```
 C0 Drive    — Cloud file storage (Supabase Storage)
-C1 Desktop  — Tauri 2.x project explorer (6-tab view)
 C2 Docs     — Document lifecycle (parsing/workspace/profile)
 C3 EventBus — gRPC event bus (UDS + WebSocket + DLQ)
 C4 Engine   — MCP orchestration engine (this repo)
-C5 Hub      — Distributed job queue server (Worker Pull, Lease-based)
+C5 Hub      — Distributed job queue (Supabase, Worker Pull, Lease-based)
 C9 Knowledge — Knowledge management (FTS5 + pgvector + Embedding + Usage)
 ```
 
@@ -79,9 +78,8 @@ full:       connected + GPU workers + research loop
 | Component | Directory | Stack |
 |-----------|-----------|-------|
 | Go MCP Server | `c4-core/` | Go 1.22+, SQLite, Cobra CLI |
-| C5 Hub Server | `c5/` | Go, SQLite, REST API, WebSocket |
+| C5 Hub | Supabase | PostgreSQL, pg_notify, REST API |
 | Python Sidecar | `c4/` | Python 3.11+, multilspy, sqlite-vec |
-| C1 Desktop App | `c1/` | Tauri 2.x, React, Rust |
 | Cloud Infra | `infra/supabase/` | PostgreSQL, pgvector, RLS |
 
 ## Quick Start
@@ -143,6 +141,8 @@ c4_lighthouse(action="promote", name="export_api")
 | `update` | Modify spec/schema/description (stub only, bumps version) |
 | `remove` | Deprecate and unregister from MCP |
 
+- **Schema enforcement** — `lighthouse.enforce_schema: true` blocks promote on schema mismatch (configurable)
+
 ### Code Intelligence
 - **Native LSP** — Go (go/ast), Dart (regex), Python/JS/TS (Jedi + multilspy via sidecar)
 - **Symbol operations** — Find, rename, replace body, insert before/after across the project
@@ -162,9 +162,11 @@ c4_lighthouse(action="promote", name="export_api")
   - **Persistence**: 추출된 패턴을 `.c4/souls/{user}/raw_patterns.json`에 누적
   - **Evolution**: Gemini 3.0 기반 `soul-evolve.sh`를 통해 기존 소울과 합성하여 진화된 `soul-developer.md` 생성
 - **Digital Twin** — `c4_reflect` for pattern analysis, growth tracking, challenge identification
+- **Learn Loop** — submit→persona pattern, reject→scope-warning, task→auto-inject past warnings
+- **Paper Lessons** — `c4_knowledge_ingest_paper` extracts lessons from papers/articles via LLM
 
 ### Infrastructure
-- **LLM Gateway** — Route to Claude, GPT, Gemini, or Ollama with cost tracking + embeddings
+- **LLM Gateway** — Route to Claude, GPT, Gemini, or Ollama with cost tracking + embeddings + CQ Proxy (API-key-free for connected tier)
 - **C5 Hub Server** — Distributed job queue with multi-tenant isolation, lease-based scheduling
 - **Daemon Scheduler** — Local job queue with GPU allocation, duration estimation, and retry
 - **DAG Orchestration** — Multi-step pipelines with dependency resolution
@@ -235,7 +237,7 @@ AI가 도구를 호출하면 채팅 안에 시각적 카드가 자동으로 렌�
 
 All widgets: `format=widget` returns `_meta.ui.resourceUri`, `format=text` returns plain JSON. Zero external dependencies, dark/light theme, XSS-safe.
 
-## MCP Tools (133)
+## MCP Tools (144)
 
 | Category | Count | Examples |
 |----------|-------|---------|
