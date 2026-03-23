@@ -172,7 +172,39 @@ c4_lighthouse(action="promote", name="export_api")
 - **C3 EventBus** — gRPC event daemon with WebSocket bridge, DLQ, correlation tracking
 - **C0 Drive** — Supabase Storage integration (upload, download, mkdir, list)
 - **CDP Runner** — Browser automation via Chrome DevTools Protocol
-- **cq serve** — Long-running service manager (StaleChecker, EventBus, C5 Hub subprocess); install as OS service via `cq serve install`
+- **cq serve** — Long-running service manager (StaleChecker, EventBus, C5 Hub subprocess, relay, cron, pg_notify); install as OS service via `cq serve install`
+
+### Relay MCP Server (NAT Traversal)
+- **Zero-config remote access** — Workers connect outbound via WSS to `cq-relay.fly.dev`; external clients reach them over HTTP-MCP — no port forwarding needed
+- **Auto-connect on serve** — `cq serve` establishes relay connection automatically when `relay.enabled: true`
+- **Auto-configure on login** — `cq auth login` sets relay URL and JWT automatically
+- **Status check** — `cq relay status` shows connection state, latency, and active tunnels
+- **JWT auth** — Supabase Auth API issues tokens; relay validates on every connection
+- **Universal client support** — Cursor, Codex, Gemini CLI, or any MCP client can connect by URL
+
+```bash
+cq auth login          # relay auto-configured
+cq serve               # relay connects in background
+cq relay status        # check connection
+# then in any MCP client: connect to https://cq-relay.fly.dev/<your-id>
+```
+
+### Hub Execution Engine
+- **DAG pipelines** — Topological sort → root nodes auto-submitted → `advance_dag` RPC progresses on each job completion
+- **Cron scheduling** — `hub_cron_schedules` table + `c4_cron_create` / `c4_cron_list` / `c4_cron_delete` MCP tools
+- **pg_notify push** — `LISTEN 'new_job'` for instant ClaimJob on insert; polling fallback when LISTEN is unavailable
+
+### Job Routing
+- **Target worker** — `target_worker` field routes a job to a specific named worker
+- **Capability matching** — `capability` field selects workers that advertise matching capabilities
+- **Tag filtering** — `required_tags` filters the worker pool before assignment
+- **CLI** — `cq hub submit --target <worker> --capability <cap> --tags <t1,t2>`
+- **MCP** — `c4_job_submit` accepts `routing` parameter with all three selectors
+
+### cq transfer (P2P File Transfer)
+- **Relay-backed binary pipe** — Large files stream over WSS relay tunnel; no extra dependencies
+- **NAT traversal** — Works across firewalls and NAT without port forwarding
+- **Simple CLI** — `cq transfer data/ --to gpu-server --dest /data/`
 
 ### Developer Experience
 - **24 slash commands** — `/c4-plan`, `/c4-run`, `/c4-status`, `/c4-checkpoint`, `/c4-swarm`, `/c4-polish`, `/c4-finish`, `/c4-quick`, `/c4-submit`, `/c4-release`, `/c4-attach`, `/c4-reboot`, ...
@@ -219,7 +251,7 @@ All widgets: `format=widget` returns `_meta.ui.resourceUri`, `format=text` retur
 | Drive | 6 | `c4_drive_upload`, `c4_drive_download`, `c4_drive_list` |
 | EventBus | 6 | `c4_event_publish`, `c4_rule_add`, `c4_rule_list`, `c4_rule_toggle` |
 | Lighthouse | 6 | `c4_lighthouse` (register/list/get/promote/update/remove) |
-| Hub | 26 | `c4_hub_submit`, `c4_hub_dag_create`, `c4_hub_edge_register`, `c4_hub_deploy` |
+| Hub | 29 | `c4_hub_submit`, `c4_hub_dag_create`, `c4_hub_edge_register`, `c4_hub_deploy`, `c4_cron_create`, `c4_cron_list`, `c4_cron_delete` |
 
 ## Codebase
 

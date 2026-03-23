@@ -19,6 +19,23 @@ Workers are **stateless** — no project config needed on the server. The job pa
 
 ## Quick Start
 
+### Cloud-connected worker (recommended)
+
+```sh
+# 1. Install cq
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | bash
+
+# 2. Authenticate (Supabase-backed cloud account)
+cq auth login
+
+# 3. Start all-in-one serve (Hub worker + MCP + relay + cron + pg_notify)
+cq serve
+```
+
+`cq serve` is the recommended entry point. It starts everything in one process. See [cq serve: All-in-One Mode](#cq-serve-all-in-one-mode) for details.
+
+### Self-hosted Hub worker
+
 ```sh
 # 1. Install cq
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | bash
@@ -31,6 +48,88 @@ systemctl status cq-worker
 ```
 
 That's it. The worker is now polling the Hub for jobs.
+
+## cq serve: All-in-One Mode
+
+`cq serve` is the unified entry point that replaces running individual components separately.
+
+| Component | `cq serve` | `cq hub worker start` (legacy) |
+|-----------|-----------|-------------------------------|
+| Hub worker (job polling) | Yes | Yes |
+| MCP server | Yes | No |
+| Relay (NAT traversal) | Yes | No |
+| Cron scheduler | Yes | No |
+| pg_notify real-time | Yes | No |
+
+**`cq hub worker start` is legacy** — `cq serve` is a strict superset and should be used instead.
+
+### Customer onboarding flow
+
+```sh
+cq update           # Update to latest binary
+cq auth login       # Authenticate with cloud account
+cq serve            # Start everything
+```
+
+### pg_notify real-time mode
+
+When `cloud.direct_url` is configured, `cq serve` activates PostgreSQL `LISTEN 'new_job'` for instant job delivery instead of polling.
+
+```yaml
+# ~/.c4/config.yaml
+cloud:
+  direct_url: "postgresql://..."  # Direct Supabase connection string
+```
+
+- **With `direct_url`**: LISTEN/NOTIFY — sub-second job delivery.
+- **Without `direct_url`**: 30-second polling fallback (original behavior).
+
+---
+
+## Job Routing
+
+Route jobs to specific workers or machines with capabilities.
+
+### Target a specific worker
+
+```sh
+# CLI
+cq hub submit --target worker-id python train.py
+
+# MCP
+c4_job_submit(command="python train.py", target_worker="worker-abc123")
+```
+
+### Route by capability
+
+```sh
+# CLI — any worker with 'cuda' capability
+cq hub submit --capability cuda python train.py
+
+# MCP
+c4_job_submit(command="python train.py", capability="cuda")
+```
+
+### Route by tags
+
+```sh
+# CLI — worker must have both 'gpu' and 'a100' tags
+cq hub submit --tags gpu,a100 python train.py
+
+# MCP
+c4_job_submit(command="python train.py", required_tags=["gpu", "a100"])
+```
+
+Tags are declared in the worker's `caps.yaml`:
+
+```yaml
+tags:
+  - gpu
+  - a100
+  - datacenter-us
+```
+
+---
 
 ## Prerequisites
 

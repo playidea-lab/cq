@@ -254,6 +254,9 @@ cq serve --port 4141   # 포트 지정
 | `ssesubscriber` | `serve.ssesubscriber.enabled: true` + `hub && c3_eventbus` 빌드 태그 | Hub SSE 스트림 구독 → EventBus 전달 |
 | `stale_checker` | `serve.stale_checker.enabled: true` | 주기적 stale 태스크(in_progress stuck) 감지 → pending 리셋 + `task.stale` 이벤트 발행 |
 | `hub` | `serve.hub.enabled: true` | Supabase 기반 Hub 작업 큐 연동 (cloud.url + cloud.anon_key 필요) |
+| `relay` | `relay.enabled: true` + `cloud.url` 설정 | relay.fly.dev에 WSS 상시 연결 → 외부 MCP 클라이언트 NAT 관통 접근 허용 |
+| `cron` | `serve.hub.enabled: true` | hub_cron_schedules 테이블 폴링 → 만료된 크론 잡 자동 submit |
+| `pg_notify` | `serve.hub.enabled: true` + Postgres LISTEN 지원 | LISTEN 'new_job' → 즉시 ClaimJob; polling fallback 내장 |
 
 **컴포넌트 활성화** (`.c4/config.yaml`):
 ```yaml
@@ -451,3 +454,158 @@ guard.denied      ← C6 Guard가 발행 (ActionDeny 시)
 
 > Hub 기능은 Supabase + c4-core로 이전 완료. Worker Pull + Lease 모델.
 > 설정: `cloud.url` + `cloud.anon_key` 필요. `serve.hub.enabled: true` 활성화.
+
+---
+
+## Relay MCP Server (NAT 관통)
+
+> Fly.io에 배포된 Go relay 서버(`cq-relay.fly.dev`). 워커가 WSS로 상시 연결을 유지하고, 외부 MCP 클라이언트가 HTTP-MCP로 접근할 수 있게 해주는 NAT 관통 레이어.
+
+### 아키텍처
+
+```
+외부 MCP 클라이언트 (Cursor / Codex / Gemini CLI / ...)
+    ↓ HTTPS  (MCP over HTTP)
+cq-relay.fly.dev  [Go relay server]
+    ↑ WSS    (outbound, 워커가 먼저 연결)
+cq serve  [로컬 / 클라우드 워커]
+    ↓
+Go MCP Server (stdio) + Python Sidecar
+```
+
+### 인증 흐름
+1. `cq auth login` → Supabase Auth API → JWT 발급 + relay URL 자동 설정
+2. `cq serve` 시작 → relay WSS 연결 (Authorization: Bearer JWT)
+3. relay → 토큰 검증 → 워커 터널 등록
+4. 외부 클라이언트 → `https://cq-relay.fly.dev/<worker-id>` → relay → WSS → 워커
+
+### 설정 (`.c4/config.yaml`)
+
+```yaml
+relay:
+  enabled: true
+  url: wss://cq-relay.fly.dev   # cq auth login 시 자동 설정
+  # jwt는 cloud.token_provider에서 자동 주입
+```
+
+### CLI
+
+| 명령 | 설명 |
+|------|------|
+| `cq relay status` | 연결 상태, 레이턴시, 활성 터널 수 확인 |
+| `cq auth login` | relay URL + JWT 자동 설정 포함 |
+| `cq serve` | relay 연결 자동 시작 (`relay.enabled: true` 시) |
+
+---
+
+## Hub Execution Engine
+
+> DAG 파이프라인, Cron 스케줄링, pg_notify 실시간 트리거를 결합한 Hub 실행 엔진.
+
+### DAG 파이프라인
+
+```
+c4_hub_dag_create (노드 + 엣지 정의)
+    ↓
+Hub: topological sort → root 노드 자동 submit
+    ↓
+워커가 잡 완료 시 → advance_dag RPC → 다음 레이어 자동 submit
+    ↓
+모든 노드 완료 → DAG 완료 이벤트 발행
+```
+
+- **위상 정렬**: 의존성 그래프를 레이어로 나눠 병렬 실행 극대화
+- **advance_dag**: 잡 완료 시 RPC 호출 → Hub가 의존성 충족 여부 확인 후 다음 노드 release
+- **상태**: `pending → queued → running → completed/failed` (노드별)
+
+### Cron 스케줄링
+
+```yaml
+# hub_cron_schedules 테이블
+schedule:
+  cron: "0 */6 * * *"      # 6시간마다
+  job_spec:
+    type: "build"
+    payload: { target: "nightly" }
+  enabled: true
+```
+
+| MCP 도구 | 설명 |
+|---------|------|
+| `c4_cron_create` | 크론 표현식 + job_spec으로 스케줄 등록 |
+| `c4_cron_list` | 등록된 스케줄 목록 + 마지막 실행 시각 |
+| `c4_cron_delete` | 스케줄 삭제 |
+
+### pg_notify 실시간 트리거
+
+```
+INSERT INTO hub_jobs → Postgres trigger → pg_notify('new_job', job_id)
+    ↓
+cq serve: LISTEN 'new_job' → 즉시 ClaimJob
+    ↓ (LISTEN 불가 시)
+polling fallback: 30초 간격 ClaimJob 폴링
+```
+
+- **대기 레이턴시**: LISTEN 경로 ~5ms (vs 폴링 최대 30초)
+- **폴백 보장**: pg_notify 지원 안 되는 환경에서도 폴링으로 동작
+- `cq serve` 컴포넌트로 통합 — 별도 설정 불필요
+
+---
+
+## Job Routing
+
+> Hub 잡을 특정 워커 또는 워커 그룹에 라우팅하는 3가지 메커니즘.
+
+### 라우팅 필드
+
+| 필드 | 타입 | 설명 | 예시 |
+|------|------|------|------|
+| `target_worker` | string | 워커 이름으로 직접 지정 | `"gpu-server-1"` |
+| `capability` | string | 워커 capability 매칭 (정확 일치) | `"gpu"`, `"llm-inference"` |
+| `required_tags` | []string | 워커가 모든 태그를 보유해야 함 | `["prod", "eu-west"]` |
+
+**우선순위**: `target_worker` > `capability` + `required_tags` (AND 조건)
+
+### 워커 등록
+
+```bash
+cq serve --name gpu-server-1 --capability gpu --tags prod,eu-west
+```
+
+### CLI / MCP
+
+```bash
+# CLI
+cq hub submit --target gpu-server-1 --capability gpu --tags prod,eu-west job.json
+
+# MCP
+c4_job_submit(spec={...}, routing={target_worker: "gpu-server-1", required_tags: ["prod"]})
+```
+
+---
+
+## cq transfer (P2P 파일 전송)
+
+> relay WSS 터널을 경유한 바이너리 파이프 기반 P2P 파일 전송. 추가 의존성 없음.
+
+### 전송 흐름
+
+```
+송신측: cq transfer data/ --to gpu-server --dest /data/
+    ↓  relay WSS 터널 (이미 연결된 상시 채널 재사용)
+수신측: cq serve (gpu-server) → 스트림 수신 → /data/ 저장
+```
+
+- **NAT 관통**: 양쪽 모두 outbound WSS만 사용 — 방화벽 포트 개방 불필요
+- **대용량 지원**: 청크 스트리밍, 재개 가능 (향후)
+- **제로 의존성**: relay 연결 재사용, 별도 rsync/scp 불필요
+
+### CLI
+
+```bash
+cq transfer <src-path> --to <worker-name> --dest <dest-path>
+
+# 예시
+cq transfer data/ --to gpu-server --dest /data/
+cq transfer model.bin --to edge-device-1 --dest /models/
+```
