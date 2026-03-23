@@ -15,28 +15,30 @@ import (
 // The project hooks (c4-gate.sh, c4-permission-reviewer.sh) read this file via jq
 // to determine whether permission review is enabled and how to call the LLM.
 type hookConfigJSON struct {
-	Enabled        bool     `json:"enabled"`
-	Mode           string   `json:"mode"`          // "hook" | "model"
-	AutoApprove    bool     `json:"auto_approve"`
-	Model          string   `json:"model"`
-	APIKeyEnv      string   `json:"api_key_env"`
-	Timeout        int      `json:"timeout"`
-	AllowPatterns  []string `json:"allow_patterns"`
-	BlockPatterns  []string `json:"block_patterns"`
+	Enabled              bool     `json:"enabled"`
+	BashSecurityEnabled  bool     `json:"bash_security_enabled"`
+	Mode                 string   `json:"mode"`          // "hook" | "model"
+	AutoApprove          bool     `json:"auto_approve"`
+	Model                string   `json:"model"`
+	APIKeyEnv            string   `json:"api_key_env"`
+	Timeout              int      `json:"timeout"`
+	AllowPatterns        []string `json:"allow_patterns"`
+	BlockPatterns        []string `json:"block_patterns"`
 }
 
 // defaultHookConfig returns the hardcoded defaults used when cfgMgr is nil
 // or PermissionReviewer is not configured.
 func defaultHookConfig() hookConfigJSON {
 	return hookConfigJSON{
-		Enabled:       false,
-		Mode:          "hook",
-		AutoApprove:   true,
-		Model:         "claude-haiku-4-5-20251001",
-		APIKeyEnv:     "ANTHROPIC_API_KEY",
-		Timeout:       10,
-		AllowPatterns: []string{},
-		BlockPatterns: []string{},
+		Enabled:             false,
+		BashSecurityEnabled: true,
+		Mode:                "hook",
+		AutoApprove:         true,
+		Model:               "claude-haiku-4-5-20251001",
+		APIKeyEnv:           "ANTHROPIC_API_KEY",
+		Timeout:             10,
+		AllowPatterns:       []string{},
+		BlockPatterns:       []string{},
 	}
 }
 
@@ -67,15 +69,22 @@ func hookConfigFromC4Config(cfg *config.C4Config) hookConfigJSON {
 		timeout = 10
 	}
 
+	// BashSecurity: separate from PermissionReviewer. Default true.
+	bashSecEnabled := true
+	if cfg.BashSecurity != nil {
+		bashSecEnabled = *cfg.BashSecurity
+	}
+
 	return hookConfigJSON{
-		Enabled:       pr.Enabled,
-		Mode:          mode,
-		AutoApprove:   autoApprove,
-		Model:         model,
-		APIKeyEnv:     apiKeyEnv,
-		Timeout:       timeout,
-		AllowPatterns: pr.AllowPatterns,
-		BlockPatterns: pr.BlockPatterns,
+		Enabled:             pr.Enabled,
+		BashSecurityEnabled: bashSecEnabled,
+		Mode:                mode,
+		AutoApprove:         autoApprove,
+		Model:               model,
+		APIKeyEnv:           apiKeyEnv,
+		Timeout:             timeout,
+		AllowPatterns:       pr.AllowPatterns,
+		BlockPatterns:       pr.BlockPatterns,
 	}
 }
 

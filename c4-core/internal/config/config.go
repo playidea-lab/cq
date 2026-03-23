@@ -424,6 +424,7 @@ type C4Config struct {
 	RiskRouting      RiskRoutingConfig          `mapstructure:"risk_routing"         yaml:"risk_routing"`
 	Notifications    NotificationsConfig        `mapstructure:"notifications"        yaml:"notifications"`
 	Lighthouse       LighthouseConfig           `mapstructure:"lighthouse"           yaml:"lighthouse"`
+	BashSecurity     *bool                      `mapstructure:"bash_security"        yaml:"bash_security"`
 }
 
 // presetConfigs defines the economic mode presets.
