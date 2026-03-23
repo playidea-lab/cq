@@ -1,6 +1,7 @@
 package knowledgehandler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -30,32 +31,64 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 
 		var results []knowledge.SearchResult
 		var err error
-		if opts.Searcher != nil {
-			results, err = opts.Searcher.Search(query, limit, filters)
-		} else {
-			// FTS-only fallback
-			ftsResults, ftsErr := opts.Store.SearchFTS(query, limit)
-			if ftsErr != nil {
-				return map[string]any{"error": fmt.Sprintf("search failed: %v", ftsErr)}, nil
-			}
-			for _, r := range ftsResults {
-				if docType != "" {
-					if t, _ := r["type"].(string); t != docType {
-						continue
+		cloudUsed := false
+
+		// cloud-primary: try cloud semantic search first, fall back to local on failure
+		if opts.CloudMode == "cloud-primary" && opts.CloudSearch != nil && opts.Searcher != nil && opts.Searcher.VectorStore() != nil {
+			queryEmb, _, embedErr := opts.Searcher.VectorStore().EmbedText(context.Background(), query)
+			if embedErr == nil && len(queryEmb) > 0 {
+				cloudDocs, cloudErr := opts.CloudSearch.SemanticSearch(queryEmb, limit, 0.5)
+				if cloudErr == nil {
+					for _, cd := range cloudDocs {
+						cdType, _ := cd["type"].(string)
+						if docType != "" && cdType != docType {
+							continue
+						}
+						results = append(results, knowledge.SearchResult{
+							ID:     stringFromAny(cd["id"]),
+							Title:  stringFromAny(cd["title"]),
+							Type:   cdType,
+							Domain: stringFromAny(cd["domain"]),
+						})
 					}
+					cloudUsed = true
 				}
-				results = append(results, knowledge.SearchResult{
-					ID:     stringFromAny(r["id"]),
-					Title:  stringFromAny(r["title"]),
-					Type:   stringFromAny(r["type"]),
-					Domain: stringFromAny(r["domain"]),
-				})
+				// on cloud error: fall through to local search below
+			}
+		}
+
+		if !cloudUsed {
+			if opts.Searcher != nil {
+				results, err = opts.Searcher.Search(query, limit, filters)
+			} else {
+				// FTS-only fallback
+				ftsResults, ftsErr := opts.Store.SearchFTS(query, limit)
+				if ftsErr != nil {
+					return map[string]any{"error": fmt.Sprintf("search failed: %v", ftsErr)}, nil
+				}
+				for _, r := range ftsResults {
+					if docType != "" {
+						if t, _ := r["type"].(string); t != docType {
+							continue
+						}
+					}
+					results = append(results, knowledge.SearchResult{
+						ID:     stringFromAny(r["id"]),
+						Title:  stringFromAny(r["title"]),
+						Type:   stringFromAny(r["type"]),
+						Domain: stringFromAny(r["domain"]),
+					})
+				}
 			}
 		}
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("search failed: %v", err)}, nil
 		}
 
+		resultSource := "local"
+		if cloudUsed {
+			resultSource = "cloud"
+		}
 		resultList := make([]map[string]any, len(results))
 		for i, r := range results {
 			resultList[i] = map[string]any{
@@ -65,7 +98,7 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 				"domain":           r.Domain,
 				"rrf_score":        r.RRFScore,
 				"embedding_source": r.EmbeddingSource,
-				"source":           "local",
+				"source":           resultSource,
 			}
 		}
 

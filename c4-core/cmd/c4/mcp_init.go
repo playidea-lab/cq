@@ -245,7 +245,11 @@ func newMCPServer() (*mcpServer, error) {
 	var kcForProxy handlers.KnowledgeSyncer
 	if knowledgeCloud != nil {
 		nativeOpts.KnowledgeCloud = knowledgeCloud
+		nativeOpts.KnowledgeCloudSearch = knowledgeCloud
 		kcForProxy = knowledgeCloud
+	}
+	if cfgMgr != nil {
+		nativeOpts.KnowledgeCloudMode = cfgMgr.GetConfig().Cloud.Mode
 	}
 	proxy := handlers.RegisterAllHandlersLazyWithOpts(reg, nil, projectDir, lazySidecar, kcForProxy, nativeOpts)
 	ctx.proxy = proxy
