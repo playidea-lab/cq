@@ -625,12 +625,13 @@ func writeCloudSectionToYAML(existing string, desired map[string]string) string 
 // ensureLLMGatewayBaseURL ensures llm_gateway.providers.anthropic.base_url
 // is set in the config YAML. Preserves existing value if already present.
 func ensureLLMGatewayBaseURL(content, proxyURL string) string {
-	// Scan once: check for llm_gateway section and base_url within it.
 	hasGateway := false
-	hasBaseURL := false
+	hasAnthropicBaseURL := false
 	inGateway := false
+	inAnthropic := false
 	for _, line := range strings.Split(content, "\n") {
 		trimmed := strings.TrimSpace(line)
+		// Track llm_gateway section
 		if trimmed == "llm_gateway:" {
 			hasGateway = true
 			inGateway = true
@@ -639,14 +640,25 @@ func ensureLLMGatewayBaseURL(content, proxyURL string) string {
 		if inGateway && trimmed != "" && !strings.HasPrefix(trimmed, "#") &&
 			!strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
 			inGateway = false
+			inAnthropic = false
 		}
-		if inGateway && strings.HasPrefix(trimmed, "base_url:") {
-			hasBaseURL = true
+		// Track anthropic provider within llm_gateway
+		if inGateway && trimmed == "anthropic:" {
+			inAnthropic = true
+			continue
+		}
+		// Another provider resets inAnthropic
+		if inGateway && inAnthropic && !strings.HasPrefix(line, "      ") &&
+			trimmed != "" && !strings.HasPrefix(trimmed, "#") && strings.HasSuffix(trimmed, ":") {
+			inAnthropic = false
+		}
+		if inAnthropic && strings.HasPrefix(trimmed, "base_url:") {
+			hasAnthropicBaseURL = true
 			break
 		}
 	}
 
-	if hasBaseURL {
+	if hasAnthropicBaseURL {
 		return content
 	}
 	if !hasGateway {
@@ -656,23 +668,17 @@ func ensureLLMGatewayBaseURL(content, proxyURL string) string {
 		return content + "\nllm_gateway:\n  providers:\n    anthropic:\n      base_url: " + proxyURL + "\n"
 	}
 
-	// llm_gateway exists but no base_url — append under anthropic provider
+	// llm_gateway exists but anthropic has no base_url — insert after anthropic:
 	lines := strings.Split(content, "\n")
 	var result []string
 	inserted := false
-	for i, line := range lines {
+	for _, line := range lines {
 		result = append(result, line)
 		if !inserted && strings.TrimSpace(line) == "anthropic:" {
-			for j := i - 1; j >= 0; j-- {
-				if strings.HasPrefix(strings.TrimSpace(lines[j]), "providers:") ||
-					strings.HasPrefix(strings.TrimSpace(lines[j]), "llm_gateway:") {
-					result = append(result, "      base_url: "+proxyURL)
-					inserted = true
-					break
-				}
-				if lines[j] != "" && !strings.HasPrefix(lines[j], " ") && !strings.HasPrefix(lines[j], "\t") {
-					break
-				}
+			// Only insert if we're in the llm_gateway section (anthropic: is indented)
+			if strings.HasPrefix(line, "    ") {
+				result = append(result, "      base_url: "+proxyURL)
+				inserted = true
 			}
 		}
 	}
