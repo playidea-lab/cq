@@ -1,32 +1,19 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
-
 	"github.com/spf13/cobra"
 )
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
-	Short: "Update cq to the latest release",
-	Long:  `Downloads and installs the latest cq binary from GitHub Releases.`,
+	Short: "Update cq to the latest release (alias for 'cq upgrade')",
+	Long:  `Downloads and installs the latest cq binary from GitHub Releases. This is an alias for 'cq upgrade'.`,
 	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("Updating cq...")
-		sh := exec.Command("sh", "-c",
-			`curl -fsSL https://raw.githubusercontent.com/playidea-lab/cq/main/install.sh | sh`)
-		sh.Stdout = os.Stdout
-		sh.Stderr = os.Stderr
-		sh.Stdin = os.Stdin
-		if err := sh.Run(); err != nil {
-			return fmt.Errorf("update failed: %w", err)
-		}
-		return nil
-	},
+	RunE:  runUpgrade,
 }
 
 func init() {
+	updateCmd.Flags().StringVar(&upgradeTier, "tier", "", "override tier (solo|connected|full)")
+	updateCmd.Flags().BoolVar(&upgradeCheck, "check", false, "check for updates without installing")
 	rootCmd.AddCommand(updateCmd)
 }
