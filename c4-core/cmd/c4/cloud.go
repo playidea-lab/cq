@@ -13,7 +13,7 @@ import (
 )
 
 // validCloudModes lists accepted values for cloud.mode.
-var validCloudModes = []string{"local-first", "cloud-primary"}
+var validCloudModes = []string{config.CloudModeLocalFirst, config.CloudModePrimary}
 
 var cloudCmd = &cobra.Command{
 	Use:   "cloud",
@@ -62,7 +62,7 @@ func runCloudModeGet(cmd *cobra.Command, args []string) error {
 	}
 	mode := cfgMgr.GetConfig().Cloud.Mode
 	if mode == "" {
-		mode = "local-first"
+		mode = config.CloudModeLocalFirst
 	}
 	fmt.Println(mode)
 	return nil
@@ -167,7 +167,7 @@ func writeCloudModeToYAML(configPath, value string) error {
 // "cloud-primary" → CloudPrimaryStore, anything else → HybridStore (default).
 // This is extracted to allow unit testing of the factory logic.
 func selectCloudStore(mode string, local, remote store.Store) store.Store {
-	if mode == "cloud-primary" {
+	if mode == config.CloudModePrimary {
 		return cloud.NewCloudPrimaryStore(local, remote)
 	}
 	return cloud.NewHybridStore(local, remote)
