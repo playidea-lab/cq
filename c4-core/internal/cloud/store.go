@@ -712,7 +712,7 @@ func (c *CloudStore) readCurrentState() (string, error) {
 	return "INIT", nil
 }
 
-// writeState updates the c4_state row for this project.
+// writeState upserts the c4_state row for this project.
 func (c *CloudStore) writeState(newState string) error {
 	stateMap := map[string]any{
 		"status":     newState,
@@ -724,12 +724,14 @@ func (c *CloudStore) writeState(newState string) error {
 		return fmt.Errorf("marshal state: %w", err)
 	}
 
-	patchFilter := "project_id=eq." + url.QueryEscape(c.projectID)
-	update := map[string]any{
+	row := map[string]any{
+		"project_id": c.projectID,
 		"state_json": string(stateJSON),
 		"updated_at": time.Now().UTC().Format(time.RFC3339),
 	}
-	return c.patch("c4_state", patchFilter, update)
+	// Use POST with Prefer: resolution=merge-duplicates for UPSERT
+	// (c4_state.project_id is PRIMARY KEY)
+	return c.upsert("c4_state", row)
 }
 
 // cloudDependenciesMet checks if all of a task's dependencies are done.
@@ -885,6 +887,45 @@ func (c *CloudStore) post(table string, body any) error {
 		if resp.StatusCode >= 400 {
 			respBody, _ := io.ReadAll(resp.Body)
 			return fmt.Errorf("POST %s: %d %s", table, resp.StatusCode, string(respBody))
+		}
+		return nil
+	}
+	return nil
+}
+
+// upsert performs a POST with resolution=merge-duplicates for UPSERT semantics.
+// The table must have a PRIMARY KEY or UNIQUE constraint for conflict resolution.
+func (c *CloudStore) upsert(table string, body any) error {
+	data, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest("POST", c.baseURL+"/"+table, strings.NewReader(string(data)))
+		if err != nil {
+			return err
+		}
+		c.setHeaders(req)
+		req.Header.Set("Prefer", "resolution=merge-duplicates,return=minimal")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("UPSERT %s: %w", table, err)
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			if _, err := c.tokenProvider.Refresh(); err == nil {
+				continue
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			respBody, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("UPSERT %s: %d %s", table, resp.StatusCode, string(respBody))
 		}
 		return nil
 	}
