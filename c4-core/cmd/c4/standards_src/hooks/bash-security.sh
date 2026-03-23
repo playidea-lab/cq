@@ -32,7 +32,7 @@ PERMISSION_MODE="hook"
 AUTO_APPROVE="true"
 
 if [[ -f "$HOOK_CONFIG" ]] && command -v jq &>/dev/null; then
-    [[ "$(jq -r '.bash_security_enabled // true' "$HOOK_CONFIG")" == "false" ]] && exit 0
+    [[ "$(jq -r '.enabled // true' "$HOOK_CONFIG")" == "false" ]] && exit 0
     PERMISSION_MODE=$(jq -r '.mode // "hook"' "$HOOK_CONFIG")
     AUTO_APPROVE=$(jq -r '.auto_approve // true' "$HOOK_CONFIG")
     while IFS= read -r p; do [[ -n "$p" ]] && ALLOW_PATTERNS+=("$p"); done < <(jq -r '.allow_patterns[]? // empty' "$HOOK_CONFIG")

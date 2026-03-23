@@ -126,6 +126,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&projectDir, "dir", "", "project root directory (default: current directory)")
 	rootCmd.PersistentFlags().BoolVarP(&yesAll, "yes", "y", false, "skip interactive confirmations (non-interactive/CI mode)")
 	rootCmd.PersistentFlags().BoolVar(&noServe, "no-serve", false, "skip auto-starting cq serve in background")
+	rootCmd.PersistentFlags().MarkHidden("no-serve")
 
 	// Command groups for --help display
 	rootCmd.AddGroup(&cobra.Group{ID: "ai", Title: "AI Tools:"})
