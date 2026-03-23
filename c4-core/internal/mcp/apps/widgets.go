@@ -43,3 +43,9 @@ var NodesMapHTML string
 //
 //go:embed widgets/knowledge_feed.html
 var KnowledgeFeedHTML string
+
+// CostTrackerHTML is the embedded cost tracker widget HTML content.
+// Served as the ui://cq/cost-tracker resource via MCP resources/read.
+//
+//go:embed widgets/cost_tracker.html
+var CostTrackerHTML string
