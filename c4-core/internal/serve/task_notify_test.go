@@ -2,6 +2,9 @@ package serve
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -142,7 +145,7 @@ func TestTaskNotify_BlockedNoReason(t *testing.T) {
 }
 
 // TestTaskNotify_SkipsInProgress verifies that an UPDATE with status=in_progress
-// does not produce a notification message (falls through to default case).
+// does not produce a telegram notification message but does write an event file.
 func TestTaskNotify_SkipsInProgress(t *testing.T) {
 	event := makeTaskEvent("UPDATE", "T-004-0", "Work in progress", "in_progress", "")
 
@@ -156,16 +159,95 @@ func TestTaskNotify_SkipsInProgress(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	notified := false
+	// in_progress should not produce a telegram message
+	telegramNotified := false
 	switch record.Status {
 	case "done", "blocked":
-		notified = true
+		telegramNotified = true
 	}
 
-	if notified {
-		t.Error("expected no notification for in_progress status")
+	if telegramNotified {
+		t.Error("expected no telegram notification for in_progress status")
 	}
 	_ = event // satisfy linter
+}
+
+// TestTaskNotify_WriteEventFile verifies that writeTaskEvent creates a JSON file
+// in .c4/events/ with the correct content.
+func TestTaskNotify_WriteEventFile(t *testing.T) {
+	dir := t.TempDir()
+	a := NewAgent(AgentConfig{
+		SupabaseURL: "https://example.supabase.co",
+		APIKey:      "test-key",
+		ProjectDir:  dir,
+	})
+
+	a.writeTaskEvent("T-010-0", "done", "Deploy feature")
+
+	eventsDir := filepath.Join(dir, ".c4", "events")
+	filename := filepath.Join(eventsDir, "task-T-010-0-done.json")
+
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatalf("event file not created: %v", err)
+	}
+
+	var event map[string]string
+	if err := json.Unmarshal(data, &event); err != nil {
+		t.Fatalf("unmarshal event file: %v", err)
+	}
+
+	if event["task_id"] != "T-010-0" {
+		t.Errorf("task_id: got %q, want %q", event["task_id"], "T-010-0")
+	}
+	if event["status"] != "done" {
+		t.Errorf("status: got %q, want %q", event["status"], "done")
+	}
+	if event["title"] != "Deploy feature" {
+		t.Errorf("title: got %q, want %q", event["title"], "Deploy feature")
+	}
+	if event["timestamp"] == "" {
+		t.Error("expected non-empty timestamp")
+	}
+}
+
+// TestTaskNotify_WriteEventFile_InProgress verifies that in_progress status also
+// writes an event file (for /c4-run worker assignment detection).
+func TestTaskNotify_WriteEventFile_InProgress(t *testing.T) {
+	dir := t.TempDir()
+	a := NewAgent(AgentConfig{
+		SupabaseURL: "https://example.supabase.co",
+		APIKey:      "test-key",
+		ProjectDir:  dir,
+	})
+
+	// Dispatch an in_progress event — should write file but not send telegram
+	event := makeTaskEvent("UPDATE", "T-011-0", "Running task", "in_progress", "")
+	a.handleTaskEvent(event)
+
+	eventsDir := filepath.Join(dir, ".c4", "events")
+	filename := filepath.Join(eventsDir, "task-T-011-0-in_progress.json")
+
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatalf("event file not created for in_progress: %v", err)
+	}
+
+	if !strings.Contains(string(data), "in_progress") {
+		t.Errorf("event file missing in_progress status: %s", data)
+	}
+}
+
+// TestTaskNotify_WriteEventFile_NoProjectDir verifies that writeTaskEvent is a
+// no-op when ProjectDir is empty (does not panic).
+func TestTaskNotify_WriteEventFile_NoProjectDir(t *testing.T) {
+	a := NewAgent(AgentConfig{
+		SupabaseURL: "https://example.supabase.co",
+		APIKey:      "test-key",
+		ProjectDir:  "", // no project dir
+	})
+	// Should not panic
+	a.writeTaskEvent("T-012-0", "done", "Test task")
 }
 
 // TestTaskNotify_SkipsInsert verifies that a non-UPDATE event (INSERT) does not

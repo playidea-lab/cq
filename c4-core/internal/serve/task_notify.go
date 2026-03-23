@@ -46,11 +46,46 @@ func (a *Agent) handleTaskEvent(event RealtimeEvent) {
 			reason = "unknown"
 		}
 		message = fmt.Sprintf("🚫 %s blocked: %s", record.TaskID, reason)
+	case "in_progress":
+		// No telegram for in_progress, but still write event file
 	default:
-		return // skip pending, in_progress, etc.
+		return // skip pending, etc.
 	}
 
-	a.sendTaskNotification(message)
+	// Write event file for /c4-run polling
+	a.writeTaskEvent(record.TaskID, record.Status, record.Title)
+
+	if message != "" {
+		a.sendTaskNotification(message)
+	}
+}
+
+// writeTaskEvent writes a JSON event file to .c4/events/ for /c4-run to consume.
+func (a *Agent) writeTaskEvent(taskID, status, title string) {
+	a.mu.Lock()
+	projectDir := a.cfg.ProjectDir
+	a.mu.Unlock()
+	if projectDir == "" {
+		return
+	}
+
+	eventsDir := filepath.Join(projectDir, ".c4", "events")
+	os.MkdirAll(eventsDir, 0755)
+
+	event := map[string]string{
+		"task_id":   taskID,
+		"status":    status,
+		"title":     title,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+	data, _ := json.Marshal(event)
+
+	// Filename includes task_id and status for easy glob matching
+	filename := fmt.Sprintf("task-%s-%s.json", taskID, status)
+	path := filepath.Join(eventsDir, filename)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: [agent] write task event: %v\n", err)
+	}
 }
 
 // sendTaskNotification sends a Telegram message using the notification config from
