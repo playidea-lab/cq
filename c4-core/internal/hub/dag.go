@@ -409,6 +409,21 @@ func (c *Client) CreateDAGFromYAML(yamlContent string) (*DAG, error) {
 	return &DAG{ID: id, Name: name, Status: "pending"}, nil
 }
 
+// AdvanceDAG reports a job's completion to the DAG engine via Supabase RPC.
+// The RPC automatically submits downstream nodes, handles retries, and marks
+// the DAG completed or failed as appropriate.
+func (c *Client) AdvanceDAG(jobID, status string, exitCode int) error {
+	body := map[string]any{
+		"p_job_id":    jobID,
+		"p_status":    status,
+		"p_exit_code": exitCode,
+	}
+	if err := c.supabaseRPC("advance_dag", body, nil); err != nil {
+		return fmt.Errorf("advance dag: %w", err)
+	}
+	return nil
+}
+
 // joinParams joins query parameters with "&".
 func joinParams(params []string) string {
 	result := ""
