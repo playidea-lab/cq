@@ -444,6 +444,7 @@ func TestEdgeStart_AllowExecFlags(t *testing.T) {
 // TestEdgeStart_MinimalConfig verifies that optional flags are omitted
 // when config has only hub_url and api_key.
 func TestEdgeStart_MinimalConfig(t *testing.T) {
+	clearBuiltinURLs(t)
 	tmpDir := t.TempDir()
 	cfgPath := filepath.Join(tmpDir, "edge.yaml")
 

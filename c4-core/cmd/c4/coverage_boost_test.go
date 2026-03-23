@@ -265,8 +265,9 @@ func TestCheckHub_EnabledNoURL(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ".c4", "config.yaml"), []byte("hub:\n  enabled: true\n"), 0644)
 
 	r := checkHub()
-	if r.Status != checkWarn {
-		t.Errorf("expected WARN when hub enabled but no url, got %s: %s", r.Status, r.Message)
+	// Hub now uses Supabase directly — enabled=true is sufficient for OK.
+	if r.Status != checkOK {
+		t.Errorf("expected OK when hub enabled (Supabase mode), got %s: %s", r.Status, r.Message)
 	}
 }
 
@@ -278,8 +279,9 @@ func TestCheckHub_EnabledURLUnreachable(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ".c4", "config.yaml"), []byte(cfg), 0644)
 
 	r := checkHub()
-	if r.Status != checkFail {
-		t.Errorf("expected FAIL when hub unreachable, got %s: %s", r.Status, r.Message)
+	// Hub uses Supabase — URL reachability is checked by checkSupabase, not checkHub.
+	if r.Status != checkOK {
+		t.Errorf("expected OK when hub enabled (Supabase mode), got %s: %s", r.Status, r.Message)
 	}
 }
 
@@ -314,8 +316,9 @@ func TestCheckHub_EnabledURLReturnsNon2xx(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ".c4", "config.yaml"), []byte(cfg), 0644)
 
 	r := checkHub()
-	if r.Status != checkWarn {
-		t.Errorf("expected WARN for non-2xx hub response, got %s: %s", r.Status, r.Message)
+	// Hub uses Supabase — reachability is not checked by checkHub anymore.
+	if r.Status != checkOK {
+		t.Errorf("expected OK when hub enabled (Supabase mode), got %s: %s", r.Status, r.Message)
 	}
 }
 

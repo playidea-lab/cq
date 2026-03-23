@@ -28,7 +28,21 @@ func setupDoctorEnv(t *testing.T) (dir string, cleanup func()) {
 	}
 	orig := projectDir
 	projectDir = tmp
-	return tmp, func() { projectDir = orig }
+
+	// Clear builtin URLs to prevent real Supabase connections in doctor tests.
+	origURL := builtinSupabaseURL
+	origKey := builtinSupabaseKey
+	origHub := builtinHubURL
+	builtinSupabaseURL = ""
+	builtinSupabaseKey = ""
+	builtinHubURL = ""
+
+	return tmp, func() {
+		projectDir = orig
+		builtinSupabaseURL = origURL
+		builtinSupabaseKey = origKey
+		builtinHubURL = origHub
+	}
 }
 
 func TestDoctor_C4DirOK(t *testing.T) {

@@ -14,47 +14,63 @@ import (
 	"github.com/changmin/c4-core/internal/hub"
 )
 
+// clearBuiltinURLs clears ldflags-injected URLs and isolates from global config
+// to prevent real Supabase connections in tests.
+func clearBuiltinURLs(t *testing.T) {
+	t.Helper()
+	origURL := builtinSupabaseURL
+	origKey := builtinSupabaseKey
+	origHub := builtinHubURL
+	builtinSupabaseURL = ""
+	builtinSupabaseKey = ""
+	builtinHubURL = ""
+	// Prevent config.New from reading global ~/.c4/config.yaml
+	t.Setenv("HOME", t.TempDir())
+	t.Cleanup(func() {
+		builtinSupabaseURL = origURL
+		builtinSupabaseKey = origKey
+		builtinHubURL = origHub
+	})
+}
+
 // TestHubSubmit verifies that runHubSubmit POSTs the correct body to the Hub.
 func TestHubSubmit(t *testing.T) {
 	// Capture the request body from /v1/jobs/submit.
 	var captured hub.JobSubmitRequest
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/health", "/v1/health":
+		switch {
+		case r.URL.Path == "/health" || r.URL.Path == "/v1/health":
 			w.WriteHeader(http.StatusOK)
-		case "/jobs/submit", "/v1/jobs/submit":
-			if r.Method != http.MethodPost {
-				t.Errorf("method = %s, want POST", r.Method)
-			}
+		case r.URL.Path == "/rest/v1/hub_jobs" && r.Method == http.MethodPost:
 			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
 				t.Errorf("decode body: %v", err)
 			}
-			json.NewEncoder(w).Encode(hub.JobSubmitResponse{
-				JobID:         "job-test-001",
-				Status:        "QUEUED",
-				QueuePosition: 1,
-			})
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode([]hub.Job{{ID: "job-test-001", Status: "QUEUED"}})
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer srv.Close()
 
-	// Point projectDir at a temp dir with a minimal config.yaml that enables the hub.
+	// Point projectDir at a temp dir with a minimal config.yaml that enables the hub via Supabase.
 	tmpDir := t.TempDir()
 	c4Dir := filepath.Join(tmpDir, ".c4")
 	if err := os.MkdirAll(c4Dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	cfg := "hub:\n  enabled: true\n  url: " + srv.URL + "\n"
+	cfg := "hub:\n  enabled: true\ncloud:\n  enabled: true\n  url: " + srv.URL + "\n  anon_key: test-key\n"
 	if err := os.WriteFile(filepath.Join(c4Dir, "config.yaml"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
+	clearBuiltinURLs(t)
 	origDir := projectDir
 	projectDir = tmpDir
 	defer func() { projectDir = origDir }()
+
+	clearBuiltinURLs(t)
 
 	origRun := hubSubmitRun
 	hubSubmitRun = "python3 train.py"
@@ -157,6 +173,7 @@ experiment:
 		t.Fatal(err)
 	}
 
+	clearBuiltinURLs(t)
 	origDir := projectDir
 	projectDir = tmpDir
 	defer func() { projectDir = origDir }()
@@ -227,6 +244,7 @@ func TestHubSubmitExperiment_NoExperiment(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	clearBuiltinURLs(t)
 	origDir := projectDir
 	projectDir = tmpDir
 	defer func() { projectDir = origDir }()
@@ -362,6 +380,7 @@ func TestHubWorkers(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	clearBuiltinURLs(t)
 	origDir := projectDir
 	projectDir = tmpDir
 	defer func() { projectDir = origDir }()
@@ -424,6 +443,7 @@ func TestHubWorkers_Empty(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	clearBuiltinURLs(t)
 	origDir := projectDir
 	projectDir = tmpDir
 	defer func() { projectDir = origDir }()
@@ -475,6 +495,7 @@ func TestHubWorkers_FallbackHostname(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	clearBuiltinURLs(t)
 	origDir := projectDir
 	projectDir = tmpDir
 	defer func() { projectDir = origDir }()
@@ -536,6 +557,7 @@ func TestHubSubmitExperiment_NoWorkerPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	clearBuiltinURLs(t)
 	origDir := projectDir
 	projectDir = tmpDir
 	defer func() { projectDir = origDir }()
@@ -600,6 +622,7 @@ func TestHubSubmit_CQYamlFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	clearBuiltinURLs(t)
 	origDir := projectDir
 	projectDir = tmpDir
 	defer func() { projectDir = origDir }()
@@ -663,6 +686,7 @@ func TestHubSubmit_ExperimentFlag_CallsCreateRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	clearBuiltinURLs(t)
 	origDir := projectDir
 	projectDir = tmpDir
 	defer func() { projectDir = origDir }()
@@ -721,6 +745,7 @@ func TestHubSubmit_ExperimentFlag_ErrorWrapped(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	clearBuiltinURLs(t)
 	origDir := projectDir
 	projectDir = tmpDir
 	defer func() { projectDir = origDir }()
