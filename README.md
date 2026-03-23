@@ -2,11 +2,11 @@
 
 # CQ
 
-**AI Orchestration Platform**
+**AI writes code. Who checks it?**
 
-Install. Login. Build. No API keys, no config files, no setup.
+CQ fills what's missing — planning, verification, learning, and governance.
 
-*CQ*: The brain runs in the cloud. Your machine is the hands. CLI: `cq`.
+Your AI codes. CQ makes sure it's right. CLI: `cq`.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
@@ -18,7 +18,7 @@ Install. Login. Build. No API keys, no config files, no setup.
 
 ---
 
-CQ is an AI orchestration platform that plans, builds, reviews, and learns — without you managing API keys, databases, or config files. The brain (tasks, knowledge, ontology, LLM) lives in the cloud. Your local machine handles files, git, and builds.
+AI coding tools write code fast. But who plans what to build? Who verifies quality? Who remembers last session's mistakes? CQ handles everything after "write code" — planning, quality gates, knowledge loops, and team governance.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
