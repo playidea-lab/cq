@@ -3,6 +3,7 @@ package knowledge
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 )
 
@@ -144,6 +145,38 @@ func Pull(store *Store, cloud CloudSyncer, docType string, limit int, force bool
 	}
 
 	return result, nil
+}
+
+// SyncIngestChunks pushes chunk embeddings to cloud after document ingestion.
+// Each chunk is synced with its embedding so cloud semantic search can use them.
+// Chunk IDs follow the convention: {parentDocID}-chunk-{index}.
+// Errors are logged but do not abort; partial sync is acceptable.
+func SyncIngestChunks(cloud CloudSyncer, parentDocID string, title string, visibility string, chunks []IngestChunk) {
+	if cloud == nil || len(chunks) == 0 {
+		return
+	}
+	for _, c := range chunks {
+		chunkID := fmt.Sprintf("%s-chunk-%d", parentDocID, c.Index)
+		params := map[string]any{
+			"doc_type":   string(TypeInsight),
+			"title":      fmt.Sprintf("%s (chunk %d)", title, c.Index),
+			"content":    c.Body,
+			"visibility": visibility,
+		}
+		if len(c.Embedding) > 0 {
+			params["_embedding"] = c.Embedding
+		}
+		if err := cloud.SyncDocument(params, chunkID); err != nil {
+			fmt.Fprintf(os.Stderr, "c4: sync chunk %s: %v\n", chunkID, err)
+		}
+	}
+}
+
+// IngestChunk holds a chunk body + its embedding for cloud sync.
+type IngestChunk struct {
+	Index     int
+	Body      string
+	Embedding []float32
 }
 
 // SyncAfterRecord pushes a newly recorded document to cloud (async-safe).

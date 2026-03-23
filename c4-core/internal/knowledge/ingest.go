@@ -10,10 +10,11 @@ import (
 
 // IngestOpts configures document ingestion.
 type IngestOpts struct {
-	Title      string   // optional override; defaults to filename
-	Tags       []string // optional tags
-	Visibility string   // private, team, public (default: team)
-	MaxTokens  int      // chunk size in tokens (default: 512)
+	Title      string      // optional override; defaults to filename
+	Tags       []string    // optional tags
+	Visibility string      // private, team, public (default: team)
+	MaxTokens  int         // chunk size in tokens (default: 512)
+	Cloud      CloudSyncer // optional: sync chunks to cloud after indexing
 }
 
 // IngestResult holds the outcome of a document ingestion.
@@ -96,6 +97,20 @@ func Ingest(store *Store, searcher *Searcher, filePath string, opts IngestOpts) 
 		if err := searcher.BatchIndexDocuments(batchIDs, batchDocs); err != nil {
 			fmt.Fprintf(os.Stderr, "c4: batch index: %v\n", err)
 		}
+
+		// Sync chunk embeddings to cloud for semantic search
+		if opts.Cloud != nil {
+			var ingestChunks []IngestChunk
+			for _, chunk := range chunks {
+				chunkID := fmt.Sprintf("%s-chunk-%d", docID, chunk.Index)
+				ic := IngestChunk{Index: chunk.Index, Body: chunk.Body}
+				if searcher.vectorStore != nil {
+					ic.Embedding = searcher.vectorStore.Get(chunkID)
+				}
+				ingestChunks = append(ingestChunks, ic)
+			}
+			SyncIngestChunks(opts.Cloud, docID, title, visibility, ingestChunks)
+		}
 	} else if searcher != nil {
 		// FTS-only mode: index parent for metadata enrichment
 		doc, _ := store.Get(docID)
@@ -169,6 +184,20 @@ func IngestText(store *Store, searcher *Searcher, content string, opts IngestOpt
 
 		if err := searcher.BatchIndexDocuments(batchIDs, batchDocs); err != nil {
 			fmt.Fprintf(os.Stderr, "c4: batch index: %v\n", err)
+		}
+
+		// Sync chunk embeddings to cloud for semantic search
+		if opts.Cloud != nil {
+			var ingestChunks []IngestChunk
+			for _, chunk := range chunks {
+				chunkID := fmt.Sprintf("%s-chunk-%d", docID, chunk.Index)
+				ic := IngestChunk{Index: chunk.Index, Body: chunk.Body}
+				if searcher.vectorStore != nil {
+					ic.Embedding = searcher.vectorStore.Get(chunkID)
+				}
+				ingestChunks = append(ingestChunks, ic)
+			}
+			SyncIngestChunks(opts.Cloud, docID, title, visibility, ingestChunks)
 		}
 	} else if searcher != nil {
 		doc, _ := store.Get(docID)
