@@ -348,6 +348,13 @@ func newMCPServer() (*mcpServer, error) {
 	})
 	fmt.Fprintln(os.Stderr, "cq: c4_dashboard registered (ui://cq/dashboard)")
 
+	// Register task graph widget for dependency visualization.
+	handlers.RegisterTaskGraphHandler(reg, sqliteStore, &handlers.TaskGraphDeps{
+		ResourceStore: appStore,
+		TaskGraphHTML: apps.TaskGraphHTML,
+	})
+	fmt.Fprintln(os.Stderr, "cq: c4_task_graph registered (ui://cq/task-graph)")
+
 	// Register job widgets for GPU handler (job progress + job result).
 	gpuhandler.RegisterJobProgressWidget(appStore, apps.JobProgressHTML)
 	gpuhandler.RegisterJobResultWidget(appStore, apps.JobResultHTML)
