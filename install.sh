@@ -167,13 +167,10 @@ if [ -x "${INSTALL_DIR}/cq" ]; then
   echo ""
   "${INSTALL_DIR}/cq" doctor --fix || true
 
-  # Auto-install/restart cq serve as OS service (LaunchAgent/systemd).
-  # Only if cloud is configured (relay, journal sync need cq serve).
-  if "${INSTALL_DIR}/cq" serve status 2>/dev/null | grep -q "installed"; then
-    echo ""
-    echo "Restarting cq serve..."
-    "${INSTALL_DIR}/cq" serve install 2>/dev/null || true
-  fi
+  # Auto-start CQ service (login + serve).
+  # If not logged in, prompts for OAuth. If serve not running, installs OS service.
+  echo ""
+  "${INSTALL_DIR}/cq" || true
 fi
 
 echo ""
@@ -181,7 +178,6 @@ echo "Done! cq is ready."
 echo ""
 echo "Next steps:"
 echo "  cq claude     # Start with Claude Code"
-echo "  cq setup      # Pair a Telegram bot (optional)"
-echo "  cq doctor     # Check installation"
+echo "  cq status     # Check service + project status"
 echo ""
 echo "(Open a new terminal if commands are not found yet)"
