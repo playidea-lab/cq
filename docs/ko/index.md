@@ -3,32 +3,32 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "만들고, 검증하며, 당신을 배우는 AI"
-  tagline: 아이디어를 말하면 계획하고, 구현하고, 품질을 보장합니다. 쓸수록 당신의 팀이 됩니다.
+  text: "설치. 로그인. 빌드."
+  tagline: "API 키 없이. 설정 파일 없이. cq auth 하나로 시작. 두뇌는 클라우드에, 당신의 머신은 손과 발."
   actions:
     - theme: brand
-      text: 설치하기
+      text: 시작하기
       link: /ko/guide/install
     - theme: alt
       text: GitHub 보기
       link: https://github.com/PlayIdea-Lab/cq
 
 features:
+  - icon: ⚡
+    title: 2분 설치
+    details: "curl 설치, cq auth login, 끝. API 키 관리도, 설정 파일 작성도 없습니다. 태스크, 지식, LLM, 품질 게이트 전부 클라우드."
+
   - icon: 💡
-    title: 아이디어 → 출시
-    details: "/pi로 토론, /c4-plan으로 설계, /c4-run으로 구현, /c4-finish로 출시. 생각에서 프로덕션까지 하나의 흐름."
+    title: 아이디어 → 출시 (논스탑)
+    details: "/pi로 토론 → 자동 계획 → 자동 실행 → 자동 마무리. 생각에서 커밋까지 하나의 흐름. 감시 불필요."
 
   - icon: 🔒
     title: 시스템이 품질 보장
-    details: "Polish/Refine 게이트가 품질 수렴을 강제합니다. 믿음이 아니라 Go 레벨 체크로. 모든 제출은 검증됩니다."
+    details: "Refine, Polish, Review 게이트가 바이너리에 컴파일. 프롬프트도, 제안도 아닌 Go 레벨 강제. 건너뛸 수 없습니다."
 
   - icon: 🧠
-    title: 당신의 스타일을 학습
-    details: "페르소나 온톨로지가 1,000+ 태스크에서 선호도를 추적합니다. 리뷰는 더 날카로워지고, 제안은 더 개인화됩니다."
-
-  - icon: 🖥️
-    title: 분산 워커
-    details: "여러 서버에 AI 워커를 스폰합니다. 실험과 빌드가 병렬로, 24시간 쉬지 않고 실행됩니다."
+    title: 당신을 학습
+    details: "3층 온톨로지(개인→프로젝트→집단)가 1,200+ 태스크에서 패턴을 추적합니다. 세션마다 리뷰가 정확해집니다."
 
 ---
 
@@ -51,10 +51,10 @@ features:
 
 | 지표 | 값 |
 |------|---|
-| 완료된 태스크 | 1,100+ |
+| 완료된 태스크 | 1,200+ |
 | 리뷰 승인률 | 93% |
-| 코드베이스 | 179K LOC |
-| Polish 게이트 통과 | 55+ |
+| 설치 시간 (connected) | 2분 |
+| 필요한 API 키 | 0개 (connected tier) |
 | 지원 언어 | Go, Python, TypeScript, Rust |
 
 ---

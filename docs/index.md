@@ -3,32 +3,32 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "AI that builds, verifies, and learns you."
-  tagline: Describe your idea. AI plans, implements, and guarantees quality. The more you use it, the more it becomes your team.
+  text: "Install. Login. Build."
+  tagline: "No API keys. No config files. Just cq auth and start building. The brain is in the cloud — your machine is the hands."
   actions:
     - theme: brand
-      text: Install
+      text: Get Started
       link: /guide/install
     - theme: alt
       text: View on GitHub
       link: https://github.com/PlayIdea-Lab/cq
 
 features:
+  - icon: ⚡
+    title: 2-Minute Setup
+    details: "curl install, cq auth login, done. No API keys to manage, no config to write. Cloud handles tasks, knowledge, LLM, and quality gates."
+
   - icon: 💡
-    title: Idea → Ship
-    details: "/pi to brainstorm, /c4-plan to design, /c4-run to build, /c4-finish to ship. One flow from thought to production."
+    title: Idea → Ship (Nonstop)
+    details: "/pi to brainstorm → auto plan → auto run → auto finish. One flow from thought to committed code. No babysitting."
 
   - icon: 🔒
     title: Quality by System
-    details: "Polish and refine gates enforce convergence — not by trust, but by Go-level checks. Every submit is verified."
+    details: "Refine, polish, and review gates are compiled into the binary. Not prompts, not suggestions — Go-level enforcement that cannot be bypassed."
 
   - icon: 🧠
-    title: Learns Your Style
-    details: "Persona ontology tracks your preferences across 1,000+ tasks. Reviews get sharper. Suggestions get personal."
-
-  - icon: 🖥️
-    title: Distributed Workers
-    details: "Spawn AI workers across servers. Experiments and builds run in parallel, around the clock."
+    title: Learns You
+    details: "3-layer ontology (personal → project → collective) tracks your patterns across 1,200+ tasks. Reviews get sharper every session."
 
 ---
 
@@ -51,10 +51,10 @@ Every step is **gated**: plans require critique review, implementations require 
 
 | Metric | Value |
 |--------|-------|
-| Tasks completed | 1,100+ |
+| Tasks completed | 1,200+ |
 | Review approval rate | 93% |
-| Codebase | 179K LOC |
-| Polish gates passed | 55+ |
+| Setup time (connected) | 2 minutes |
+| API keys required | 0 (connected tier) |
 | Languages | Go, Python, TypeScript, Rust |
 
 ---
@@ -110,7 +110,8 @@ cq gemini    # Gemini CLI
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
-cq claude
+cq auth login    # GitHub OAuth — no API key needed
+cq claude        # or: cq cursor / cq codex / cq gemini
 ```
 
-Then just say what you need.
+Then just say what you need. The brain is in the cloud.
