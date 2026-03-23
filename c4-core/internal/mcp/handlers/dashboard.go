@@ -34,14 +34,18 @@ func RegisterDashboardHandler(reg *mcp.Registry, store *SQLiteStore, deps *Dashb
 	}
 
 	// Promote c4_dashboard in the lighthouse registry (best-effort, non-fatal).
+	// Try promote first (stub may exist from /c4-plan), fall back to register.
 	if store != nil {
-		if _, err := lighthouseRegisterExisting(store, "c4_dashboard",
-			"Get CQ system status dashboard — task queue, workers, knowledge, and recent activity",
-			`{"type":"object","properties":{"format":{"type":"string","enum":["widget","text"]}}}`,
-			"Returns status data + MCP Apps widget (_meta.ui.resourceUri=ui://cq/dashboard).",
-			"auto-register",
-		); err != nil {
-			fmt.Fprintf(os.Stderr, "c4_dashboard: lighthouse register: %v\n", err)
+		if err := store.promoteLighthouse("c4_dashboard", "auto-register"); err != nil {
+			// Stub doesn't exist — register as new implemented entry.
+			if _, err2 := lighthouseRegisterExisting(store, "c4_dashboard",
+				"Get CQ system status dashboard — task queue, workers, knowledge, and recent activity",
+				`{"type":"object","properties":{"format":{"type":"string","enum":["widget","text"]}}}`,
+				"Returns status data + MCP Apps widget (_meta.ui.resourceUri=ui://cq/dashboard).",
+				"auto-register",
+			); err2 != nil {
+				fmt.Fprintf(os.Stderr, "c4_dashboard: lighthouse register: %v\n", err2)
+			}
 		}
 	}
 
