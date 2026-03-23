@@ -133,27 +133,25 @@ func (s *SQLiteStore) enrichWithKnowledge(assignment *TaskAssignment) {
 		}
 		s.knowledgeHitTracker.Record(assignment.TaskID, query, resultCount)
 	}
-	if err != nil || len(results) == 0 {
-		return
-	}
-
 	var b strings.Builder
-	b.WriteString("## Relevant Knowledge (auto-injected)\n\n")
-	for i, r := range results {
-		fmt.Fprintf(&b, "### %d. [%s] %s\n", i+1, r.Type, r.Title)
-		if r.Domain != "" {
-			fmt.Fprintf(&b, "- Domain: %s\n", r.Domain)
-		}
-		// Fetch body summary (first 200 chars) for actionable context
-		if s.knowledgeReader != nil {
-			if body, err := s.knowledgeReader.GetBody(r.ID); err == nil && body != "" {
-				if len(body) > 200 {
-					body = body[:200] + "..."
-				}
-				fmt.Fprintf(&b, "- Summary: %s\n", body)
+	if err == nil && len(results) > 0 {
+		b.WriteString("## Relevant Knowledge (auto-injected)\n\n")
+		for i, r := range results {
+			fmt.Fprintf(&b, "### %d. [%s] %s\n", i+1, r.Type, r.Title)
+			if r.Domain != "" {
+				fmt.Fprintf(&b, "- Domain: %s\n", r.Domain)
 			}
+			// Fetch body summary (first 200 chars) for actionable context
+			if s.knowledgeReader != nil {
+				if body, err := s.knowledgeReader.GetBody(r.ID); err == nil && body != "" {
+					if len(body) > 200 {
+						body = body[:200] + "..."
+					}
+					fmt.Fprintf(&b, "- Summary: %s\n", body)
+				}
+			}
+			b.WriteString("\n")
 		}
-		b.WriteString("\n")
 	}
 
 	// Scope-warning injection: past review rejections for this scope
