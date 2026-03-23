@@ -2,11 +2,10 @@
 
 # CQ
 
-**AI writes code. Who checks it?**
+**External Brain for AI**
 
-CQ fills what's missing — planning, verification, learning, and governance.
-
-Your AI codes. CQ makes sure it's right. CLI: `cq`.
+AI codes fast but forgets, skips planning, and doesn't learn.
+CQ is the brain it's missing. CLI: `cq`.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
