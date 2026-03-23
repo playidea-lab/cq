@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -119,15 +120,26 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Updated: %s → %s\n", currentVersion, newVersion)
 
-	// Auto-restart cq serve if running
+	// Auto-restart cq serve if running.
+	// "cq serve install" handles: uninstall old → install new → start.
+	// This works for both OS service (LaunchAgent/systemd) and manual mode.
 	if isServeRunning() {
 		fmt.Println("Restarting cq serve...")
-		exec.Command(self, "serve", "stop").Run()
-		time.Sleep(1 * time.Second)
-		if err := exec.Command(self, "serve").Start(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to restart serve: %v\n", err)
-		} else {
-			fmt.Println("cq serve restarted with new version.")
+		cmd := exec.Command(self, "serve", "install", "--dir", detectProjectDir())
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			// Fallback: manual stop + start
+			fmt.Fprintf(os.Stderr, "serve install failed (%v), trying manual restart...\n", err)
+			exec.Command(self, "serve", "stop").Run()
+			time.Sleep(1 * time.Second)
+			startCmd := exec.Command(self, "serve")
+			startCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			if startErr := startCmd.Start(); startErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to restart serve: %v\n", startErr)
+			} else {
+				fmt.Println("cq serve restarted (manual mode).")
+			}
 		}
 	}
 
@@ -160,4 +172,13 @@ func isServeRunning() bool {
 		return false
 	}
 	return strings.Contains(string(out), "running")
+}
+
+// detectProjectDir returns the current working directory (used for serve install --dir).
+func detectProjectDir() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "."
+	}
+	return dir
 }
