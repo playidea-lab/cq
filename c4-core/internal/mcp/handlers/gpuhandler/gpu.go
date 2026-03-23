@@ -10,11 +10,22 @@ import (
 
 	"github.com/changmin/c4-core/internal/daemon"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/apps"
 )
+
+const jobProgressResourceURI = "ui://cq/job-progress"
 
 // Register is the subpackage entry point — registers all GPU tools.
 func Register(reg *mcp.Registry, gpuStore *daemon.Store, scheduler *daemon.Scheduler) {
 	RegisterGPUNativeHandlers(reg, gpuStore, scheduler)
+}
+
+// RegisterJobProgressWidget registers the job-progress HTML widget in the resource store.
+// Call this after Register() when the apps ResourceStore is available.
+func RegisterJobProgressWidget(rs *apps.ResourceStore, html string) {
+	if rs != nil && html != "" {
+		rs.Register(jobProgressResourceURI, html)
+	}
 }
 
 // RegisterGPUNativeHandlers registers GPU tools as Go native handlers.
@@ -81,6 +92,11 @@ func RegisterGPUNativeHandlers(reg *mcp.Registry, gpuStore *daemon.Store, schedu
 			"type": "object",
 			"properties": map[string]any{
 				"job_id": map[string]any{"type": "string", "description": "Job ID"},
+				"format": map[string]any{
+					"type":        "string",
+					"description": "Response format: 'widget' returns MCP Apps widget with progress bar; 'text' returns plain JSON (default)",
+					"enum":        []string{"widget", "text"},
+				},
 			},
 			"required": []string{"job_id"},
 		},
@@ -102,8 +118,14 @@ func RegisterGPUNativeHandlers(reg *mcp.Registry, gpuStore *daemon.Store, schedu
 		Name:        "c4_job_summary",
 		Description: "Get queue-level statistics (counts by status)",
 		InputSchema: map[string]any{
-			"type":       "object",
-			"properties": map[string]any{},
+			"type": "object",
+			"properties": map[string]any{
+				"format": map[string]any{
+					"type":        "string",
+					"description": "Response format: 'widget' returns MCP Apps widget with job progress; 'text' returns plain JSON (default)",
+					"enum":        []string{"widget", "text"},
+				},
+			},
 		},
 	}, jobSummaryHandler(gpuStore))
 }
@@ -289,7 +311,8 @@ func jobStatusHandler(store *daemon.Store, scheduler *daemon.Scheduler) mcp.Hand
 		}
 
 		var params struct {
-			JobID string `json:"job_id"`
+			JobID  string `json:"job_id"`
+			Format string `json:"format"`
 		}
 		if len(rawArgs) > 0 {
 			if err := json.Unmarshal(rawArgs, &params); err != nil {
@@ -362,6 +385,17 @@ func jobStatusHandler(store *daemon.Store, scheduler *daemon.Scheduler) mcp.Hand
 			}
 		}
 
+		if params.Format == "widget" {
+			return map[string]any{
+				"data": result,
+				"_meta": map[string]any{
+					"ui": map[string]any{
+						"resourceUri": jobProgressResourceURI,
+					},
+				},
+			}, nil
+		}
+
 		return result, nil
 	}
 }
@@ -412,19 +446,41 @@ func jobSummaryHandler(store *daemon.Store) mcp.HandlerFunc {
 			return map[string]any{"error": "GPU job scheduler not available"}, nil
 		}
 
+		var params struct {
+			Format string `json:"format"`
+		}
+		if len(rawArgs) > 0 {
+			if err := json.Unmarshal(rawArgs, &params); err != nil {
+				return nil, fmt.Errorf("parsing arguments: %w", err)
+			}
+		}
+
 		stats, err := store.GetQueueStats()
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("GetQueueStats failed: %v", err)}, nil
 		}
 
 		total := stats.Queued + stats.Running + stats.Succeeded + stats.Failed + stats.Cancelled
-		return map[string]any{
+		data := map[string]any{
 			"queued":    stats.Queued,
 			"running":   stats.Running,
 			"succeeded": stats.Succeeded,
 			"failed":    stats.Failed,
 			"cancelled": stats.Cancelled,
 			"total":     total,
-		}, nil
+		}
+
+		if params.Format == "widget" {
+			return map[string]any{
+				"data": data,
+				"_meta": map[string]any{
+					"ui": map[string]any{
+						"resourceUri": jobProgressResourceURI,
+					},
+				},
+			}, nil
+		}
+
+		return data, nil
 	}
 }

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Progress</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #666666;
+    --accent: #2563eb;
+    --success: #16a34a;
+    --warning: #d97706;
+    --error: #dc2626;
+    --radius: 6px;
+    --gap: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --text-secondary: #888888;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 8px;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--gap);
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    overflow: hidden;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+  }
+
+  .status-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+
+  .status-badge.running {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .status-badge.queued {
+    background: var(--warning);
+    color: #fff;
+  }
+
+  .status-badge.succeeded {
+    background: var(--success);
+    color: #fff;
+  }
+
+  .status-badge.failed {
+    background: var(--error);
+    color: #fff;
+  }
+
+  .status-badge.cancelled {
+    background: var(--border);
+    color: var(--text-secondary);
+  }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 12px 4px;
+  }
+
+  .job-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    max-height: calc(100vh - 60px);
+  }
+
+  .job-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .job-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+  }
+
+  .job-name {
+    font-weight: 600;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .job-meta {
+    font-size: 10px;
+    color: var(--text-secondary);
+    display: flex;
+    gap: 8px;
+  }
+
+  .job-meta span {
+    white-space: nowrap;
+  }
+
+  .progress-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .progress-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+    background: var(--accent);
+  }
+
+  .progress-fill.succeeded {
+    background: var(--success);
+  }
+
+  .progress-fill.failed {
+    background: var(--error);
+  }
+
+  .progress-fill.indeterminate {
+    width: 30% !important;
+    animation: indeterminate 1.5s infinite ease-in-out;
+  }
+
+  @keyframes indeterminate {
+    0% { margin-left: 0; }
+    50% { margin-left: 70%; }
+    100% { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <span class="header-title">Jobs</span>
+    <span class="job-meta" id="summary"></span>
+  </div>
+  <div id="empty-state" class="empty-state">No jobs</div>
+  <div id="job-list" class="job-list" style="display:none"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var els = {
+    summary: document.getElementById('summary'),
+    empty: document.getElementById('empty-state'),
+    list: document.getElementById('job-list'),
+  };
+
+  function esc(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function formatDuration(sec) {
+    if (typeof sec !== 'number' || sec < 0) return '--';
+    if (sec < 60) return sec + 's';
+    if (sec < 3600) return Math.floor(sec / 60) + 'm ' + (sec % 60) + 's';
+    var h = Math.floor(sec / 3600);
+    var m = Math.floor((sec % 3600) / 60);
+    return h + 'h ' + m + 'm';
+  }
+
+  function statusClass(status) {
+    var s = (status || '').toLowerCase();
+    if (s === 'running') return 'running';
+    if (s === 'queued') return 'queued';
+    if (s === 'succeeded') return 'succeeded';
+    if (s === 'failed') return 'failed';
+    if (s === 'cancelled') return 'cancelled';
+    return '';
+  }
+
+  function renderJobs(jobs) {
+    if (!Array.isArray(jobs) || jobs.length === 0) {
+      els.empty.style.display = '';
+      els.list.style.display = 'none';
+      els.summary.textContent = '';
+      return;
+    }
+
+    els.empty.style.display = 'none';
+    els.list.style.display = '';
+
+    var running = 0;
+    var queued = 0;
+    jobs.forEach(function (j) {
+      var s = (j.status || '').toUpperCase();
+      if (s === 'RUNNING') running++;
+      if (s === 'QUEUED') queued++;
+    });
+
+    var parts = [];
+    if (running > 0) parts.push(running + ' running');
+    if (queued > 0) parts.push(queued + ' queued');
+    els.summary.textContent = parts.join(', ') || jobs.length + ' jobs';
+
+    var html = '';
+    jobs.forEach(function (job) {
+      var sc = statusClass(job.status);
+      var name = job.name || job.job_id || 'unnamed';
+      var worker = job.worker || job.worker_id || '';
+      var elapsed = formatDuration(job.elapsed_sec || job.duration_sec);
+      var eta = job.eta_sec ? formatDuration(job.eta_sec) : '';
+
+      // Progress: 0-100 for running, 100 for succeeded, 0 for queued
+      var pct = 0;
+      var fillClass = sc;
+      var s = (job.status || '').toUpperCase();
+      if (s === 'SUCCEEDED') {
+        pct = 100;
+      } else if (s === 'FAILED' || s === 'CANCELLED') {
+        pct = 100;
+      } else if (s === 'RUNNING') {
+        pct = typeof job.progress === 'number' ? Math.min(100, Math.max(0, job.progress)) : -1;
+        if (pct < 0) fillClass += ' indeterminate';
+      }
+
+      html += '<div class="job-item">';
+      html += '<div class="job-row">';
+      html += '<span class="job-name">' + esc(name) + '</span>';
+      html += '<span class="status-badge ' + sc + '">' + esc(job.status || 'unknown') + '</span>';
+      html += '</div>';
+      html += '<div class="progress-bar"><div class="progress-fill ' + fillClass + '" style="width:' + (pct >= 0 ? pct : 0) + '%"></div></div>';
+      html += '<div class="job-meta">';
+      if (worker) html += '<span>' + esc(worker) + '</span>';
+      if (elapsed !== '--') html += '<span>' + elapsed + '</span>';
+      if (eta) html += '<span>ETA ' + eta + '</span>';
+      html += '</div>';
+      html += '</div>';
+    });
+
+    els.list.innerHTML = html;
+  }
+
+  window.addEventListener('message', function (event) {
+    var msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.type === 'cq:job-progress:data') {
+      renderJobs(msg.payload);
+    } else if (msg.type === 'cq:job-progress:clear') {
+      renderJobs([]);
+    }
+  });
+
+  // Initial empty state
+  renderJobs([]);
+})();
+</script>
+</body>
+</html>
