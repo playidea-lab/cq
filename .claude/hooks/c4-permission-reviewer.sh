@@ -95,7 +95,26 @@ _emit_deny() {
 }
 
 # =============================================================================
-# Allow patterns (fast path — no API call)
+# Auto-allow safe tool types (no API call needed)
+# =============================================================================
+
+# File editing tools (Read/Edit/Write/NotebookEdit) on project files are always safe.
+# The AI is writing code, not executing it.
+if [[ "$TOOL_NAME" == "Read" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "NotebookEdit" ]]; then
+    # Block only system paths
+    if [[ -n "$FILE_PATH" && ("$FILE_PATH" == /etc/* || "$FILE_PATH" == /usr/* || "$FILE_PATH" == /System/*) ]]; then
+        _emit_deny "Blocked: writing to system directory $FILE_PATH"
+    fi
+    _emit_allow "File tool on project file"
+fi
+
+# WebFetch/WebSearch are read-only information retrieval — always safe.
+if [[ "$TOOL_NAME" == "WebFetch" || "$TOOL_NAME" == "WebSearch" ]]; then
+    _emit_allow "Web tool (read-only)"
+fi
+
+# =============================================================================
+# Allow patterns (fast path — no API call, Bash commands only)
 # =============================================================================
 TARGET="${COMMAND:-$FILE_PATH}"
 for pattern in "${ALLOW_PATTERNS[@]}"; do
@@ -136,7 +155,7 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
             max_tokens: 150,
             messages: [{
                 role: "user",
-                content: ("You are a security gate for an AI coding assistant in a local development environment. Respond ONLY with JSON.\n\nThe AI assistant wants to use this tool:\n\n" + $context + "\n\nRULES — be PERMISSIVE for normal dev work:\n- ALLOW: build, test, lint, run, install, deploy commands\n- ALLOW: reading/editing any project file (the AI is writing code, not executing it)\n- ALLOW: git operations (add, commit, push, pull, merge, rebase, tag)\n- ALLOW: package managers (make, go, uv, npm, cargo, docker, brew, fly)\n- ALLOW: process management (ps, kill, launchctl, systemctl, service restart)\n- ALLOW: network tools (curl, wget, ssh, scp, rsync) for development/testing\n- ALLOW: file operations (cp, mv, rm on project files, tar, zip)\n- BLOCK ONLY: (1) rm -rf / or ~ (wipe root/home); (2) hardcoded secrets/private keys in commands; (3) piping remote URLs to shell (curl|sh); (4) writing to /etc, /usr, /System\n\nWhen in doubt, ALLOW. This is a trusted developer environment.\n\nRespond: {\"allow\": true, \"reason\": \"brief\"} or {\"allow\": false, \"reason\": \"brief\"}")
+                content: ("You are a security reviewer for an AI-managed C4 project. Respond ONLY with JSON.\n\nShould this tool use be allowed?\n\n" + $context + "\n\nAllow unless: (1) could cause irreversible data loss; (2) contains credentials/private keys; (3) writes to system directories; (4) pipes remote code to shell.\n\nNormal dev operations (build, test, read, edit code) are safe.\n\nRespond: {\"allow\": true, \"reason\": \"brief\"} or {\"allow\": false, \"reason\": \"brief\"}")
             }]
         }')
 
