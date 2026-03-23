@@ -9,6 +9,7 @@ import (
 
 	"github.com/changmin/c4-core/internal/daemon"
 	"github.com/changmin/c4-core/internal/mcp"
+	"github.com/changmin/c4-core/internal/mcp/apps"
 )
 
 func TestGpuStatusHandler_NoGPU(t *testing.T) {
@@ -541,6 +542,165 @@ func TestJobSummaryHandler_WithJobs(t *testing.T) {
 	if m["total"] != 3 {
 		t.Errorf("total = %v, want 3", m["total"])
 	}
+}
+
+// TestJobStatusHandler_WidgetFormat tests that format=widget returns _meta.ui.
+func TestJobStatusHandler_WidgetFormat(t *testing.T) {
+	dir := t.TempDir()
+	store, err := daemon.NewStore(dir + "/daemon.db")
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	defer store.Close()
+
+	// Submit a job first
+	job, err := store.CreateJob(&daemon.JobSubmitRequest{
+		Name:    "test-widget",
+		Command: "echo hello",
+		Workdir: ".",
+	})
+	if err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	handler := jobStatusHandler(store, nil)
+	args, _ := json.Marshal(map[string]any{"job_id": job.ID, "format": "widget"})
+	result, err := handler(args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	outer, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map[string]any, got %T", result)
+	}
+
+	// Must have data and _meta keys
+	if _, hasData := outer["data"]; !hasData {
+		t.Error("widget response must have 'data' key")
+	}
+	metaRaw, hasMeta := outer["_meta"]
+	if !hasMeta {
+		t.Fatal("widget response must have '_meta' key")
+	}
+	meta, ok := metaRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("_meta must be map[string]any, got %T", metaRaw)
+	}
+	uiRaw, hasUI := meta["ui"]
+	if !hasUI {
+		t.Fatal("_meta must have 'ui' key")
+	}
+	ui, ok := uiRaw.(map[string]any)
+	if !ok {
+		t.Fatalf("_meta.ui must be map[string]any, got %T", uiRaw)
+	}
+	uri, _ := ui["resourceUri"].(string)
+	if uri != jobProgressResourceURI {
+		t.Errorf("resourceUri = %q, want %q", uri, jobProgressResourceURI)
+	}
+
+	// Verify data contains job fields
+	data := outer["data"].(map[string]any)
+	if data["job_id"] != job.ID {
+		t.Errorf("data.job_id = %v, want %v", data["job_id"], job.ID)
+	}
+}
+
+// TestJobStatusHandler_TextFormatNoMeta tests that format=text (default) has no _meta.
+func TestJobStatusHandler_TextFormatNoMeta(t *testing.T) {
+	dir := t.TempDir()
+	store, err := daemon.NewStore(dir + "/daemon.db")
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	defer store.Close()
+
+	job, err := store.CreateJob(&daemon.JobSubmitRequest{
+		Name:    "test-text",
+		Command: "echo hello",
+		Workdir: ".",
+	})
+	if err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	handler := jobStatusHandler(store, nil)
+	args, _ := json.Marshal(map[string]any{"job_id": job.ID})
+	result, err := handler(args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	m, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map[string]any, got %T", result)
+	}
+	if _, hasMeta := m["_meta"]; hasMeta {
+		t.Error("text format must not include _meta")
+	}
+}
+
+// TestJobSummaryHandler_WidgetFormat tests that format=widget returns _meta.ui.
+func TestJobSummaryHandler_WidgetFormat(t *testing.T) {
+	dir := t.TempDir()
+	store, err := daemon.NewStore(dir + "/daemon.db")
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	defer store.Close()
+
+	handler := jobSummaryHandler(store)
+	args, _ := json.Marshal(map[string]any{"format": "widget"})
+	result, err := handler(args)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	outer, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map[string]any, got %T", result)
+	}
+
+	if _, hasData := outer["data"]; !hasData {
+		t.Error("widget response must have 'data' key")
+	}
+	metaRaw, hasMeta := outer["_meta"]
+	if !hasMeta {
+		t.Fatal("widget response must have '_meta' key")
+	}
+	meta := metaRaw.(map[string]any)
+	ui := meta["ui"].(map[string]any)
+	uri, _ := ui["resourceUri"].(string)
+	if uri != jobProgressResourceURI {
+		t.Errorf("resourceUri = %q, want %q", uri, jobProgressResourceURI)
+	}
+}
+
+// TestRegisterJobProgressWidget tests widget registration in ResourceStore.
+func TestRegisterJobProgressWidget(t *testing.T) {
+	rs := apps.NewResourceStore()
+	html := "<html>job progress</html>"
+
+	RegisterJobProgressWidget(rs, html)
+
+	content, mime, err := rs.HandleResourcesRead(jobProgressResourceURI)
+	if err != nil {
+		t.Fatalf("HandleResourcesRead: %v", err)
+	}
+	if content != html {
+		t.Errorf("content = %q, want %q", content, html)
+	}
+	if mime != "text/html" {
+		t.Errorf("mime = %q, want text/html", mime)
+	}
+}
+
+// TestRegisterJobProgressWidget_NilStore tests nil safety.
+func TestRegisterJobProgressWidget_NilStore(t *testing.T) {
+	// Should not panic with nil store
+	RegisterJobProgressWidget(nil, "<html>test</html>")
+	RegisterJobProgressWidget(apps.NewResourceStore(), "")
 }
 
 // TestRegisterGPUNativeHandlers tests that 6 tools are registered.
