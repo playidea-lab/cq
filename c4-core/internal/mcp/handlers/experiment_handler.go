@@ -3,6 +3,8 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/changmin/c4-core/internal/mcp"
@@ -180,6 +184,27 @@ func registerRunHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 			return map[string]any{"error": "name is required"}, nil
 		}
 
+		// Auto-fill commit_sha from git if not provided
+		var warnings []string
+		if args.CommitSHA == "" {
+			if out, err := exec.Command("git", "rev-parse", "HEAD").Output(); err == nil {
+				args.CommitSHA = strings.TrimSpace(string(out))
+			}
+		}
+
+		// Auto-compute config_hash from config content if not provided
+		if args.ConfigHash == "" && args.Config != "" {
+			h := sha256.Sum256([]byte(args.Config))
+			args.ConfigHash = hex.EncodeToString(h[:])[:16]
+		}
+
+		// Git dirty check — warn but don't block
+		if out, err := exec.Command("git", "status", "--porcelain").Output(); err == nil {
+			if len(strings.TrimSpace(string(out))) > 0 {
+				warnings = append(warnings, "git working tree is dirty — experiment may not be reproducible. Consider committing first.")
+			}
+		}
+
 		var runID string
 		if h.HubBaseURL != "" {
 			var resp struct {
@@ -211,6 +236,9 @@ func registerRunHandler(h ExperimentHandlers) mcp.BlockingHandlerFunc {
 		}
 		if args.ConfigHash != "" {
 			result["config_hash"] = args.ConfigHash
+		}
+		if len(warnings) > 0 {
+			result["warnings"] = warnings
 		}
 		return result, nil
 	}

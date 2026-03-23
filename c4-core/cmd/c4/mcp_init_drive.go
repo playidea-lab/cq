@@ -27,7 +27,7 @@ func initDrive(ctx *initContext) error {
 	}
 	driveClient := drive.NewClient(cloudCfg.URL, cloudCfg.AnonKey, ctx.cloudTP, ctx.cloudProjectID, cloudCfg.BucketName)
 	drivehandler.RegisterDriveHandlers(ctx.reg, driveClient)
-	drivehandler.RegisterDatasetHandlers(ctx.reg, drive.NewDatasetClient(driveClient))
+	drivehandler.RegisterDatasetHandlers(ctx.reg, drive.NewDatasetClient(driveClient), ctx.projectDir)
 	fmt.Fprintln(os.Stderr, "cq: drive enabled (9 tools)")
 	return nil
 }

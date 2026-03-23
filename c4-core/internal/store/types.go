@@ -51,6 +51,7 @@ type TaskAssignment struct {
 	SoulContext      string             `json:"soul_context,omitempty"`
 	LighthouseSpec   *LighthouseContext `json:"lighthouse_spec,omitempty"`
 	KnowledgeContext     string             `json:"knowledge_context,omitempty"`
+	DatasetContext       map[string]string  `json:"dataset_context,omitempty"` // .cqdata datasets: key → "name@version"
 	HeartbeatIntervalSec int                `json:"heartbeat_interval_sec"`
 }
 

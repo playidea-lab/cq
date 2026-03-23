@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/changmin/c4-core/internal/cqdata"
 	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/task"
 )
@@ -395,5 +396,21 @@ func (s *SQLiteStore) recordRepeatedPattern(scope, taskID string, warnings []Kno
 		body += "\nConsider adding a validation rule for this pattern."
 		s.knowledgeWriter.CreateExperiment(metadata, body)
 	}()
+}
+
+// enrichWithDatasetContext loads .cqdata and populates dataset_context.
+func (s *SQLiteStore) enrichWithDatasetContext(assignment *TaskAssignment) {
+	if s.projectRoot == "" {
+		return
+	}
+	cd, err := cqdata.Load(s.projectRoot)
+	if err != nil || cd == nil || len(cd.Datasets) == 0 {
+		return
+	}
+	ctx := make(map[string]string, len(cd.Datasets))
+	for key, entry := range cd.Datasets {
+		ctx[key] = entry.Name + "@" + entry.Version
+	}
+	assignment.DatasetContext = ctx
 }
 

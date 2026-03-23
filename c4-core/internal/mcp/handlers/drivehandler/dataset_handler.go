@@ -13,7 +13,12 @@ import (
 )
 
 // RegisterDatasetHandlers registers c4_drive_dataset_* MCP tools.
-func RegisterDatasetHandlers(reg *mcp.Registry, client *drive.DatasetClient) {
+// projectDir is used to auto-update .cqdata after upload.
+func RegisterDatasetHandlers(reg *mcp.Registry, client *drive.DatasetClient, projectDir ...string) {
+	pDir := ""
+	if len(projectDir) > 0 {
+		pDir = projectDir[0]
+	}
 	// c4_drive_dataset_upload — Upload a local directory as a versioned dataset
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_drive_dataset_upload",
@@ -43,7 +48,25 @@ func RegisterDatasetHandlers(reg *mcp.Registry, client *drive.DatasetClient) {
 		if err != nil {
 			return nil, err
 		}
-		return result, nil
+		// Auto-update .cqdata with the uploaded dataset version
+		cqDataHint := ""
+		if pDir != "" {
+			if cqErr := drive.ApplyCQData(pDir, args.Name, result.VersionHash); cqErr == nil {
+				cqDataHint = fmt.Sprintf(".cqdata updated (%s=%s). Run: git add .cqdata", args.Name, result.VersionHash[:8])
+			}
+		}
+		resp := map[string]any{
+			"name":         result.Name,
+			"version_hash": result.VersionHash,
+			"files":        result.FilesUploaded,
+			"skipped":      result.FilesSkipped,
+			"total_bytes":  result.TotalSizeBytes,
+		}
+		if cqDataHint != "" {
+			resp["cqdata_updated"] = true
+			resp["hint"] = cqDataHint
+		}
+		return resp, nil
 	})
 
 	// c4_drive_dataset_list — List dataset versions
