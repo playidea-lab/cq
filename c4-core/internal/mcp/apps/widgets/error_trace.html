@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Error Trace</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #666666;
+    --accent: #2563eb;
+    --success: #16a34a;
+    --warning: #d97706;
+    --error: #dc2626;
+    --radius: 6px;
+    --gap: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --text-secondary: #888888;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    overflow: hidden;
+  }
+
+  .header {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--error);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+  }
+
+  .error-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+    line-height: 1.4;
+  }
+
+  .error-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .error-type {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--error);
+    letter-spacing: 0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .error-message {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.4;
+    word-break: break-word;
+  }
+
+  .error-lang {
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+  }
+
+  .frames-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .frame {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .frame.cause {
+    border-color: var(--error);
+    border-left-width: 3px;
+  }
+
+  .frame-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .frame-header:hover {
+    background: var(--bg);
+  }
+
+  .cause-marker {
+    font-size: 11px;
+    color: var(--error);
+    font-weight: 700;
+    flex-shrink: 0;
+    width: 14px;
+  }
+
+  .frame-num {
+    font-size: 10px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    width: 16px;
+    text-align: right;
+  }
+
+  .frame-func {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .frame-func.cause-func {
+    color: var(--error);
+  }
+
+  .toggle-icon {
+    font-size: 9px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+
+  .toggle-icon.open {
+    transform: rotate(90deg);
+  }
+
+  .frame-detail {
+    padding: 4px 8px 6px 8px;
+    border-top: 1px solid var(--border);
+    display: none;
+  }
+
+  .frame-detail.open {
+    display: block;
+  }
+
+  .frame-location {
+    font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 10px;
+    color: var(--accent);
+    word-break: break-all;
+    line-height: 1.5;
+  }
+
+  .frame-location.cause-loc {
+    color: var(--error);
+  }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 20px;
+  }
+
+  .frames-list::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .frames-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .frames-list::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+<div class="header" id="error-header">
+  <span class="error-icon">&#9888;</span>
+  <div class="error-info">
+    <div class="error-type" id="error-type">—</div>
+    <div class="error-message" id="error-message">데이터를 기다리는 중...</div>
+    <div class="error-lang" id="error-lang"></div>
+  </div>
+</div>
+
+<div class="section-label" id="frames-label" style="display:none">스택 프레임</div>
+
+<div class="frames-list" id="frames-list">
+  <div class="empty-state">스택트레이스 없음</div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function applyData(data) {
+    if (!data) return;
+
+    var typeEl = document.getElementById('error-type');
+    var msgEl = document.getElementById('error-message');
+    var langEl = document.getElementById('error-lang');
+    var labelEl = document.getElementById('frames-label');
+    var listEl = document.getElementById('frames-list');
+
+    typeEl.textContent = data.error_type || 'UnknownError';
+    msgEl.textContent = data.error_message || '';
+    if (data.language) {
+      langEl.textContent = data.language;
+    }
+
+    var frames = Array.isArray(data.frames) ? data.frames : [];
+    if (frames.length === 0) {
+      listEl.innerHTML = '<div class="empty-state">프레임 없음</div>';
+      return;
+    }
+
+    labelEl.style.display = '';
+
+    var html = '';
+    frames.forEach(function (f, idx) {
+      var isCause = f.is_cause === true;
+      html += '<div class="frame' + (isCause ? ' cause' : '') + '" id="frame-' + idx + '">';
+      html += '<div class="frame-header" onclick="toggleFrame(' + idx + ')">';
+      html += '<span class="cause-marker">' + (isCause ? '&#9658;' : '') + '</span>';
+      html += '<span class="frame-num">' + esc(String(idx + 1)) + '</span>';
+      html += '<span class="frame-func' + (isCause ? ' cause-func' : '') + '">' + esc(f.function || f.func || '?') + '</span>';
+      html += '<span class="toggle-icon" id="toggle-' + idx + '">&#9658;</span>';
+      html += '</div>';
+      var location = esc(f.file || '') + (f.line ? ':' + esc(String(f.line)) : '');
+      html += '<div class="frame-detail' + (isCause ? ' open' : '') + '" id="detail-' + idx + '">';
+      html += '<div class="frame-location' + (isCause ? ' cause-loc' : '') + '">' + (location || '위치 불명') + '</div>';
+      if (f.module) {
+        html += '<div class="frame-location" style="color:var(--text-secondary)">' + esc(f.module) + '</div>';
+      }
+      html += '</div>';
+      html += '</div>';
+    });
+    listEl.innerHTML = html;
+
+    // Open toggles for cause frames initially
+    frames.forEach(function (f, idx) {
+      if (f.is_cause) {
+        var tog = document.getElementById('toggle-' + idx);
+        if (tog) tog.classList.add('open');
+      }
+    });
+  }
+
+  window.toggleFrame = function (idx) {
+    var det = document.getElementById('detail-' + idx);
+    var tog = document.getElementById('toggle-' + idx);
+    if (!det || !tog) return;
+    var isOpen = det.classList.contains('open');
+    if (isOpen) {
+      det.classList.remove('open');
+      tog.classList.remove('open');
+    } else {
+      det.classList.add('open');
+      tog.classList.add('open');
+    }
+  };
+
+  window.addEventListener('message', function (event) {
+    var msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'cq:error-trace:data') {
+      applyData(msg.payload);
+    }
+  });
+})();
+</script>
+</body>
+</html>

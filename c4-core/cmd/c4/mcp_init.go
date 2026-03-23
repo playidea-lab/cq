@@ -370,6 +370,21 @@ func newMCPServer() (*mcpServer, error) {
 	llmhandler.RegisterCostTrackerWidget(appStore, apps.CostTrackerHTML)
 	fmt.Fprintln(os.Stderr, "cq: c4_llm_costs widget registered (ui://cq/cost-tracker)")
 
+	// Register git diff summary widget.
+	handlers.RegisterGitDiffHandler(reg, &handlers.GitDiffDeps{
+		ResourceStore: appStore,
+		GitDiffHTML:   apps.GitDiffHTML,
+		ProjectRoot:   projectDir,
+	})
+	fmt.Fprintln(os.Stderr, "cq: c4_diff_summary registered (ui://cq/git-diff)")
+
+	// Register error trace widget for stack trace visualization.
+	handlers.RegisterErrorTraceHandler(reg, sqliteStore, &handlers.ErrorTraceDeps{
+		ResourceStore:  appStore,
+		ErrorTraceHTML: apps.ErrorTraceHTML,
+	})
+	fmt.Fprintln(os.Stderr, "cq: c4_error_trace registered (ui://cq/error-trace)")
+
 	// Auto-register CLI commands in lighthouse so agents can discover them.
 	if cliCmds := collectCLICommands(rootCmd, "cq"); len(cliCmds) > 0 {
 		if n := handlers.RegisterCLICommands(sqliteStore, cliCmds); n > 0 {

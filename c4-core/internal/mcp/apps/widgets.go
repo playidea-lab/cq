@@ -49,3 +49,21 @@ var KnowledgeFeedHTML string
 //
 //go:embed widgets/cost_tracker.html
 var CostTrackerHTML string
+
+// GitDiffHTML is the embedded git diff summary widget HTML content.
+// Served as the ui://cq/git-diff resource via MCP resources/read.
+//
+//go:embed widgets/git_diff.html
+var GitDiffHTML string
+
+// TestResultsHTML is the embedded test results widget HTML content.
+// Served as the ui://cq/test-results resource via MCP resources/read.
+//
+//go:embed widgets/test_results.html
+var TestResultsHTML string
+
+// ErrorTraceHTML is the embedded error trace widget HTML content.
+// Served as the ui://cq/error-trace resource via MCP resources/read.
+//
+//go:embed widgets/error_trace.html
+var ErrorTraceHTML string

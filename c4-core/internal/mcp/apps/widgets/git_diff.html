@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Git Diff Summary</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f5f5f5;
+    --border: #e0e0e0;
+    --text: #1a1a1a;
+    --text-secondary: #666666;
+    --accent: #2563eb;
+    --success: #16a34a;
+    --warning: #d97706;
+    --error: #dc2626;
+    --add: #16a34a;
+    --del: #dc2626;
+    --radius: 6px;
+    --gap: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --border: #2a2a2a;
+      --text: #f0f0f0;
+      --text-secondary: #888888;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --add: #22c55e;
+      --del: #ef4444;
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    background: var(--bg);
+    color: var(--text);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+    overflow: hidden;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+  }
+
+  .header-meta {
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 16px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    flex-shrink: 0;
+  }
+
+  /* Summary bar */
+  .summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 8px;
+    flex-shrink: 0;
+  }
+
+  .summary-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+
+  .summary-value {
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .summary-value.files { color: var(--accent); }
+  .summary-value.added { color: var(--add); }
+  .summary-value.deleted { color: var(--del); }
+
+  .summary-label {
+    font-size: 9px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .summary-divider {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+  }
+
+  /* Total diff bar */
+  .diff-bar-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .diff-bar-track {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    display: flex;
+  }
+
+  .diff-bar-add {
+    height: 100%;
+    background: var(--add);
+    border-radius: 3px 0 0 3px;
+    transition: width 0.3s ease;
+  }
+
+  .diff-bar-del {
+    height: 100%;
+    background: var(--del);
+    border-radius: 0 3px 3px 0;
+    transition: width 0.3s ease;
+  }
+
+  .diff-bar-label {
+    font-size: 9px;
+    color: var(--text-secondary);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* File list */
+  .file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+
+  .file-status {
+    font-size: 10px;
+    font-weight: 700;
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+    border-radius: 2px;
+    padding: 1px 0;
+  }
+
+  .file-status.M { color: var(--accent); }
+  .file-status.A { color: var(--add); }
+  .file-status.D { color: var(--del); }
+  .file-status.R { color: var(--warning); }
+
+  .file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--text);
+    font-family: "SFMono-Regular", "Consolas", monospace;
+  }
+
+  .file-warn {
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+
+  .file-bar-wrap {
+    width: 64px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .file-bar-track {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    display: flex;
+  }
+
+  .file-bar-add {
+    height: 100%;
+    background: var(--add);
+    border-radius: 2px 0 0 2px;
+  }
+
+  .file-bar-del {
+    height: 100%;
+    background: var(--del);
+    border-radius: 0 2px 2px 0;
+  }
+
+  .file-counts {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+  }
+
+  .fc-add { color: var(--add); }
+  .fc-del { color: var(--del); }
+</style>
+</head>
+<body>
+<div class="header">
+  <span class="header-title">Git Diff</span>
+  <span class="header-meta" id="header-meta">—</span>
+</div>
+
+<div class="empty-state" id="empty-state">변경 없음</div>
+
+<div id="main-content" style="display:none; flex-direction:column; gap:8px; flex:1; min-height:0; overflow:hidden;">
+  <div class="summary">
+    <div class="summary-stat">
+      <span class="summary-value files" id="s-files">0</span>
+      <span class="summary-label">파일</span>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="summary-stat">
+      <span class="summary-value added" id="s-add">+0</span>
+      <span class="summary-label">추가</span>
+    </div>
+    <div class="summary-stat">
+      <span class="summary-value deleted" id="s-del">-0</span>
+      <span class="summary-label">삭제</span>
+    </div>
+    <div class="summary-divider"></div>
+    <div class="diff-bar-wrap">
+      <div class="diff-bar-track">
+        <div class="diff-bar-add" id="total-bar-add" style="width:0%"></div>
+        <div class="diff-bar-del" id="total-bar-del" style="width:0%"></div>
+      </div>
+      <div class="diff-bar-label">
+        <span id="bar-add-label">+0</span>
+        <span id="bar-del-label">-0</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="file-list" id="file-list"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var els = {
+    emptyState: document.getElementById('empty-state'),
+    main: document.getElementById('main-content'),
+    headerMeta: document.getElementById('header-meta'),
+    sFiles: document.getElementById('s-files'),
+    sAdd: document.getElementById('s-add'),
+    sDel: document.getElementById('s-del'),
+    totalBarAdd: document.getElementById('total-bar-add'),
+    totalBarDel: document.getElementById('total-bar-del'),
+    barAddLabel: document.getElementById('bar-add-label'),
+    barDelLabel: document.getElementById('bar-del-label'),
+    fileList: document.getElementById('file-list'),
+  };
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function statusClass(s) {
+    if (s === 'M') return 'M';
+    if (s === 'A') return 'A';
+    if (s === 'D') return 'D';
+    if (s && s[0] === 'R') return 'R';
+    return 'M';
+  }
+
+  function render(data) {
+    if (!data) return;
+
+    var files = Array.isArray(data.files) ? data.files : [];
+    var totalAdd = typeof data.total_added === 'number' ? data.total_added : 0;
+    var totalDel = typeof data.total_deleted === 'number' ? data.total_deleted : 0;
+    var branch = data.branch || '';
+
+    if (files.length === 0) {
+      els.emptyState.style.display = '';
+      els.main.style.display = 'none';
+      els.headerMeta.textContent = branch || '—';
+      return;
+    }
+
+    els.emptyState.style.display = 'none';
+    els.main.style.display = 'flex';
+
+    els.headerMeta.textContent = branch || (files.length + '개 파일');
+    els.sFiles.textContent = String(files.length);
+    els.sAdd.textContent = '+' + totalAdd;
+    els.sDel.textContent = '-' + totalDel;
+
+    var total = totalAdd + totalDel;
+    var addPct = total > 0 ? Math.round((totalAdd / total) * 100) : 0;
+    var delPct = total > 0 ? (100 - addPct) : 0;
+    els.totalBarAdd.style.width = addPct + '%';
+    els.totalBarDel.style.width = delPct + '%';
+    els.barAddLabel.textContent = '+' + totalAdd;
+    els.barDelLabel.textContent = '-' + totalDel;
+
+    var maxChg = 0;
+    files.forEach(function (f) {
+      var c = (f.added || 0) + (f.deleted || 0);
+      if (c > maxChg) maxChg = c;
+    });
+
+    var html = '';
+    files.forEach(function (f) {
+      var fa = f.added || 0;
+      var fd = f.deleted || 0;
+      var fc = fa + fd;
+      var fAddPct = fc > 0 && maxChg > 0 ? Math.round((fa / maxChg) * 100) : 0;
+      var fDelPct = fc > 0 && maxChg > 0 ? Math.round((fd / maxChg) * 100) : 0;
+      var sc = statusClass(f.status || 'M');
+      var warn = f.no_test_warning ? '<span class="file-warn" title="테스트 없는 변경">⚠️</span>' : '';
+      var name = f.name || f.path || '(unknown)';
+
+      html += '<div class="file-item">';
+      html += '<span class="file-status ' + sc + '">' + esc(sc) + '</span>';
+      html += '<span class="file-name" title="' + esc(name) + '">' + esc(name) + '</span>';
+      html += warn;
+      html += '<div class="file-bar-wrap">';
+      html += '<div class="file-bar-track">';
+      html += '<div class="file-bar-add" style="width:' + fAddPct + '%"></div>';
+      html += '<div class="file-bar-del" style="width:' + fDelPct + '%"></div>';
+      html += '</div>';
+      html += '<div class="file-counts">';
+      html += '<span class="fc-add">+' + fa + '</span>';
+      html += '<span class="fc-del">-' + fd + '</span>';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+    });
+    els.fileList.innerHTML = html;
+  }
+
+  window.addEventListener('message', function (event) {
+    var msg = event.data;
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'cq:git-diff:data') {
+      render(msg.payload);
+    }
+  });
+
+  // Initial state
+  els.emptyState.style.display = '';
+  els.main.style.display = 'none';
+})();
+</script>
+</body>
+</html>
