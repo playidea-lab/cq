@@ -302,3 +302,116 @@ func TestSyncDocument_CloudFailureNonFatal(t *testing.T) {
 		t.Errorf("error should mention 500, got: %v", err)
 	}
 }
+
+// =========================================================================
+// SemanticSearch tests
+// =========================================================================
+
+// TestSemanticSearch verifies that SemanticSearch sends a POST to /rpc/c4_knowledge_search_semantic
+// with the correct JSON payload including embedding, match_count, similarity_threshold, and project_id.
+func TestSemanticSearch(t *testing.T) {
+	var receivedPath string
+	var receivedBody map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		if err := json.NewDecoder(r.Body).Decode(&receivedBody); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]map[string]any{
+			{"id": "exp-001", "title": "Semantic Match", "type": "experiment", "domain": "ml"},
+		})
+	}))
+	defer srv.Close()
+
+	kc := newTestKnowledgeClient(srv.URL)
+	embedding := []float32{0.1, 0.2, 0.3}
+	results, err := kc.SemanticSearch(embedding, 5, 0.7)
+	if err != nil {
+		t.Fatalf("SemanticSearch failed: %v", err)
+	}
+
+	// Verify RPC endpoint was called
+	if receivedPath != "/rpc/c4_knowledge_search_semantic" {
+		t.Errorf("path = %q, want /rpc/c4_knowledge_search_semantic", receivedPath)
+	}
+
+	// Verify payload fields
+	if receivedBody["match_count"] != float64(5) {
+		t.Errorf("match_count = %v, want 5", receivedBody["match_count"])
+	}
+	if receivedBody["similarity_threshold"] != float64(0.7) {
+		t.Errorf("similarity_threshold = %v, want 0.7", receivedBody["similarity_threshold"])
+	}
+	if receivedBody["filter_project_id"] != "proj-1" {
+		t.Errorf("filter_project_id = %v, want proj-1", receivedBody["filter_project_id"])
+	}
+	if emb, ok := receivedBody["query_embedding"].([]any); !ok || len(emb) != 3 {
+		t.Errorf("query_embedding = %v, want 3-element array", receivedBody["query_embedding"])
+	}
+
+	// Verify results parsed correctly
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0]["id"] != "exp-001" {
+		t.Errorf("result id = %v, want exp-001", results[0]["id"])
+	}
+}
+
+// TestSemanticSearch_EmptyEmbedding verifies that an empty embedding returns an error.
+func TestSemanticSearch_EmptyEmbedding(t *testing.T) {
+	kc := newTestKnowledgeClient("http://localhost")
+	_, err := kc.SemanticSearch(nil, 5, 0.5)
+	if err == nil {
+		t.Error("expected error for empty embedding")
+	}
+	if !strings.Contains(err.Error(), "embedding must be non-empty") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestSemanticSearch_DefaultsApplied verifies that zero limit/threshold use defaults.
+func TestSemanticSearch_DefaultsApplied(t *testing.T) {
+	var receivedBody map[string]any
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&receivedBody)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]map[string]any{})
+	}))
+	defer srv.Close()
+
+	kc := newTestKnowledgeClient(srv.URL)
+	_, err := kc.SemanticSearch([]float32{0.5}, 0, 0)
+	if err != nil {
+		t.Fatalf("SemanticSearch failed: %v", err)
+	}
+
+	// Defaults: limit=10, threshold=0.5
+	if receivedBody["match_count"] != float64(10) {
+		t.Errorf("match_count = %v, want 10 (default)", receivedBody["match_count"])
+	}
+	if receivedBody["similarity_threshold"] != float64(0.5) {
+		t.Errorf("similarity_threshold = %v, want 0.5 (default)", receivedBody["similarity_threshold"])
+	}
+}
+
+// TestSemanticSearch_ServerError verifies that a 5xx response returns an error.
+func TestSemanticSearch_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"message":"internal server error"}`))
+	}))
+	defer srv.Close()
+
+	kc := newTestKnowledgeClient(srv.URL)
+	_, err := kc.SemanticSearch([]float32{0.1, 0.2}, 5, 0.5)
+	if err == nil {
+		t.Error("expected error on 500 response")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Errorf("error should mention status code, got: %v", err)
+	}
+}

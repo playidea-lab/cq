@@ -764,3 +764,173 @@ func TestKnowledgeDistillDryRun(t *testing.T) {
 		}
 	}
 }
+
+// =========================================================================
+// Cloud-primary integration tests
+// =========================================================================
+
+// mockCloudSemanticSearcher is a controllable CloudSemanticSearcher for tests.
+type mockCloudSemanticSearcher struct {
+	results []map[string]any
+	err     error
+	called  bool
+	lastEmb []float32
+}
+
+func (m *mockCloudSemanticSearcher) SemanticSearch(embedding []float32, limit int, similarityThreshold float32) ([]map[string]any, error) {
+	m.called = true
+	m.lastEmb = embedding
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.results, nil
+}
+
+// setupCloudPrimaryTest creates a KnowledgeNativeOpts with cloud-primary mode,
+// a real local store, and the given mock cloud searcher.
+func setupCloudPrimaryTest(t *testing.T, searcher *mockCloudSemanticSearcher) (*mcp.Registry, *KnowledgeNativeOpts) {
+	t.Helper()
+	dir := t.TempDir()
+	st, err := knowledge.NewStore(filepath.Join(dir, "knowledge"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	vs, err := knowledge.NewVectorStore(st.DB(), 384, nil)
+	if err != nil {
+		t.Fatalf("NewVectorStore: %v", err)
+	}
+	s := knowledge.NewSearcher(st, vs)
+
+	opts := &KnowledgeNativeOpts{
+		Store:       st,
+		Searcher:    s,
+		CloudSearch: searcher,
+		CloudMode:   "cloud-primary",
+	}
+
+	reg := mcp.NewRegistry()
+	RegisterKnowledgeNativeHandlers(reg, opts)
+	return reg, opts
+}
+
+// TestKnowledgeSearch_CloudPrimary_UsesCloudResults verifies that when mode=cloud-primary
+// and the cloud searcher succeeds, results come from the cloud (source="cloud").
+func TestKnowledgeSearch_CloudPrimary_UsesCloudResults(t *testing.T) {
+	cloudSearcher := &mockCloudSemanticSearcher{
+		results: []map[string]any{
+			{"id": "cloud-001", "title": "Cloud Experiment", "type": "experiment", "domain": "ml"},
+			{"id": "cloud-002", "title": "Cloud Pattern", "type": "pattern", "domain": "go"},
+		},
+	}
+
+	reg, _ := setupCloudPrimaryTest(t, cloudSearcher)
+
+	result := callHandler(t, reg, "c4_knowledge_search", map[string]any{
+		"query": "machine learning",
+	})
+
+	// Verify cloud was called
+	if !cloudSearcher.called {
+		t.Error("cloud SemanticSearch should have been called in cloud-primary mode")
+	}
+
+	// Verify embedding was generated and passed to cloud
+	if len(cloudSearcher.lastEmb) == 0 {
+		t.Error("cloud SemanticSearch should receive a non-empty embedding")
+	}
+
+	// Verify results come from cloud
+	results, ok := result["results"].([]map[string]any)
+	if !ok {
+		t.Fatalf("results should be []map[string]any, got %T", result["results"])
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 cloud results, got %d", len(results))
+	}
+	for _, r := range results {
+		if r["source"] != "cloud" {
+			t.Errorf("result source = %q, want cloud", r["source"])
+		}
+	}
+	if results[0]["id"] != "cloud-001" {
+		t.Errorf("first result id = %v, want cloud-001", results[0]["id"])
+	}
+}
+
+// TestKnowledgeSearch_CloudPrimary_FallbackToLocal verifies that when cloud fails,
+// the handler falls back to local search without returning an error.
+func TestKnowledgeSearch_CloudPrimary_FallbackToLocal(t *testing.T) {
+	cloudSearcher := &mockCloudSemanticSearcher{
+		err: fmt.Errorf("connection refused"),
+	}
+
+	reg, opts := setupCloudPrimaryTest(t, cloudSearcher)
+
+	// Create a local document so local search can return something
+	recordResult := callHandler(t, reg, "c4_knowledge_record", map[string]any{
+		"doc_type": "insight",
+		"title":    "Local Fallback Insight",
+		"content":  "local content used when cloud fails",
+	})
+	if recordResult["success"] != true {
+		t.Fatalf("record failed: %v", recordResult)
+	}
+	_ = opts
+
+	// Search — cloud fails, should fall back to local (no error returned)
+	result := callHandler(t, reg, "c4_knowledge_search", map[string]any{
+		"query": "local content",
+	})
+
+	// Verify cloud was attempted
+	if !cloudSearcher.called {
+		t.Error("cloud SemanticSearch should have been attempted even if it fails")
+	}
+
+	// Verify no error in response — fallback happened silently
+	if errVal, hasErr := result["error"]; hasErr {
+		t.Errorf("fallback should not return error, got: %v", errVal)
+	}
+
+	// Results should come from local (source="local")
+	if results, ok := result["results"].([]map[string]any); ok {
+		for _, r := range results {
+			if r["source"] != "local" {
+				t.Errorf("fallback result source = %q, want local", r["source"])
+			}
+		}
+	}
+}
+
+// TestKnowledgeSearch_CloudPrimary_TypeFilter verifies that doc_type filter applies
+// to cloud results in cloud-primary mode.
+func TestKnowledgeSearch_CloudPrimary_TypeFilter(t *testing.T) {
+	cloudSearcher := &mockCloudSemanticSearcher{
+		results: []map[string]any{
+			{"id": "cloud-exp", "title": "Cloud Experiment", "type": "experiment", "domain": "ml"},
+			{"id": "cloud-ins", "title": "Cloud Insight", "type": "insight", "domain": "ml"},
+		},
+	}
+
+	reg, _ := setupCloudPrimaryTest(t, cloudSearcher)
+
+	result := callHandler(t, reg, "c4_knowledge_search", map[string]any{
+		"query":    "machine learning",
+		"doc_type": "experiment",
+	})
+
+	results, ok := result["results"].([]map[string]any)
+	if !ok {
+		t.Fatalf("results type error: %T", result["results"])
+	}
+	for _, r := range results {
+		if r["type"] != "experiment" {
+			t.Errorf("type filter failed: got type %q, want experiment", r["type"])
+		}
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 result after type filter, got %d", len(results))
+	}
+}
