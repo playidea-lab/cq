@@ -2,9 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -107,12 +104,14 @@ type tunnel struct {
 
 // server is the relay server state.
 type server struct {
-	upgrader  websocket.Upgrader
-	workers   sync.RWMutex
-	conns     map[string]*workerConn // worker_id → workerConn
-	tunnels   sync.RWMutex
-	tunnelMap map[string]*tunnel // tunnel_id → tunnel
-	jwtSecret string
+	upgrader    websocket.Upgrader
+	workers     sync.RWMutex
+	conns       map[string]*workerConn // worker_id → workerConn
+	tunnels     sync.RWMutex
+	tunnelMap   map[string]*tunnel // tunnel_id → tunnel
+	supabaseURL string // e.g. "https://xxx.supabase.co"
+	supabaseKey string // anon key for Supabase Auth API
+	httpClient  *http.Client
 }
 
 func newServer() *server {
@@ -120,9 +119,11 @@ func newServer() *server {
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
-		conns:     make(map[string]*workerConn),
-		tunnelMap: make(map[string]*tunnel),
-		jwtSecret: os.Getenv("SUPABASE_JWT_SECRET"),
+		conns:       make(map[string]*workerConn),
+		tunnelMap:   make(map[string]*tunnel),
+		supabaseURL: os.Getenv("SUPABASE_URL"),
+		supabaseKey: os.Getenv("SUPABASE_ANON_KEY"),
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
 	go srv.sweepTunnels()
 	return srv
@@ -157,43 +158,29 @@ func (s *server) sweepTunnels() {
 	}
 }
 
-// validateToken performs HMAC-SHA256 JWT signature + exp claim verification.
-// When jwtSecret is empty (dev mode), validation is skipped with a warning.
+// validateToken verifies a Supabase Auth JWT by calling the Supabase Auth API.
+// When supabaseURL is empty (dev mode), validation is skipped.
 func (s *server) validateToken(tokenStr string) error {
-	if s.jwtSecret == "" {
-		return nil // dev mode — logged at startup
-	}
-	parts := strings.Split(tokenStr, ".")
-	if len(parts) != 3 {
-		return fmt.Errorf("invalid JWT format")
-	}
-	// Verify signature
-	signingInput := parts[0] + "." + parts[1]
-	mac := hmac.New(sha256.New, []byte(s.jwtSecret))
-	mac.Write([]byte(signingInput))
-	expected := mac.Sum(nil)
-
-	sigBytes, err := base64.RawURLEncoding.DecodeString(parts[2])
-	if err != nil {
-		return fmt.Errorf("invalid JWT signature encoding")
-	}
-	if !hmac.Equal(sigBytes, expected) {
-		return fmt.Errorf("invalid JWT signature")
+	if s.supabaseURL == "" {
+		return nil // dev mode
 	}
 
-	// Verify exp claim
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	// Call Supabase Auth /auth/v1/user to validate the token
+	req, err := http.NewRequest("GET", s.supabaseURL+"/auth/v1/user", nil)
 	if err != nil {
-		return fmt.Errorf("invalid JWT payload encoding")
+		return fmt.Errorf("create auth request: %w", err)
 	}
-	var claims struct {
-		Exp int64 `json:"exp"`
+	req.Header.Set("Authorization", "Bearer "+tokenStr)
+	req.Header.Set("apikey", s.supabaseKey)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("auth request failed: %w", err)
 	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return fmt.Errorf("invalid JWT claims")
-	}
-	if claims.Exp > 0 && time.Now().Unix() > claims.Exp {
-		return fmt.Errorf("JWT expired")
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("invalid token (status %d)", resp.StatusCode)
 	}
 	return nil
 }
@@ -304,7 +291,7 @@ func (s *server) handleConnect(w http.ResponseWriter, r *http.Request) {
 func (s *server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	// Authenticate client request
 	authHeader := r.Header.Get("Authorization")
-	if s.jwtSecret != "" {
+	if s.supabaseURL != "" {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		if token == "" || token == authHeader { // no Bearer prefix
 			http.Error(w, "unauthorized: Bearer token required", http.StatusUnauthorized)
@@ -375,7 +362,7 @@ func (s *server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // Requires Bearer JWT authentication (same as handleMCP).
 func (s *server) handleCreateTunnel(w http.ResponseWriter, r *http.Request) {
 	authHeader := r.Header.Get("Authorization")
-	if s.jwtSecret != "" {
+	if s.supabaseURL != "" {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		if token == "" || token == authHeader {
 			http.Error(w, "unauthorized: Bearer token required", http.StatusUnauthorized)
@@ -552,8 +539,10 @@ func main() {
 	mux.HandleFunc("POST /tunnel", srv.handleCreateTunnel)
 	mux.HandleFunc("GET /tunnel/{id}", srv.handleTunnelConnect)
 
-	if srv.jwtSecret == "" {
-		log.Printf("WARNING: SUPABASE_JWT_SECRET not set — authentication disabled (dev mode)")
+	if srv.supabaseURL == "" {
+		log.Printf("WARNING: SUPABASE_URL not set — authentication disabled (dev mode)")
+	} else {
+		log.Printf("auth: Supabase token validation enabled (%s)", srv.supabaseURL)
 	}
 
 	addr := ":" + port
