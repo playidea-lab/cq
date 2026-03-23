@@ -716,7 +716,7 @@ func toLLMGatewayConfig(cfgMgr *config.Manager, ss *secrets.Store, cloudTP *clou
 		if baseURL == "" && builtinSupabaseURL != "" {
 			baseURL = strings.TrimRight(builtinSupabaseURL, "/") + "/functions/v1/llm-proxy"
 		}
-		if baseURL != "" {
+		if baseURL != "" && cloudTP.Token() != "" {
 			providers["cq-proxy"] = llm.GatewayProviderConfig{
 				Enabled:      true,
 				TokenFunc:    cloudTP.Token,
