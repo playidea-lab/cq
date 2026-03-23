@@ -506,6 +506,10 @@ func patchCloudConfigAfterLogin(projDir string) string {
 		llmProxyURL := effectiveURL + "/functions/v1/llm-proxy"
 		result = ensureLLMGatewayBaseURL(result, llmProxyURL)
 	}
+
+	// Auto-enable relay for connected tier (NAT-transparent MCP access).
+	result = ensureRelayConfig(result, "wss://cq-relay.fly.dev")
+
 	if err := os.WriteFile(configPath, []byte(result), 0644); err != nil {
 		// Non-fatal: login succeeded, config patch failed.
 		fmt.Fprintf(os.Stderr, "Warning: failed to write config: %v\n", err)
@@ -683,4 +687,18 @@ func ensureLLMGatewayBaseURL(content, proxyURL string) string {
 		}
 	}
 	return strings.Join(result, "\n")
+}
+
+// ensureRelayConfig adds relay: section to config if not present.
+// Preserves existing relay config if already set.
+func ensureRelayConfig(content, relayURL string) string {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == "relay:" {
+			return content // already has relay section
+		}
+	}
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	return content + "\nrelay:\n  enabled: true\n  url: " + relayURL + "\n"
 }
