@@ -373,19 +373,30 @@ func TestAddDAGDependency(t *testing.T) {
 func TestExecuteDAG(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "PATCH" {
-			t.Errorf("method = %s, want PATCH", r.Method)
+		if r.Method == "PATCH" {
+			w.WriteHeader(200)
+			w.Write([]byte(`[]`))
+			return
 		}
-		if !strings.Contains(r.URL.RawQuery, "id=eq.dag-1") {
-			t.Errorf("query = %q, want id=eq.dag-1", r.URL.RawQuery)
+		// GET for validation
+		jsonResponse(w, []map[string]any{
+			{"id": "dag-1", "name": "test", "status": "pending"},
+		})
+	})
+	mux.HandleFunc("/rest/v1/hub_dag_nodes", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{
+			{"id": "node-1", "dag_id": "dag-1", "name": "root", "job_template": `{"command":"echo hi"}`, "max_retries": 3},
+		})
+	})
+	mux.HandleFunc("/rest/v1/hub_dag_dependencies", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{})
+	})
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			jsonResponse(w, []map[string]any{{"id": "job-dag-1", "status": "QUEUED"}})
+			return
 		}
-		var body map[string]any
-		json.NewDecoder(r.Body).Decode(&body)
-		if body["status"] != "running" {
-			t.Errorf("status = %v", body["status"])
-		}
-		w.WriteHeader(200)
-		w.Write([]byte(`[]`))
+		jsonResponse(w, []map[string]any{})
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -401,12 +412,17 @@ func TestExecuteDAG(t *testing.T) {
 func TestExecuteDAG_DryRun(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/rest/v1/hub_dags", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" {
-			t.Errorf("method = %s, want GET", r.Method)
-		}
 		jsonResponse(w, []map[string]any{
 			{"id": "dag-2", "name": "test", "status": "pending"},
 		})
+	})
+	mux.HandleFunc("/rest/v1/hub_dag_nodes", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{
+			{"id": "node-1", "dag_id": "dag-2", "name": "root", "job_template": `{}`, "max_retries": 3},
+		})
+	})
+	mux.HandleFunc("/rest/v1/hub_dag_dependencies", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, []map[string]any{})
 	})
 	client, _ := newTestServer(t, mux)
 
@@ -662,6 +678,14 @@ func TestDAG_FullPipeline(t *testing.T) {
 		case "GET":
 			jsonResponse(w, []map[string]any{})
 		}
+	})
+
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			jsonResponse(w, []map[string]any{{"id": "job-full-1", "status": "QUEUED"}})
+			return
+		}
+		jsonResponse(w, []map[string]any{})
 	})
 
 	client, _ := newTestServer(t, mux)

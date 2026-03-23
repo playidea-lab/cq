@@ -716,7 +716,7 @@ func TestTransitionState(t *testing.T) {
 			getCalled = true
 			return 200, `[{"project_id":"proj-123","state_json":"{\"status\":\"PLAN\",\"project_id\":\"proj-123\"}"}]`
 		},
-		"PATCH /rest/v1/c4_state": func(r *http.Request) (int, string) {
+		"POST /rest/v1/c4_state": func(r *http.Request) (int, string) {
 			patchCalled = true
 			b, _ := io.ReadAll(r.Body)
 			var payload map[string]any
@@ -854,7 +854,7 @@ func TestStart(t *testing.T) {
 		"GET /rest/v1/c4_state": func(r *http.Request) (int, string) {
 			return 200, `[{"project_id":"proj-123","state_json":"{\"status\":\"PLAN\",\"project_id\":\"proj-123\"}"}]`
 		},
-		"PATCH /rest/v1/c4_state": func(r *http.Request) (int, string) {
+		"POST /rest/v1/c4_state": func(r *http.Request) (int, string) {
 			patchCalled = true
 			return 200, ""
 		},
@@ -868,7 +868,7 @@ func TestStart(t *testing.T) {
 	}
 
 	if !patchCalled {
-		t.Error("expected PATCH to be called to update state")
+		t.Error("expected POST to be called to upsert state")
 	}
 }
 

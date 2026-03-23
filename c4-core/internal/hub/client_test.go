@@ -94,11 +94,13 @@ func newTestServer(t *testing.T, handler http.Handler) (*Client, *httptest.Serve
 	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 	client := &Client{
-		baseURL:    ts.URL,
-		apiPrefix:  "/v1",
-		apiKey:     "test-key",
-		teamID:     "test-team",
-		httpClient: http.DefaultClient,
+		baseURL:      ts.URL,
+		supabaseURL:  ts.URL,
+		supabaseKey:  "test-key",
+		apiPrefix:    "/v1",
+		apiKey:       "test-key",
+		teamID:       "test-team",
+		httpClient:   http.DefaultClient,
 	}
 	return client, ts
 }
@@ -284,12 +286,12 @@ func TestHealthCheck_Error(t *testing.T) {
 }
 
 // =========================================================================
-// SubmitJob (Supabase PostgREST: POST /rest/v1/jobs)
+// SubmitJob (Supabase PostgREST: POST /rest/v1/hub_jobs)
 // =========================================================================
 
 func TestSubmitJob(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
@@ -327,7 +329,7 @@ func TestSubmitJob(t *testing.T) {
 
 func TestSubmitJob_ServerError(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
 		w.Write([]byte(`{"message":"bad request"}`))
 	})
@@ -340,12 +342,12 @@ func TestSubmitJob_ServerError(t *testing.T) {
 }
 
 // =========================================================================
-// GetJob (Supabase PostgREST: GET /rest/v1/jobs?id=eq.{id})
+// GetJob (Supabase PostgREST: GET /rest/v1/hub_jobs?id=eq.{id})
 // =========================================================================
 
 func TestGetJob(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
@@ -373,12 +375,12 @@ func TestGetJob(t *testing.T) {
 }
 
 // =========================================================================
-// ListJobs (Supabase PostgREST: GET /rest/v1/jobs?order=created_at.desc&...)
+// ListJobs (Supabase PostgREST: GET /rest/v1/hub_jobs?order=created_at.desc&...)
 // =========================================================================
 
 func TestListJobs(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Get("status") != "eq.RUNNING" {
 			t.Errorf("status filter = %q, want eq.RUNNING", q.Get("status"))
@@ -407,7 +409,7 @@ func TestListJobs(t *testing.T) {
 
 func TestListJobs_NoFilter(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		// No status or limit filter, but order should still be present
 		if q.Get("status") != "" {
@@ -427,12 +429,12 @@ func TestListJobs_NoFilter(t *testing.T) {
 }
 
 // =========================================================================
-// CancelJob (Supabase PostgREST: PATCH /rest/v1/jobs?id=eq.{id})
+// CancelJob (Supabase PostgREST: PATCH /rest/v1/hub_jobs?id=eq.{id})
 // =========================================================================
 
 func TestCancelJob(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "PATCH" {
 			t.Errorf("method = %s, want PATCH", r.Method)
 		}
@@ -759,8 +761,8 @@ func TestRenewLease_Error(t *testing.T) {
 
 func TestHTTP4xx(t *testing.T) {
 	mux := http.NewServeMux()
-	// GetJob now calls /rest/v1/jobs?id=eq.bad via supabaseGet
-	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	// GetJob now calls /rest/v1/hub_jobs?id=eq.bad via supabaseGet
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
 		w.Write([]byte(`{"message":"not found"}`))
 	})
@@ -1122,7 +1124,7 @@ func TestLeaseAcquireResponse_ParsesPresignedURLs(t *testing.T) {
 
 func TestListJobsCtx(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
@@ -1150,7 +1152,7 @@ func TestListJobsCtx(t *testing.T) {
 
 func TestListJobsCtx_NoFilter(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
 		// order=created_at.desc is always present, but no status or limit
 		if r.URL.Query().Get("status") != "" {
 			t.Errorf("unexpected status filter: %s", r.URL.Query().Get("status"))
@@ -1170,7 +1172,7 @@ func TestListJobsCtx_NoFilter(t *testing.T) {
 
 func TestListJobsCtx_ContextCancelled(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rest/v1/jobs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, []*Job{})
 	})
 	client, _ := newTestServer(t, mux)
@@ -1190,18 +1192,18 @@ func TestListJobsCtx_ContextCancelled(t *testing.T) {
 
 func TestGetJobLogsCtx(t *testing.T) {
 	mux := http.NewServeMux()
-	// New implementation calls /rest/v1/job_logs?job_id=eq.{id}&...
-	mux.HandleFunc("/rest/v1/job_logs", func(w http.ResponseWriter, r *http.Request) {
+	// New implementation calls /rest/v1/hub_job_logs?job_id=eq.{id}&...
+	mux.HandleFunc("/rest/v1/hub_job_logs", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
 			t.Errorf("method = %s, want GET", r.Method)
 		}
 		if r.URL.Query().Get("job_id") != "eq.job-ctx-1" {
 			t.Errorf("job_id filter = %q, want eq.job-ctx-1", r.URL.Query().Get("job_id"))
 		}
-		// Returns array of log row objects
+		// Returns array of log row objects (field: "line")
 		jsonResponse(w, []map[string]any{
-			{"content": "MPJPE=45.2"},
-			{"content": "PA_MPJPE=32.1"},
+			{"line": "MPJPE=45.2"},
+			{"line": "PA_MPJPE=32.1"},
 		})
 	})
 	client, _ := newTestServer(t, mux)
@@ -1220,7 +1222,7 @@ func TestGetJobLogsCtx(t *testing.T) {
 
 func TestGetJobLogsCtx_ContextCancelled(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/rest/v1/job_logs", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/rest/v1/hub_job_logs", func(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, []map[string]any{})
 	})
 	client, _ := newTestServer(t, mux)
