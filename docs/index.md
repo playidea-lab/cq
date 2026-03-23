@@ -23,8 +23,8 @@ features:
     details: "Refine gate blocks bad plans. Polish gate blocks unreviewed code. Review gate runs 6-axis evaluation. Compiled into the binary — not optional."
 
   - icon: 🧠
-    title: Remembers Everything
-    details: "AI tools forget every session. CQ builds a 3-layer ontology — your patterns, your team's patterns, everyone's patterns. It gets better."
+    title: Observes You. Becomes You.
+    details: "AI tools forget every session. CQ watches how you code, review, and decide — then mirrors it. Your patterns, your team's, everyone's. It becomes you."
 
   - icon: ⚡
     title: Zero Config
