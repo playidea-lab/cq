@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "AI가 코드를 쓴다. 누가 확인하지?"
-  tagline: "CQ는 빠진 것을 채웁니다 — 계획, 검증, 학습, 거버넌스. AI가 코딩하고, CQ가 맞는지 확인합니다."
+  text: "AI를 위한 외장 두뇌"
+  tagline: "AI는 빠르지만 잊고, 계획을 건너뛰고, 배우지 않습니다. CQ는 AI에 없는 두뇌입니다 — 계획하고, 검증하고, 기억하고, 당신이 됩니다."
   actions:
     - theme: brand
       text: 시작하기

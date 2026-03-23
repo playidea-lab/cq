@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "AI writes code. Who checks it?"
-  tagline: "CQ fills what's missing — planning, verification, learning, and governance. Your AI codes. CQ makes sure it's right."
+  text: "External Brain for AI"
+  tagline: "AI codes fast but forgets, skips planning, and doesn't learn. CQ is the brain it's missing — plans, verifies, remembers, and becomes you."
   actions:
     - theme: brand
       text: Get Started
