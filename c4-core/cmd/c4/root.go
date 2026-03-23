@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/changmin/c4-core/internal/serve"
 	"github.com/spf13/cobra"
@@ -239,9 +240,8 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 2: Ensure OS service is installed and running.
-	if serve.IsServeRunning() {
-		fmt.Printf("CQ %s running\n", version)
-	} else {
+	alreadyRunning := serve.IsServeRunning()
+	if !alreadyRunning {
 		fmt.Println("Starting CQ service...")
 		if err := installServeService(context.Background(), true); err != nil {
 			fmt.Fprintf(os.Stderr, "Service install failed: %v\n", err)
@@ -250,23 +250,33 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Step 3: Print status summary.
+	// Step 3: Print status summary box.
+	fmt.Println()
+	fmt.Printf("  CQ %s\n", version)
+	fmt.Println("  " + strings.Repeat("-", 40))
+
 	components, healthErr := fetchServeHealth(servePort)
 	if healthErr != nil {
-		fmt.Printf("  (health endpoint not responding on port %d)\n", servePort)
-		return nil
-	}
-	for name, h := range components {
-		if h.Status == "ok" {
-			fmt.Printf("  \u2713 %-16s %s\n", name, h.Status)
-		} else {
-			detail := h.Detail
-			if detail != "" {
-				fmt.Printf("  \u2717 %-16s %s (%s)\n", name, h.Status, detail)
-			} else {
-				fmt.Printf("  \u2717 %-16s %s\n", name, h.Status)
+		fmt.Println("  Service: starting...")
+	} else {
+		okCount := 0
+		for _, h := range components {
+			if h.Status == "ok" {
+				okCount++
 			}
 		}
+		fmt.Printf("  Service: running (%d/%d components)\n", okCount, len(components))
 	}
+
+	fmt.Println("  " + strings.Repeat("-", 40))
+	fmt.Println()
+	if !alreadyRunning {
+		fmt.Println("  Ready! Next steps:")
+	} else {
+		fmt.Println("  Next:")
+	}
+	fmt.Println("    cq claude        Start Claude Code")
+	fmt.Println("    cq status        Service + project status")
+	fmt.Println()
 	return nil
 }
