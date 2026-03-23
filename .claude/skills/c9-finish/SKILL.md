@@ -19,11 +19,31 @@ allowed-tools: Bash, Read, mcp__cq__*
 cat .c9/state.yaml  # mpjpe_history에서 best round/exp 확인
 ```
 
-### Step 2: Best checkpoint 저장
+### Step 2: Best checkpoint 저장 + Drive 업로드
 ```bash
 # C5 Hub Job으로 pi 서버에서 best model 복사
 cq hub submit --run "cp /home/pi/git/hmr_unified/experiments/paper1/BEST_EXP/best_checkpoint.pt /home/pi/git/hmr_unified/outputs/c9_best_model.pt && echo SAVED"
 ```
+
+Best model을 Drive에 업로드 (다른 워커/세션에서 재사용 가능):
+```
+c4_drive_upload(
+  local_path: "<best_model_local_path>",
+  drive_path: "/c9/{project_name}/models/best_model.pt",
+  metadata: {"mpjpe": best_mpjpe, "round": best_round, "exp": best_exp_name}
+)
+```
+
+### Step 2.5: 실험 디렉토리 스냅샷 (Dataset)
+
+전체 실험 디렉토리를 버전 관리하여 재현 가능하게 보존:
+```
+c4_drive_dataset_upload(
+  path: "<experiments_dir>",
+  name: "c9-{project_name}-experiments"
+)
+```
+→ 동일 해시면 스킵 (변경분만 업로드). 나중에 `c4_drive_dataset_pull(name)` 으로 복원.
 
 ### Step 3: 결과 문서 생성
 `.c9/RESEARCH_SUMMARY.md` 생성:
@@ -51,7 +71,7 @@ cq hub submit --run "cp /home/pi/git/hmr_unified/experiments/paper1/BEST_EXP/bes
 
 #### 3.5.1 실험 결과 기록
 
-mpjpe_history의 각 라운드 best 결과를 기록:
+mpjpe_history의 각 라운드 best 결과를 기록 (Drive 경로 포함):
 
 ```
 c4_experiment_record(
@@ -60,6 +80,9 @@ c4_experiment_record(
     Round: {N}, Config: {요약}
     MPJPE: {X}mm, PA: {Y}mm, Util: {Z}%
     vs baseline: {diff}mm ({%}%)
+    Artifacts:
+      - Model: /c9/{project_name}/models/best_model.pt (c4_drive_download)
+      - Experiments: c9-{project_name}-experiments (c4_drive_dataset_pull)
   tags: ["c9", "round-{N}", "{exp_name}"]
 )
 ```

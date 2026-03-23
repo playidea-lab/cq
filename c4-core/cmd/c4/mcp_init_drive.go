@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -10,6 +11,16 @@ import (
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/mcp/handlers/drivehandler"
 )
+
+// driveUploaderAdapter adapts *drive.Client to the DriveUploader interface.
+type driveUploaderAdapter struct {
+	client *drive.Client
+}
+
+func (a *driveUploaderAdapter) Upload(localPath, drivePath string, metadata json.RawMessage) error {
+	_, err := a.client.Upload(localPath, drivePath, metadata)
+	return err
+}
 
 func init() {
 	registerInitHook(initDrive)
@@ -28,6 +39,11 @@ func initDrive(ctx *initContext) error {
 	driveClient := drive.NewClient(cloudCfg.URL, cloudCfg.AnonKey, ctx.cloudTP, ctx.cloudProjectID, cloudCfg.BucketName)
 	drivehandler.RegisterDriveHandlers(ctx.reg, driveClient)
 	drivehandler.RegisterDatasetHandlers(ctx.reg, drive.NewDatasetClient(driveClient), ctx.projectDir)
+	// Wire Drive into Knowledge handlers for experiment artifact auto-upload.
+	// knowledgeOpts is a shared pointer — handlers already captured it via closure.
+	if ctx.knowledgeOpts != nil {
+		ctx.knowledgeOpts.Drive = &driveUploaderAdapter{client: driveClient}
+	}
 	fmt.Fprintln(os.Stderr, "cq: drive enabled (9 tools)")
 	return nil
 }

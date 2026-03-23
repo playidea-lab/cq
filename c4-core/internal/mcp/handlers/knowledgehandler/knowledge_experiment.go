@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -96,6 +97,41 @@ func experimentRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			payload, _ := json.Marshal(map[string]any{"doc_id": docID, "doc_type": "experiment", "title": title})
 			knowledgeEventPub.PublishAsync("knowledge.recorded", "c4.knowledge", payload, knowledgeProjectID)
 		}
+
+		// Auto-upload artifacts to Drive (best-effort, non-blocking)
+		var uploadedArtifacts []map[string]any
+		if opts.Drive != nil {
+			if rawArtifacts, ok := params["artifacts"]; ok {
+				artifactPaths := toStringSliceAny(rawArtifacts)
+				if len(artifactPaths) > 0 {
+					titleSlug := slugify(title)
+					for _, localPath := range artifactPaths {
+						if _, err := os.Stat(localPath); err != nil {
+							uploadedArtifacts = append(uploadedArtifacts, map[string]any{
+								"path":  localPath,
+								"error": "file not found",
+							})
+							continue
+						}
+						filename := filepath.Base(localPath)
+						drivePath := fmt.Sprintf("/experiments/%s/%s", titleSlug, filename)
+						if uploadErr := opts.Drive.Upload(localPath, drivePath, nil); uploadErr != nil {
+							uploadedArtifacts = append(uploadedArtifacts, map[string]any{
+								"path":  localPath,
+								"error": uploadErr.Error(),
+							})
+						} else {
+							uploadedArtifacts = append(uploadedArtifacts, map[string]any{
+								"path":       localPath,
+								"drive_path": drivePath,
+								"status":     "uploaded",
+							})
+						}
+					}
+				}
+			}
+		}
+
 		result := map[string]any{
 			"success": true,
 			"doc_id":  docID,
@@ -105,6 +141,9 @@ func experimentRecordNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		}
 		if len(relatedList) > 0 {
 			result["related"] = relatedList
+		}
+		if len(uploadedArtifacts) > 0 {
+			result["artifacts"] = uploadedArtifacts
 		}
 		return result, nil
 	}

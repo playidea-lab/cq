@@ -181,6 +181,35 @@ Run `/research-loop next` again after experiments complete to continue.
 
 **IMPORTANT**: Do NOT block waiting for experiments. They may take hours.
 
+4. After experiments complete (on re-entry), upload results to Drive:
+```
+# Per-experiment outputs (checkpoints, eval results)
+c4_drive_upload(
+  local_path: "<output_path>",
+  drive_path: "/research/{project_name}/iter-{N}/{exp_name}/",
+  metadata: {"experiment": exp_name, "iteration": N, "status": "completed"}
+)
+
+# Or bulk upload experiment directory
+c4_drive_dataset_upload(
+  path: "<experiment_output_dir>",
+  name: "research-{project_name}-iter-{N}"
+)
+```
+
+5. Record experiment results with artifact references:
+```
+c4_experiment_record(
+  title: "{exp_name}: {key_metric}={value}",
+  content: |
+    Experiment: {exp_name}
+    Metrics: {all_metrics}
+    Config: {hyperparams}
+    Artifacts: /research/{project_name}/iter-{N}/{exp_name}/ (c4_drive_download)
+  tags: ["research-loop", "{project_name}", "iter-{N}"]
+)
+```
+
 **Checkpoint**: "실험 {N}개를 제출했습니다. 완료 후 다시 `/research-loop`을 실행하세요."
 
 ### action = "complete"
@@ -197,6 +226,36 @@ Target score reached! Score: {score} >= Target: {target}
 
 Call `c4_research_approve(project_id, action: "complete")`
 
+#### Artifact & Drive 보존
+
+연구 완료 시, 핵심 아티팩트를 Drive에 업로드하여 재사용 가능하게 만든다:
+
+```
+# 1. Best model checkpoint → Drive
+c4_drive_upload(
+  local_path: "<best_checkpoint_path>",
+  drive_path: "/research/{project_name}/models/best_model.pt",
+  metadata: {"score": score, "iteration": N, "experiment": best_exp_name}
+)
+
+# 2. 실험 코드 스냅샷 (디렉토리) → Dataset
+c4_drive_dataset_upload(
+  path: "<repo_path>/experiments/",
+  name: "research-{project_name}-experiments"
+)
+
+# 3. 평가 결과/로그 → Drive
+c4_drive_upload(
+  local_path: "<eval_results_path>",
+  drive_path: "/research/{project_name}/results/final_eval.json"
+)
+```
+
+Drive 경로 규칙:
+- `/research/{project_name}/models/` — 체크포인트, 최종 모델
+- `/research/{project_name}/results/` — 평가 결과, 로그
+- `/research/{project_name}/data/` — 전처리된 데이터 (Dataset 권장)
+
 #### Knowledge 기록 (finish 패턴)
 
 연구 루프 완료 시, Research DB 결과를 Knowledge DB에도 기록:
@@ -210,11 +269,16 @@ c4_experiment_record(
     Final score: {score}/10 (target: {target}/10)
     Axis scores: quality={q}, novelty={nv}, technical={tc}, experimental={ex}, discussion={di}, presentation={pr}
     Resolved gaps: {resolved_gaps_summary}
+    Artifacts:
+      - Model: /research/{project_name}/models/best_model.pt
+      - Results: /research/{project_name}/results/
+      - Dataset: research-{project_name}-experiments (c4_drive_dataset_pull)
   tags: ["research-loop", "{project_name}", "iteration-{N}"]
 )
 ```
 
 → 이전 세션의 실험 기록이 누적되어 있으면 `c4_experiment_search(query="{project_name}")`로 조회 가능
+→ 아티팩트 경로가 기록에 포함되어 다른 세션/워커에서 `c4_drive_download`로 즉시 재사용 가능
 
 ### action = "none"
 

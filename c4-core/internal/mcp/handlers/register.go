@@ -74,6 +74,7 @@ type NativeOpts struct {
 	OntologyCloud            *ontology.CloudStore                   // nil if ontology cloud disabled
 	OntologyCloudMode        string                                 // "cloud-primary" or "local-first"
 	AppResourceStore         *apps.ResourceStore                    // nil if MCP Apps infra not wired
+	KnowledgeOpts            *knowledgehandler.KnowledgeNativeOpts  // pre-built opts pointer; Drive can be set later by Phase 4 hooks
 }
 
 // RegisterAllHandlersWithOpts is the full-featured registration with native opts.
@@ -125,16 +126,20 @@ func RegisterAllHandlersWithOpts(reg *mcp.Registry, store Store, rootDir string,
 	registerC2Native(reg, proxy, llmGW, rootDir, opts)
 	// Knowledge (13+ tools) — build-tagged via knowledgehandler subpackage
 	if opts != nil && opts.KnowledgeStore != nil {
-		knowledgehandler.RegisterKnowledgeNativeHandlers(reg, &knowledgehandler.KnowledgeNativeOpts{
-			Store:         opts.KnowledgeStore,
-			Searcher:      opts.KnowledgeSearcher,
-			Cloud:         opts.KnowledgeCloud,
-			CloudSearch:   opts.KnowledgeCloudSearch,
-			CloudMode:     opts.KnowledgeCloudMode,
-			Usage:         opts.KnowledgeUsage,
-			LLM:           opts.LLMGateway,
-			GlobalManager: opts.KnowledgeGlobalManager,
-		})
+		kOpts := opts.KnowledgeOpts
+		if kOpts == nil {
+			kOpts = &knowledgehandler.KnowledgeNativeOpts{
+				Store:         opts.KnowledgeStore,
+				Searcher:      opts.KnowledgeSearcher,
+				Cloud:         opts.KnowledgeCloud,
+				CloudSearch:   opts.KnowledgeCloudSearch,
+				CloudMode:     opts.KnowledgeCloudMode,
+				Usage:         opts.KnowledgeUsage,
+				LLM:           opts.LLMGateway,
+				GlobalManager: opts.KnowledgeGlobalManager,
+			}
+		}
+		knowledgehandler.RegisterKnowledgeNativeHandlers(reg, kOpts)
 		// POP (3 tools) — requires knowledge store + optional LLM
 		pophandler.Register(reg, &pophandler.Opts{
 			ProjectDir: rootDir,

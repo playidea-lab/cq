@@ -240,6 +240,17 @@ func newMCPServer() (*mcpServer, error) {
 	// wired into nativeOpts (for c4_run_validation format=widget support).
 	appStore := apps.NewResourceStore()
 
+	// Build KnowledgeNativeOpts as a shared pointer — Phase 4 hooks (Drive)
+	// can mutate it after handler registration (handlers capture the pointer).
+	knowledgeNativeOpts := &knowledgehandler.KnowledgeNativeOpts{
+		Store:         knowledgeStore,
+		Searcher:      knowledgeSearcher,
+		Usage:         knowledgeUsage,
+		LLM:           ctx.llmGateway,
+		GlobalManager: globalKnowledgeManager,
+	}
+	ctx.knowledgeOpts = knowledgeNativeOpts
+
 	nativeOpts := &handlers.NativeOpts{
 		ResearchStore:          ctx.researchStore,
 		KnowledgeStore:         knowledgeStore,
@@ -250,6 +261,7 @@ func newMCPServer() (*mcpServer, error) {
 		GPUStore:               ctx.daemonStore,
 		GPUScheduler:           ctx.scheduler,
 		AppResourceStore:       appStore,
+		KnowledgeOpts:          knowledgeNativeOpts,
 	}
 	// Avoid typed-nil interface bug: only assign when concrete pointer is non-nil.
 	// A nil *cloud.KnowledgeCloudClient assigned to an interface field creates a
@@ -259,10 +271,13 @@ func newMCPServer() (*mcpServer, error) {
 	if knowledgeCloud != nil {
 		nativeOpts.KnowledgeCloud = knowledgeCloud
 		nativeOpts.KnowledgeCloudSearch = knowledgeCloud
+		knowledgeNativeOpts.Cloud = knowledgeCloud
+		knowledgeNativeOpts.CloudSearch = knowledgeCloud
 		kcForProxy = knowledgeCloud
 	}
 	if cfgMgr != nil {
 		nativeOpts.KnowledgeCloudMode = cfgMgr.GetConfig().Cloud.Mode
+		knowledgeNativeOpts.CloudMode = cfgMgr.GetConfig().Cloud.Mode
 	}
 	// Wire ontology CloudStore when cloud is enabled (same credentials as knowledge cloud).
 	// *ontology.CloudStore implements L1/L2 upsert via Supabase PostgREST.

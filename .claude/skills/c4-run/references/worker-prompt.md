@@ -60,6 +60,16 @@ hb_thread.start()
      cq MetricWriter auto-parses stdout for @(\w+)=(<number>) and sends to experiment_checkpoint.
      Example: print(f'Fold {fold} done @loss={loss:.4f} @hd_gt={hd:.4f} @msd={msd:.4f}')
 3. Run validations, fix issues (max 3 retries)
+3.4. **Artifact & Drive Upload** (ML/experiment tasks only):
+   - IF task produced model checkpoints, datasets, or evaluation outputs:
+     a. Save locally: c4_artifact_save(source_path, name, description)
+     b. Upload to cloud: c4_drive_upload(local_path, drive_path="/experiments/{task_id}/{filename}")
+   - IF task produced training metrics or evaluation results:
+     c. Record: c4_experiment_record(title="T-{id}: {summary}", content="{metrics + config}", tags=["{domain}"])
+   - Drive paths convention:
+     /experiments/{task_id}/     — checkpoints, logs
+     /datasets/{name}/          — processed data (prefer c4_drive_dataset_upload for directories)
+     /models/{name}/            — final/best models
 3.5. **Polish Loop** (skip if diff < 5 lines):
    a. Spawn code-reviewer agent: review changes on 6 axes
       (Correctness, Security, Reliability, Observability, Test Coverage, Readability)

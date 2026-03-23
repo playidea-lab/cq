@@ -16,6 +16,7 @@ import (
 	"github.com/changmin/c4-core/internal/mailbox"
 	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
+	"github.com/changmin/c4-core/internal/mcp/handlers/knowledgehandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/messengerhandler"
 	"github.com/changmin/c4-core/internal/research"
 	"github.com/changmin/c4-core/internal/secrets"
@@ -100,6 +101,8 @@ type initContext struct {
 	// Chat router (set by newMCPServer when CQ_CHAT_CHANNEL_ID is set)
 	chatRouter *chat.Router
 
+	// knowledgeOpts pointer (set during Phase 3, mutated by Phase 4 hooks like Drive)
+	knowledgeOpts *knowledgehandler.KnowledgeNativeOpts
 }
 
 // hubClientInterface abstracts hub.Client so the stub doesn't need to import hub.

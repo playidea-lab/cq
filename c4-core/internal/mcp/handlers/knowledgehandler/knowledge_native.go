@@ -2,6 +2,8 @@ package knowledgehandler
 
 import (
 	"encoding/json"
+	"regexp"
+	"strings"
 
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/knowledge"
@@ -15,6 +17,11 @@ type CloudSemanticSearcher interface {
 	SemanticSearch(embedding []float32, limit int, similarityThreshold float32) ([]map[string]any, error)
 }
 
+// DriveUploader abstracts Drive file upload for experiment artifact auto-upload.
+type DriveUploader interface {
+	Upload(localPath, drivePath string, metadata json.RawMessage) error
+}
+
 // KnowledgeNativeOpts holds dependencies for native knowledge handlers.
 type KnowledgeNativeOpts struct {
 	Store         *knowledge.Store
@@ -25,6 +32,7 @@ type KnowledgeNativeOpts struct {
 	Usage         *knowledge.UsageTracker        // nil if usage tracking disabled
 	LLM           *llm.Gateway                   // nil if LLM gateway disabled (distill unavailable)
 	GlobalManager *knowledge.GlobalKnowledgeManager // nil if global store unavailable
+	Drive         DriveUploader                  // nil if drive disabled; enables artifact auto-upload in experiment_record
 }
 
 var knowledgeEventPub eventbus.Publisher
@@ -94,13 +102,18 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 	// 4. c4_experiment_record (alias: creates type=experiment)
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_experiment_record",
-		Description: "Record an experiment result",
+		Description: "Record an experiment result. Optionally auto-upload artifact files to Drive.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"title":   map[string]any{"type": "string", "description": "Experiment title"},
 				"content": map[string]any{"type": "string", "description": "Experiment details and results"},
 				"tags":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"artifacts": map[string]any{
+					"type":        "array",
+					"description": "Local file paths to auto-upload to Drive. Each file is uploaded to /experiments/<title_slug>/<filename>.",
+					"items":       map[string]any{"type": "string"},
+				},
 			},
 			"required": []string{"title", "content"},
 		},
@@ -373,4 +386,21 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+// slugifyRe matches non-alphanumeric, non-hyphen, non-underscore characters.
+var slugifyRe = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+
+// slugify converts a title to a filesystem-safe slug for Drive paths.
+func slugify(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = slugifyRe.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	if len(s) > 64 {
+		s = s[:64]
+	}
+	if s == "" {
+		s = "unnamed"
+	}
+	return s
 }
