@@ -243,6 +243,70 @@ func (k *KnowledgeCloudClient) DiscoverPublic(query string, docType string, limi
 	return rows, nil
 }
 
+// SemanticSearch calls the c4_knowledge_search_semantic PostgreSQL RPC via PostgREST.
+// embedding must be a non-nil float32 slice matching the pgvector dimension.
+// Falls back to empty result (not error) so callers can fall back to local search.
+func (k *KnowledgeCloudClient) SemanticSearch(embedding []float32, limit int, similarityThreshold float32) ([]map[string]any, error) {
+	if len(embedding) == 0 {
+		return nil, fmt.Errorf("embedding must be non-empty")
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	if similarityThreshold <= 0 {
+		similarityThreshold = 0.5
+	}
+
+	payload := map[string]any{
+		"query_embedding":      embedding,
+		"match_count":          limit,
+		"similarity_threshold": similarityThreshold,
+		"filter_project_id":    k.projectID,
+		"filter_visibility":    "team",
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("semantic search marshal: %w", err)
+	}
+
+	rpcURL := k.baseURL + "/rpc/c4_knowledge_search_semantic"
+
+	var results []map[string]any
+	for attempt := 0; attempt < 2; attempt++ {
+		req, err := http.NewRequest("POST", rpcURL, strings.NewReader(string(data)))
+		if err != nil {
+			return nil, err
+		}
+		k.setHeaders(req)
+
+		resp, err := k.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("semantic search RPC: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+			if _, err := k.tokenProvider.Refresh(); err == nil {
+				continue
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("semantic search RPC: %d %s", resp.StatusCode, string(body))
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+			return nil, fmt.Errorf("semantic search decode: %w", err)
+		}
+		return results, nil
+	}
+	return results, nil
+}
+
 // toTSQuery converts a multi-word query into PostgreSQL tsquery format.
 // "embedding search" → "embedding & search" (AND).
 func toTSQuery(q string) string {
