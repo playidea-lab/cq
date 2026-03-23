@@ -153,6 +153,7 @@ func (a *Agent) Start(ctx context.Context) error {
 	// Create Realtime client
 	a.client = NewRealtimeClient(a.cfg.SupabaseURL, a.cfg.APIKey, a.cfg.AuthToken)
 	a.client.Subscribe("c1_messages")
+	a.client.Subscribe("c4_tasks")
 	a.client.OnMessage(func(event RealtimeEvent) {
 		a.handleEvent(event)
 	})
@@ -205,9 +206,19 @@ func (a *Agent) Stop(ctx context.Context) error {
 	return nil
 }
 
-// handleEvent processes a Realtime event from c1_messages.
+// handleEvent dispatches Realtime events to table-specific handlers.
 func (a *Agent) handleEvent(event RealtimeEvent) {
-	if event.Table != "c1_messages" || event.ChangeType != "INSERT" {
+	switch event.Table {
+	case "c1_messages":
+		a.handleMessageEvent(event)
+	case "c4_tasks":
+		a.handleTaskEvent(event)
+	}
+}
+
+// handleMessageEvent processes a Realtime event from c1_messages.
+func (a *Agent) handleMessageEvent(event RealtimeEvent) {
+	if event.ChangeType != "INSERT" {
 		return
 	}
 
