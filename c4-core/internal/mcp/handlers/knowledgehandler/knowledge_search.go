@@ -11,6 +11,8 @@ import (
 	"github.com/changmin/c4-core/internal/mcp"
 )
 
+const knowledgeFeedResourceURI = "ui://cq/knowledge-feed"
+
 func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		params := parseParams(rawArgs)
@@ -20,6 +22,7 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		}
 
 		docType, _ := params["doc_type"].(string)
+		format, _ := params["format"].(string)
 		limit := 10
 		if l, ok := params["limit"].(float64); ok && l > 0 {
 			limit = int(l)
@@ -145,10 +148,22 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		response := map[string]any{
 			"results": resultList,
 			"count":   len(resultList),
+			"query":   query,
 		}
 		if communityCount > 0 {
 			response["local_count"] = localCount
 			response["community_count"] = communityCount
+		}
+
+		if format == "widget" {
+			return map[string]any{
+				"data": response,
+				"_meta": map[string]any{
+					"ui": map[string]any{
+						"resourceUri": knowledgeFeedResourceURI,
+					},
+				},
+			}, nil
 		}
 
 		return response, nil

@@ -85,6 +85,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 				"query":    map[string]any{"type": "string", "description": "Search query"},
 				"doc_type": map[string]any{"type": "string", "description": "Filter by type (experiment, pattern, insight, hypothesis)"},
 				"limit":    map[string]any{"type": "integer", "description": "Max results (default: 10)"},
+				"format":   map[string]any{"type": "string", "enum": []string{"widget", "text"}, "description": "Response format: 'widget' returns MCP Apps widget response with _meta; 'text' returns plain JSON (default)"},
 			},
 			"required": []string{"query"},
 		},

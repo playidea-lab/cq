@@ -359,6 +359,12 @@ func newMCPServer() (*mcpServer, error) {
 	gpuhandler.RegisterJobProgressWidget(appStore, apps.JobProgressHTML)
 	gpuhandler.RegisterJobResultWidget(appStore, apps.JobResultHTML)
 
+	// Register knowledge feed widget for search result cards.
+	if apps.KnowledgeFeedHTML != "" {
+		appStore.Register("ui://cq/knowledge-feed", apps.KnowledgeFeedHTML)
+		fmt.Fprintln(os.Stderr, "cq: knowledge-feed registered (ui://cq/knowledge-feed)")
+	}
+
 	// Auto-register CLI commands in lighthouse so agents can discover them.
 	if cliCmds := collectCLICommands(rootCmd, "cq"); len(cliCmds) > 0 {
 		if n := handlers.RegisterCLICommands(sqliteStore, cliCmds); n > 0 {
