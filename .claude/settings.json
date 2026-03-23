@@ -134,6 +134,6 @@
       "Grep",
       "WebFetch"
     ],
-    "defaultMode": "acceptEdits"
+    "defaultMode": "auto"
   }
 }

@@ -183,6 +183,37 @@ cd c4-core && go build -o ~/.local/bin/cq ./cmd/c4/
 ### 7. Learn & Record
 `c4_knowledge_record`로 인사이트 기록. 반복 실수 → MEMORY.md.
 
+### 7.4. Session Distill (대화 → 지식 자동 추출)
+
+이번 세션의 대화에서 지식으로 남길 가치가 있는 항목을 추출하여 저장한다.
+
+```python
+# 대화 전체를 스캔하여 추출 대상 식별:
+# - 제품/비즈니스 결정 → doc_type: "insight"
+# - 기술적 발견 (버그 원인, 설정 트릭) → doc_type: "pattern"
+# - 아키텍처/설계 선택 → doc_type: "insight"
+# - 경쟁사/시장 분석 → doc_type: "insight"
+# - 연구 가설 → doc_type: "hypothesis"
+#
+# 각 항목에 대해:
+# 1. c4_knowledge_search(query=title)로 중복 확인
+# 2. 중복 없으면 c4_knowledge_record(doc_type, title, content, tags, scope)
+# 3. 단순 Q&A, 이미 코드/git에 있는 내용, 일회성 디버깅은 skip
+#
+# 품질 > 수량: 0건이어도 괜찮다. 억지로 만들지 않는다.
+
+for item in extracted_items:
+    existing = c4_knowledge_search(query=item.title, limit=3)
+    if not any(r.similarity > 0.85 for r in existing.results):
+        c4_knowledge_record(
+            doc_type=item.type,
+            title=item.title,
+            content=item.content,
+            tags=item.tags,
+            scope="project"
+        )
+```
+
 ### 7.5. Auto-Distill (knowledge 5건+ 시)
 ```python
 if c4_knowledge_stats().total_docs >= 5:
