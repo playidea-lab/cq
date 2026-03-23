@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -23,10 +25,14 @@ Override with --tier if needed.`,
 	RunE: runUpgrade,
 }
 
-var upgradeTier string
+var (
+	upgradeTier  string
+	upgradeCheck bool
+)
 
 func init() {
 	upgradeCmd.Flags().StringVar(&upgradeTier, "tier", "", "override tier (solo|connected|full)")
+	upgradeCmd.Flags().BoolVar(&upgradeCheck, "check", false, "check for updates without installing")
 	rootCmd.AddCommand(upgradeCmd)
 }
 
@@ -48,6 +54,11 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	artifact := fmt.Sprintf("cq-%s-%s-%s", t, goos, goarch)
 	url := fmt.Sprintf("https://github.com/PlayIdea-Lab/cq/releases/latest/download/%s", artifact)
+
+	// --check: version comparison only
+	if upgradeCheck {
+		return runUpgradeCheck(url, artifact)
+	}
 
 	fmt.Printf("Upgrading cq (tier: %s, %s/%s)...\n", t, goos, goarch)
 
@@ -77,7 +88,15 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get new version before replacing
-	newVersion, _ := exec.Command(tmp.Name(), "version").Output()
+	newVersionBytes, _ := exec.Command(tmp.Name(), "version").Output()
+	newVersion := strings.TrimSpace(string(newVersionBytes))
+
+	// Skip if already up to date
+	currentVersion := strings.TrimSpace(version)
+	if newVersion != "" && strings.Contains(newVersion, currentVersion) {
+		fmt.Printf("Already up to date (%s)\n", currentVersion)
+		return nil
+	}
 
 	// Replace current binary
 	self, err := os.Executable()
@@ -98,10 +117,47 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 	os.Remove(old)
 
-	fmt.Printf("Upgraded: %s\n", self)
-	if len(newVersion) > 0 {
-		fmt.Printf("Version:  %s", newVersion)
+	fmt.Printf("Updated: %s → %s\n", currentVersion, newVersion)
+
+	// Auto-restart cq serve if running
+	if isServeRunning() {
+		fmt.Println("Restarting cq serve...")
+		exec.Command(self, "serve", "stop").Run()
+		time.Sleep(1 * time.Second)
+		if err := exec.Command(self, "serve").Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to restart serve: %v\n", err)
+		} else {
+			fmt.Println("cq serve restarted with new version.")
+		}
 	}
-	fmt.Println("\nDone! Restart your shell or MCP server to use the new version.")
+
 	return nil
+}
+
+// runUpgradeCheck checks for available updates without installing.
+func runUpgradeCheck(url, artifact string) error {
+	// HEAD request to check if release exists
+	resp, err := http.Head(url) //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("check failed: %w", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode == http.StatusOK {
+		fmt.Printf("Update available: %s\nRun 'cq upgrade' to install.\n", artifact)
+	} else if resp.StatusCode == http.StatusNotFound {
+		fmt.Println("No release found for your platform.")
+	} else {
+		fmt.Printf("Current version: %s (could not check latest)\n", version)
+	}
+	return nil
+}
+
+// isServeRunning checks if cq serve is running.
+func isServeRunning() bool {
+	out, err := exec.Command("cq", "serve", "status").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "running")
 }
