@@ -10,10 +10,15 @@ import (
 	"time"
 )
 
-// refreshInterval is how often we sync the token from session.json to .mcp.json.
-// Set to 45 minutes — tokens expire after 1 hour, and TokenProvider refreshes
-// at 5 minutes before expiry, so session.json always has a fresh token.
-const mcpTokenRefreshInterval = 45 * time.Minute
+// mcpTokenRefreshInterval is how often we sync the token to .mcp.json.
+// Set to 10 minutes — frequent enough to catch token rotations promptly,
+// but skips writes when the token hasn't changed (cheap no-op).
+const mcpTokenRefreshInterval = 10 * time.Minute
+
+// mcpTokenMinRemaining skips syncing tokens that expire within this window.
+// TokenProvider refreshes at 5 minutes before expiry, so if session.json
+// has a token with <15 min left, it's about to be replaced — wait for the fresh one.
+const mcpTokenMinRemaining = 15 * time.Minute
 
 // startMCPTokenSync runs a background goroutine that periodically refreshes
 // Bearer tokens in .mcp.json worker entries from ~/.c4/session.json.
@@ -60,9 +65,20 @@ func syncMCPTokens(projectDir string) error {
 	}
 	var session struct {
 		AccessToken string `json:"access_token"`
+		ExpiresAt   int64  `json:"expires_at"`
 	}
 	if json.Unmarshal(sessionData, &session) != nil || session.AccessToken == "" {
 		return nil
+	}
+
+	// Skip if token is about to expire — TokenProvider will refresh it shortly,
+	// and we'll pick up the fresh token on the next cycle.
+	if session.ExpiresAt > 0 {
+		remaining := time.Until(time.Unix(session.ExpiresAt, 0))
+		if remaining < mcpTokenMinRemaining {
+			fmt.Fprintf(os.Stderr, "cq: mcp token sync: skipped (token expires in %s, waiting for refresh)\n", remaining.Round(time.Second))
+			return nil
+		}
 	}
 
 	// Find all .mcp.json files to update (project dir + any other known locations)
