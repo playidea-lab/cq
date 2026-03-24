@@ -322,6 +322,21 @@ func newMCPServer() (*mcpServer, error) {
 		knowledgeHitTracker = handlers.NewKnowledgeHitTracker()
 		storeOpts = append(storeOpts, handlers.WithKnowledgeHitTracker(knowledgeHitTracker))
 	}
+	// Cloud team search for task enrichment (enrichUnified)
+	if knowledgeNativeOpts.CloudSearch != nil && knowledgeNativeOpts.CloudMode != "" {
+		opts := knowledgeNativeOpts // capture pointer
+		storeOpts = append(storeOpts, handlers.WithCloudSearch(func(query, docType string, limit int) ([]handlers.KnowledgeSearchResult, bool) {
+			results, used, _ := knowledgehandler.CloudPrimarySearch(opts, query, docType, limit)
+			if !used {
+				return nil, false
+			}
+			out := make([]handlers.KnowledgeSearchResult, len(results))
+			for i, r := range results {
+				out[i] = handlers.KnowledgeSearchResult{ID: r.ID, Title: r.Title, Type: r.Type, Domain: r.Domain}
+			}
+			return out, true
+		}))
+	}
 	storeOpts = append(storeOpts, handlers.WithRegistry(reg))
 	sqliteStore, err := handlers.NewSQLiteStore(db, storeOpts...)
 	if err != nil {

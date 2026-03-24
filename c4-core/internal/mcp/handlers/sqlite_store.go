@@ -39,6 +39,7 @@ type SQLiteStore struct {
 	knowledgeReader     KnowledgeReader          // optional: for knowledge body lookup
 	knowledgeSearch     KnowledgeContextSearcher // optional: for knowledge context injection
 	knowledgeHitTracker *KnowledgeHitTracker     // optional: tracks search hit/miss in memory
+	cloudSearchFunc     func(query, docType string, limit int) ([]KnowledgeSearchResult, bool) // optional: cloud team search for enrichment
 	eventPub            EventPublisher            // optional: for C3 EventBus remote publishing
 	dispatcher      EventDispatcher           // optional: local rule-based dispatch (C1 posting, etc.)
 	registry        *mcp.Registry             // optional: for lighthouse auto-promote registry cleanup
@@ -103,6 +104,11 @@ func WithKnowledge(writer KnowledgeWriter, reader KnowledgeReader, searcher Know
 		s.knowledgeReader = reader
 		s.knowledgeSearch = searcher
 	}
+}
+
+// WithCloudSearch sets a cloud search function for team knowledge enrichment in task assignment.
+func WithCloudSearch(fn func(query, docType string, limit int) ([]KnowledgeSearchResult, bool)) StoreOption {
+	return func(s *SQLiteStore) { s.cloudSearchFunc = fn }
 }
 
 // WithKnowledgeHitTracker sets the knowledge hit tracker for monitoring search hit/miss rates.

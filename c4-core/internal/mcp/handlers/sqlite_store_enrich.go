@@ -220,6 +220,25 @@ func (s *SQLiteStore) enrichUnified(assignment *TaskAssignment) {
 			}
 			s.knowledgeHitTracker.Record(assignment.TaskID, query, resultCount)
 		}
+
+		// Cloud team search: supplement local results with team knowledge
+		if s.cloudSearchFunc != nil {
+			cloudResults, used := s.cloudSearchFunc(query, "", 3)
+			if used && len(cloudResults) > 0 {
+				// Deduplicate by ID
+				seen := make(map[string]bool, len(results))
+				for _, r := range results {
+					seen[r.ID] = true
+				}
+				for _, cr := range cloudResults {
+					if !seen[cr.ID] {
+						results = append(results, cr)
+						seen[cr.ID] = true
+					}
+				}
+			}
+		}
+
 		if err == nil && len(results) > 0 {
 			b.WriteString("\n### Past Solutions\n")
 			for _, r := range results {

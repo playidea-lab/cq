@@ -13,6 +13,37 @@ import (
 
 const knowledgeFeedResourceURI = "ui://cq/knowledge-feed"
 
+// CloudPrimarySearch attempts cloud semantic search first, falling back to local.
+// Returns results, whether cloud was used, and any error.
+// Exported for use by experiment_search and enrichUnified.
+func CloudPrimarySearch(opts *KnowledgeNativeOpts, query, docType string, limit int) ([]knowledge.SearchResult, bool, error) {
+	if opts.CloudMode != config.CloudModePrimary || opts.CloudSearch == nil || opts.Searcher == nil || opts.Searcher.VectorStore() == nil {
+		return nil, false, nil
+	}
+	queryEmb, _, embedErr := opts.Searcher.VectorStore().EmbedText(context.Background(), query)
+	if embedErr != nil || len(queryEmb) == 0 {
+		return nil, false, nil
+	}
+	cloudDocs, cloudErr := opts.CloudSearch.SemanticSearch(queryEmb, limit, 0.5)
+	if cloudErr != nil {
+		return nil, false, nil // cloud error: caller should fall back to local
+	}
+	var results []knowledge.SearchResult
+	for _, cd := range cloudDocs {
+		cdType, _ := cd["type"].(string)
+		if docType != "" && cdType != docType {
+			continue
+		}
+		results = append(results, knowledge.SearchResult{
+			ID:     stringFromAny(cd["id"]),
+			Title:  stringFromAny(cd["title"]),
+			Type:   cdType,
+			Domain: stringFromAny(cd["domain"]),
+		})
+	}
+	return results, true, nil
+}
+
 func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 	return func(rawArgs json.RawMessage) (any, error) {
 		params := parseParams(rawArgs)
@@ -33,34 +64,9 @@ func knowledgeSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 			filters = map[string]string{"type": docType}
 		}
 
-		var results []knowledge.SearchResult
+		results, cloudUsed, _ := CloudPrimarySearch(opts, query, docType, limit)
+
 		var err error
-		cloudUsed := false
-
-		// cloud-primary: try cloud semantic search first, fall back to local on failure
-		if opts.CloudMode == config.CloudModePrimary && opts.CloudSearch != nil && opts.Searcher != nil && opts.Searcher.VectorStore() != nil {
-			queryEmb, _, embedErr := opts.Searcher.VectorStore().EmbedText(context.Background(), query)
-			if embedErr == nil && len(queryEmb) > 0 {
-				cloudDocs, cloudErr := opts.CloudSearch.SemanticSearch(queryEmb, limit, 0.5)
-				if cloudErr == nil {
-					for _, cd := range cloudDocs {
-						cdType, _ := cd["type"].(string)
-						if docType != "" && cdType != docType {
-							continue
-						}
-						results = append(results, knowledge.SearchResult{
-							ID:     stringFromAny(cd["id"]),
-							Title:  stringFromAny(cd["title"]),
-							Type:   cdType,
-							Domain: stringFromAny(cd["domain"]),
-						})
-					}
-					cloudUsed = true
-				}
-				// on cloud error: fall through to local search below
-			}
-		}
-
 		if !cloudUsed {
 			if opts.Searcher != nil {
 				results, err = opts.Searcher.Search(query, limit, filters)

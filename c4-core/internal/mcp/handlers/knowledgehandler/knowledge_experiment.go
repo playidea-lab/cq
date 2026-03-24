@@ -164,30 +164,38 @@ func experimentSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 
 		filters := map[string]string{"type": "experiment"}
 
-		var results []knowledge.SearchResult
+		// cloud-primary: try team experiment search first
+		results, cloudUsed, _ := CloudPrimarySearch(opts, query, "experiment", limit)
+
 		var err error
-		if opts.Searcher != nil {
-			results, err = opts.Searcher.Search(query, limit, filters)
-		} else {
-			ftsResults, ftsErr := opts.Store.SearchFTS(query, limit)
-			if ftsErr != nil {
-				return map[string]any{"error": fmt.Sprintf("search failed: %v", ftsErr)}, nil
-			}
-			for _, r := range ftsResults {
-				if t, _ := r["type"].(string); t != "experiment" {
-					continue
+		if !cloudUsed {
+			if opts.Searcher != nil {
+				results, err = opts.Searcher.Search(query, limit, filters)
+			} else {
+				ftsResults, ftsErr := opts.Store.SearchFTS(query, limit)
+				if ftsErr != nil {
+					return map[string]any{"error": fmt.Sprintf("search failed: %v", ftsErr)}, nil
 				}
-				results = append(results, knowledge.SearchResult{
-					ID:    stringFromAny(r["id"]),
-					Title: stringFromAny(r["title"]),
-					Type:  stringFromAny(r["type"]),
-				})
+				for _, r := range ftsResults {
+					if t, _ := r["type"].(string); t != "experiment" {
+						continue
+					}
+					results = append(results, knowledge.SearchResult{
+						ID:    stringFromAny(r["id"]),
+						Title: stringFromAny(r["title"]),
+						Type:  stringFromAny(r["type"]),
+					})
+				}
 			}
 		}
 		if err != nil {
 			return map[string]any{"error": fmt.Sprintf("search failed: %v", err)}, nil
 		}
 
+		resultSource := "local"
+		if cloudUsed {
+			resultSource = "cloud"
+		}
 		resultList := make([]map[string]any, len(results))
 		for i, r := range results {
 			resultList[i] = map[string]any{
@@ -196,7 +204,7 @@ func experimentSearchNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 				"type":      r.Type,
 				"domain":    r.Domain,
 				"rrf_score": r.RRFScore,
-				"source":    "local",
+				"source":    resultSource,
 			}
 		}
 
