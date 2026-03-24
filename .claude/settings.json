@@ -51,6 +51,7 @@
       "Skill(cycle-*)",
       "Skill(simplify)",
       "mcp__cq__*",
+      "mcp__worker-*__*",
       "mcp__piq__*",
       "mcp__serena__*",
       "mcp__plugin_serena_serena__*",

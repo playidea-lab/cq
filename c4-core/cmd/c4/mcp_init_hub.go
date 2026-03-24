@@ -30,6 +30,7 @@ func initHub(ctx *initContext) error {
 	hubCfg := ctx.cfgMgr.GetConfig().Hub
 
 	// Apply env/builtin/cloud fallback: C5_HUB_URL env → builtinHubURL → cloud.url (Supabase).
+	cloudCfg := ctx.cfgMgr.GetConfig().Cloud
 	if hubCfg.URL == "" {
 		if v := os.Getenv("C5_HUB_URL"); v != "" {
 			hubCfg.URL = v
@@ -37,7 +38,7 @@ func initHub(ctx *initContext) error {
 		} else if builtinHubURL != "" {
 			hubCfg.URL = builtinHubURL
 			hubCfg.Enabled = true
-		} else if cloudCfg := ctx.cfgMgr.GetConfig().Cloud; cloudCfg.Enabled && cloudCfg.URL != "" {
+		} else if cloudCfg.Enabled && cloudCfg.URL != "" {
 			// Cloud-primary mode: use Supabase as Hub backend
 			hubCfg.URL = cloudCfg.URL
 			hubCfg.Enabled = true
@@ -62,13 +63,24 @@ func initHub(ctx *initContext) error {
 		}
 	}
 
+	// Inherit Supabase credentials from cloud config when hub uses cloud URL.
+	var supabaseURL, supabaseKey string
+	if cloudCfg.Enabled && cloudCfg.URL != "" {
+		supabaseURL = cloudCfg.URL
+	}
+	if cloudCfg.AnonKey != "" {
+		supabaseKey = cloudCfg.AnonKey
+	}
+
 	hc := hub.NewClient(hub.HubConfig{
-		Enabled:   hubCfg.Enabled,
-		URL:       hubCfg.URL,
-		APIPrefix: hubCfg.APIPrefix,
-		APIKey:    apiKey,
-		APIKeyEnv: hubCfg.APIKeyEnv,
-		TeamID:    hubCfg.TeamID,
+		Enabled:     hubCfg.Enabled,
+		URL:         hubCfg.URL,
+		APIPrefix:   hubCfg.APIPrefix,
+		APIKey:      apiKey,
+		APIKeyEnv:   hubCfg.APIKeyEnv,
+		TeamID:      hubCfg.TeamID,
+		SupabaseURL: supabaseURL,
+		SupabaseKey: supabaseKey,
 	})
 	if !hc.IsAvailable() {
 		fmt.Fprintln(os.Stderr, "cq: hub enabled but URL not configured")

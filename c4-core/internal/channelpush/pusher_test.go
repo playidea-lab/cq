@@ -40,7 +40,7 @@ func TestEnsureChannel_CreatesAndReturnsID(t *testing.T) {
 	defer srv.Close()
 
 	p := New(srv.URL, "test-key")
-	id, err := p.EnsureChannel(context.Background(), "default", "", "claude_code:session-abc", PlatformClaudeCode)
+	id, err := p.EnsureChannel(context.Background(), "a0c5cd2e-ba96-47a7-803e-bf59a6afe3e4", "", "claude_code:session-abc", PlatformClaudeCode)
 	if err != nil {
 		t.Fatalf("EnsureChannel: %v", err)
 	}

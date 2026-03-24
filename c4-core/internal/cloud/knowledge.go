@@ -186,6 +186,9 @@ func (k *KnowledgeCloudClient) GetDocument(docID string) (map[string]any, error)
 
 // ListDocuments lists knowledge documents with optional type filter.
 func (k *KnowledgeCloudClient) ListDocuments(docType string, limit int) ([]map[string]any, error) {
+	if k.projectID == "" {
+		return nil, fmt.Errorf("cloud project_id not configured")
+	}
 	if limit <= 0 {
 		limit = 50
 	}

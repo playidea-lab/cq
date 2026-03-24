@@ -11,8 +11,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"time"
 )
+
+var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+func isUUID(s string) bool { return uuidRe.MatchString(s) }
 
 // Platform identifies the source platform for a channel.
 type Platform string
@@ -65,8 +70,8 @@ func (p *Pusher) SetProjectID(id string) {
 // EnsureChannel creates or retrieves a channel by (tenant_id, platform, name).
 // Returns the channel UUID. Uses resolution=ignore-duplicates + fallback GET for idempotency.
 func (p *Pusher) EnsureChannel(ctx context.Context, tenantID, projectID, name string, platform Platform) (string, error) {
-	if tenantID == "" {
-		tenantID = "default"
+	if tenantID == "" || !isUUID(tenantID) {
+		return "", fmt.Errorf("channelpush: tenant_id must be a valid UUID, got %q", tenantID)
 	}
 
 	// Try POST with ignore-duplicates first.
