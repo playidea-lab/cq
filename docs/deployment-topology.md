@@ -31,14 +31,17 @@ c1_participants, c1_channel_summaries — C1 참여자/요약
 
 **운영 할 일**: Supabase 프로젝트 생성, 마이그레이션 적용, OAuth 앱 등록, 모니터링
 
-### 1-2. PiQ Hub (원격 GPU 스케줄러)
+### 1-2. Hub (Supabase PostgREST 기반, v1.31+)
 
 | 항목 | 내용 |
 |------|------|
-| **API 서버** | Job Queue, Worker Pool, DAG 실행 |
-| **Artifact Storage** | Presigned URL 업로드/다운로드 |
+| **Job Queue** | Supabase PostgREST 테이블 (`hub_jobs`, `hub_workers`) |
+| **Worker Pool** | `cq serve` 내장 poller가 job claim/complete |
+| **DAG 실행** | PostgREST RPC로 DAG 생성/실행 |
+| **Artifact Storage** | Supabase Storage (c4-drive) |
 
-**운영 할 일**: Hub 서버 운영, Worker 노드 관리, GPU 할당
+**운영 할 일**: Supabase 마이그레이션 유지, Worker 노드 관리, GPU 할당
+> Note: 별도 Hub 서버 불필요. cloud.url + cloud.anon_key가 Hub 인증에 자동 상속됨 (v1.31.1+)
 
 ### 1-3. install.sh 호스팅
 
@@ -146,9 +149,9 @@ cq auth status
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
 
-# Hub 연결 (원격 GPU 사용 시)
-C5_HUB_URL=https://hub.pilab.co.kr
-C5_API_KEY=...
+# Hub 연결 (별도 Hub 서버 사용 시만 — 기본은 Supabase PostgREST)
+# C5_HUB_URL=https://custom-hub.example.com
+# C5_API_KEY=...
 ```
 
 ---
@@ -167,9 +170,8 @@ C5_API_KEY=...
 │  └─────────────────────────────────────────┘    │
 │                                                  │
 │  ┌─ PiQ Hub ───────────────────────────────┐    │
-│  │  Job Queue + Worker + DAG               │    │
-│  │  Artifact Store                         │    │
-│  │  Edge Deploy                            │    │
+│  │  Job Queue + Worker + DAG (PostgREST)   │    │
+│  │  Artifact Store (Supabase Storage)      │    │
 │  └─────────────────────────────────────────┘    │
 │                                                  │
 │  ┌─ Git 서버 ──────────────────────────────┐    │
@@ -212,7 +214,7 @@ C5_API_KEY=...
 | **Solo + 지식 동기화** | O | Knowledge sync | 위와 동일 |
 | **팀 협업 (C1 채널)** | O | Realtime | 위와 동일 |
 | **파일 공유 (Drive)** | O | Storage | 위와 동일 |
-| **원격 GPU 학습** | O | Hub | `.env`에 `C4_HUB_URL` 추가 |
+| **원격 GPU 학습** | O | Hub (Supabase) | 기본 설정으로 동작 (cloud.url 재사용) |
 | **LLM Gateway** | O | 외부 API | `.env`에 LLM API 키 추가 |
 
 **핵심**: 기본 사용은 `install.sh` + `cq auth login`이면 끝. 추가 설정은 Hub/LLM 사용 시에만.
