@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.32.1] - 2026-03-25
+
+### ✨ Features
+
+- **relay**: `.mcp.json` 토큰 자동 동기화 — `cq serve` 시작 시 10분 주기로 `session.json` → `.mcp.json` worker 토큰 갱신. 만료 15분 미만 토큰은 skip (TokenProvider refresh 대기)
+- **serve**: Linux systemd `Restart=always` + `systemctl --user enable` + `loginctl enable-linger` 안내
+- **wsl**: WSL2 자동 감지 (`/proc/version`) + `nvidia-smi` PATH fallback (`/usr/lib/wsl/lib/nvidia-smi`)
+- **serve**: WSL2 Windows Task Scheduler 자동 등록 (`CQ-Serve-WSL`) — 윈도우 부팅 시 WSL + cq serve 자동 시작. uninstall 시 태스크 제거 + `wsl.conf` systemd=true 확인
+- **telegram-notify**: `hub_workers` 테이블 offline 감지 → Telegram 알림
+- **worker**: `c4_get_task` 빈 응답 진단 + 특정 태스크 직접 할당
+- **dag**: hub poller에서 job 완료 시 DAG 다음 노드 자동 시작
+
+### 🐛 Bug Fixes
+
+- **relay**: `.mcp.json` 토큰 sync race condition 수정 — 주기 45분→10분, 만료 15분 미만 skip
+- **serve**: `KnowledgeHubPoller`에 `TokenFunc` 연결 — serve 모드에서 JWT 회전 후 401 해소
+- **hub**: `api_key_env` config 필드가 설정되어도 실제 환경변수가 비어있으면 cloud session token으로 fallback
+- **hooks**: gate blocking 소프트닝 + hook-config allow_patterns merge
+
+### 📚 Documentation
+
+- deployment-topology: Hub → Supabase PostgREST 마이그레이션 반영
+
+---
+
 ## [v1.17.0] - 2026-03-23
 
 ### ✨ Features
