@@ -32,15 +32,6 @@
 | DAG 파이프라인 실행 | Hub DAG | `c4_hub_dag_create` → `c4_hub_dag_execute` |
 | 워커 목록/상태 | Hub Workers | `c4_hub_workers` / `cq hub workers` |
 
-## 원격 디바이스 (Edge)
-
-| 상황 | 기능 | 도구/CLI |
-|------|------|---------|
-| 원격 서버를 워커로 등록 | Edge Agent | `cq hub edge start` |
-| 엣지에서 파일 수집 (Drive 업로드) | Edge Collect | `cq hub edge control <id> collect` |
-| 엣지에서 셸 명령 실행 | Edge Exec | `cq hub edge control <id> exec` |
-| 엣지 재시작/중지 | Edge Control | `cq hub edge control <id> restart/stop` |
-
 ## 알림/이벤트
 
 | 상황 | 기능 | 도구/CLI |

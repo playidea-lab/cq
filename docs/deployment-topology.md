@@ -37,7 +37,6 @@ c1_participants, c1_channel_summaries — C1 참여자/요약
 |------|------|
 | **API 서버** | Job Queue, Worker Pool, DAG 실행 |
 | **Artifact Storage** | Presigned URL 업로드/다운로드 |
-| **Edge Deploy** | 엣지 디바이스 배포 규칙 |
 
 **운영 할 일**: Hub 서버 운영, Worker 노드 관리, GPU 할당
 

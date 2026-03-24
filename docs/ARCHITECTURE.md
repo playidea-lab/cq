@@ -64,7 +64,7 @@ Claude Code → Go MCP Server (stdio, 118 base + 26 Hub = 144 tools)
                 ├→ C7 Observe (4, c7_observe 조건부): observe_metrics, observe_logs, observe_config, observe_health
                 ├→ C6 Guard (5, c6_guard 조건부): guard_check, guard_audit, guard_policy_set/list, guard_role_assign
                 ├→ C8 Gate (6, c8_gate 조건부): gate_webhook_register/list/test, gate_schedule_add/list, gate_connector_status
-                ├→ Hub Client (26, 조건부): job, worker, DAG, edge, deploy, artifact
+                ├→ Hub Client (19, 조건부): job, worker, DAG, artifact
                 ├→ Worker Standby (3, Hub 조건부): standby, complete, shutdown
                 ├→ EventSink (1): HTTP POST /v1/events/publish 수신 → C3 EventBus 전달
                 ├→ HubPoller (1): 30s 간격 C5 RUNNING jobs 상태 감시 → hub.job.completed/failed 발행

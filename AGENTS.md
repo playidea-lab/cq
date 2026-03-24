@@ -180,7 +180,7 @@ sqlite3 .c4/c4.db "SELECT gate, status, reason FROM c4_gates ORDER BY completed_
 4. `c4_knowledge_search(query="...")` — 과거 패턴/인사이트 검색
 
 **주요 기능 키워드**: drive(파일), hub(잡/워커), transfer(P2P전송), research(실험루프),
-knowledge(지식), edge(엣지디바이스), gpu(GPU잡), persona(학습), event(이벤트버스)
+knowledge(지식), gpu(GPU잡), persona(학습), event(이벤트버스)
 
 ---
 

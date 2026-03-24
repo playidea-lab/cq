@@ -1,7 +1,9 @@
-# Plan: C — Edge/Deploy 실행 계층 (C4 Plan)
+# ~~Plan: C — Edge/Deploy 실행 계층~~ (DEPRECATED)
 
-> **범위**: C5 Hub의 Edge/Deploy에서 **룰 트리거 실행**, **배포 실행(아티팩트 전달)**, **엣지 에이전트**까지 구현.  
-> B+A 완료 후 진행. run → refine → finish 동일.
+> **DEPRECATED 2026-03-24**: Edge 개념이 Worker로 통합됨. 상세: `.c4/ideas/edge-worker-unification.md`
+>
+> ~~**범위**: C5 Hub의 Edge/Deploy에서 **룰 트리거 실행**, **배포 실행(아티팩트 전달)**, **엣지 에이전트**까지 구현.~~
+> ~~B+A 완료 후 진행. run → refine → finish 동일.~~
 
 ---
 
