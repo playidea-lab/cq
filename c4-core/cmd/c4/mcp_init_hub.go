@@ -87,9 +87,14 @@ func initHub(ctx *initContext) error {
 		return nil
 	}
 
-	// If hub.api_key is not configured by any source but a cloud session token is
-	// available, use the cloud JWT as the Hub Bearer token with auto-refresh support.
-	if apiKey == "" && hubCfg.APIKeyEnv == "" && ctx.cloudTP != nil && ctx.cloudTP.Token() != "" {
+	// If no static API key is resolved, fall back to cloud session token with auto-refresh.
+	// Check both config api_key AND the actual env var value — api_key_env may be set
+	// but the environment variable itself may be empty (common in OS service mode).
+	envKeyValue := ""
+	if hubCfg.APIKeyEnv != "" {
+		envKeyValue = os.Getenv(hubCfg.APIKeyEnv)
+	}
+	if apiKey == "" && envKeyValue == "" && ctx.cloudTP != nil && ctx.cloudTP.Token() != "" {
 		hc.SetTokenFunc(ctx.cloudTP.Token)
 		fmt.Fprintln(os.Stderr, "cq: hub using cloud session token (auto-refresh enabled)")
 	}
