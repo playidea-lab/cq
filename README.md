@@ -48,9 +48,9 @@ Update anytime: `cq update`
 │                   │         │  └ Hub (distributed jobs)   │
 │ Service (cq serve)│   WSS   │                             │
 │  ├ Relay ─────────┼────────►│  Relay (Fly.io)             │
-│  ├ EventBus       │         │  └ NAT traversal            │
-│  ├ Token refresh  │         │                             │
-│  └ .mcp.json sync │         │                             │
+│  ├ Relay proxy    │         │  └ NAT traversal            │
+│  ├ EventBus       │         │                             │
+│  └ Token refresh  │         │                             │
 └──────────────────┘          └────────────────────────────┘
 
 solo:       Everything local (SQLite + your API key)
