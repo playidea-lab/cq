@@ -1,7 +1,7 @@
 ---
 name: c4-reboot
 description: |
-  Reboot the current named Claude Code session. Writes a reboot flag so cq
+  [internal] Reboot the current named Claude Code session. Writes a reboot flag so cq
   automatically resumes with the same session UUID after exit.
   Only works when launched via `cq -t <name>`.
   Triggers: "reboot", "재시작", "세션 재시작", "/reboot", "restart session".

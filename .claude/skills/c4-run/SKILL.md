@@ -1,7 +1,7 @@
 ---
 name: c4-run
 description: |
-  Spawn C4 workers to execute implementation tasks in parallel. **Always runs in
+  ★ Spawn C4 workers to execute implementation tasks in parallel. **Always runs in
   continuous mode** (auto-respawn until queue empty). Analyzes task dependency
   graph, spawns workers with fresh context isolation (one task per worker).
   Use when ready to execute C4 tasks. Triggers: "실행", "워커 실행", "태스크 실행",

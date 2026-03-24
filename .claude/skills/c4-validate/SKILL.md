@@ -1,7 +1,7 @@
 ---
 name: c4-validate
 description: |
-  Run project validations (lint, tests, security checks) with severity-based handling.
+  [internal] Run project validations (lint, tests, security checks) with severity-based handling.
   Executes configured validations, detects CRITICAL (commit-blocking), HIGH (review-required),
   and MEDIUM (recommended) issues. Supports security pattern detection (hardcoded secrets,
   SQL/command injection, XSS), code quality checks, and test execution. Use when validating

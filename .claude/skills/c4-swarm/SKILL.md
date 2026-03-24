@@ -1,7 +1,7 @@
 ---
 name: c4-swarm
 description: |
-  Agent Teams-based parallel collaboration for C4 tasks. Spawns coordinator-led
+  [internal] Agent Teams-based parallel collaboration for C4 tasks. Spawns coordinator-led
   teams with direct member communication. Supports standard (implementation),
   review (read-only audit), and investigate (hypothesis competition) modes.
   Auto-maps C4 tasks to team tasks, domain-based agent selection, handoff tracking,

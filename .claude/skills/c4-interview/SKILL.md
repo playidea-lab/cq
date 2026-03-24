@@ -1,7 +1,7 @@
 ---
 name: c4-interview
 description: |
-  Deep exploratory requirements interview to discover hidden requirements, edge
+  [internal] Deep exploratory requirements interview to discover hidden requirements, edge
   cases, failure scenarios, and tradeoffs. Acts as senior PM/architect to ask
   non-obvious, in-depth questions until complete clarity. Use for new features,
   requirements refinement, or discovering implicit assumptions. Triggers:

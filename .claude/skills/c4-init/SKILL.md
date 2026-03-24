@@ -1,7 +1,7 @@
 ---
 name: c4-init
 description: |
-  Initialize C4 in the current project directory. Detects C4 installation path,
+  [internal] Initialize C4 in the current project directory. Detects C4 installation path,
   runs init with optional project-id, and handles session restart logic. Use when
   the user wants to set up C4 for a new project or re-initialize after clearing.
   Triggers: "C4 초기화", "프로젝트 설정", "init c4", "initialize project",

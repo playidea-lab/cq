@@ -1,7 +1,7 @@
 ---
 name: c4-add-task
 description: |
-  Add new tasks to the C4 project queue with conversational guidance. Helps users
+  [internal] Add new tasks to the C4 project queue with conversational guidance. Helps users
   define clear task descriptions, Definition of Done (DoD), scope, and domain through
   interactive dialogue. Infers task IDs from existing patterns and suggests concrete
   DoD criteria when requirements are vague. Use when the user wants to add a task,

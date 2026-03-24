@@ -1,7 +1,7 @@
 ---
 name: c4-attach
 description: |
-  Attach a name to the current Claude Code session so it can be resumed later
+  [internal] Attach a name to the current Claude Code session so it can be resumed later
   with `cq -t <name>`. Works even if the session was started without -t.
   Optionally adds a short memo describing the session's purpose.
   Triggers: "세션 이름 붙여", "이 세션에 이름", "attach", "name this session",

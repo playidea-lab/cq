@@ -1,7 +1,7 @@
 ---
 name: c4-finish
 description: |
-  Post-implementation completion workflow: Polish Loop (quality convergence) →
+  ★ Post-implementation completion workflow: Polish Loop (quality convergence) →
   build verification → testing → binary installation → documentation → knowledge
   recording → commit. Polish loop is built-in — no separate /c4-polish needed.
   Triggers: "마무리", "완료 루틴", "구현 마무리", "finish", "c4-finish", "wrap up",

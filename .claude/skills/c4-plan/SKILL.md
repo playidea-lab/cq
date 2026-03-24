@@ -1,7 +1,7 @@
 ---
 name: c4-plan
 description: |
-  Create structured implementation plans for C4 projects. Scans project state,
+  ★ Create structured implementation plans for C4 projects. Scans project state,
   specs, designs, docs, and Lighthouse contracts, then guides through Discovery
   (EARS requirements), Design (architecture decisions), Lighthouse contracts
   (contract-first TDD), and task breakdown with DoD. Use when the user wants to
