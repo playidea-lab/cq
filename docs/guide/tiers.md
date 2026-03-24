@@ -51,7 +51,7 @@ Additional features on top of `solo`:
 - **C9 Knowledge** — semantic search + pgvector for cross-project knowledge sharing
 - **Persona/Soul Evolution** — coding style pattern learning
 - **C6 Secret Central** — encrypted secret sync (Supabase-backed, cache-first)
-- **Relay** — WSS-based NAT traversal for remote MCP access; any machine behind NAT exposes tools via `https://cq-relay.fly.dev/w/{worker}/mcp`. Auto-reconnects on network drops, auto-refreshes JWT, and syncs `.mcp.json` tokens every 10 minutes. WSL2 support with Windows Task Scheduler auto-registration.
+- **Relay** — WSS-based NAT traversal for remote MCP access; any machine behind NAT exposes tools via local proxy (`localhost:4140/w/{worker}/mcp`). No tokens in `.mcp.json` — `cq serve` auto-injects JWT on every request. Auto-reconnects on drops, auto-refreshes JWT. WSL2 support with Windows Task Scheduler auto-registration.
 - **Telegram bot** — job completion notifications + slash commands via BotFather (`cq setup`)
 - **Knowledge auto-pull** — knowledge base synced on session start
 

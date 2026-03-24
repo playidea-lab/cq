@@ -7,10 +7,10 @@ Access CQ tools from any machine — even behind NAT.
 The easiest way to access CQ remotely is the **Relay** — a WSS bridge that traverses NAT automatically.
 
 ```
-Your machine (NAT)              Relay (Fly.io)               Remote client
-──────────────────              ──────────────               ─────────────
-cq serve ──WSS──►  cq-relay.fly.dev  ◄──HTTPS──  Claude Code
-                   /w/{worker}/mcp                .mcp.json type:"http"
+Claude Code                 cq serve (localhost)         Relay (Fly.io)          GPU Server
+───────────                 ────────────────────         ──────────────          ──────────
+.mcp.json ──POST──►  localhost:4140/w/{worker}/mcp      cq-relay.fly.dev  ◄──WSS──  cq serve
+(no token)            (auto-injects JWT)           ──►  /w/{worker}/mcp
 ```
 
 ### Setup
@@ -21,26 +21,24 @@ cq               # starts service (relay auto-connects)
 cq relay status  # verify
 ```
 
-### Connect from another machine
-
-Add to `.mcp.json`:
+`cq` automatically generates `.mcp.json` with worker entries — **no manual configuration needed**:
 
 ```json
 {
   "mcpServers": {
-    "my-worker": {
+    "worker-gpu-server": {
       "type": "http",
-      "url": "https://cq-relay.fly.dev/w/<hostname>/mcp",
-      "headers": {
-        "Authorization": "Bearer <jwt-from-cq-auth-status>"
-      }
+      "url": "http://localhost:4140/w/gpu-server/mcp"
     }
   }
 }
 ```
 
-::: tip Auto-refresh (v1.32.1+)
-`cq serve` automatically syncs the JWT from `session.json` to all `.mcp.json` worker entries every 10 minutes. No manual token rotation needed — as long as `cq serve` is running, the relay connection and `.mcp.json` tokens stay fresh.
+::: tip No tokens in .mcp.json (v1.32.2+)
+Worker entries use `localhost` URLs with **no Bearer token**. `cq serve` acts as a local proxy that auto-injects a fresh JWT on every request. This means:
+- `.mcp.json` is **safe to commit** to git (no secrets)
+- Tokens **never expire** from the client's perspective
+- Team members can share the same `.mcp.json` — each runs their own `cq serve`
 :::
 
 ---

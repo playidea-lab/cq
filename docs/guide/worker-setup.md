@@ -105,7 +105,7 @@ Once installed, the worker **survives all failure modes automatically**:
 | Token expiry | `TokenProvider` auto-refreshes 5 min before expiry |
 | Network drop | Relay `reconnectLoop` with exponential backoff |
 | OS reboot | systemd `enable` / macOS `RunAtLoad` |
-| `.mcp.json` stale | Auto-synced every 10 min from `session.json` |
+| `.mcp.json` stale | N/A — local proxy injects fresh token per request |
 
 The only things that stop a worker: `cq serve uninstall` (explicit removal) or `refresh_token` expiry (long-term inactivity — re-run `cq auth login`).
 

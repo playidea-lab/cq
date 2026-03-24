@@ -103,7 +103,7 @@ cq stop         # 서비스 중지
 | 토큰 만료 | `TokenProvider` 만료 5분 전 자동 갱신 |
 | 네트워크 끊김 | Relay `reconnectLoop` (지수 백오프) |
 | OS 재부팅 | systemd `enable` / macOS `RunAtLoad` |
-| `.mcp.json` 만료 | 10분 주기로 `session.json`에서 자동 동기화 |
+| `.mcp.json` 만료 | 해당 없음 — 로컬 프록시가 매 요청마다 fresh 토큰 주입 |
 
 로그:
 - **macOS**: `~/Library/Logs/cq-serve.{out,err}.log`
