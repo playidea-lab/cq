@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -49,7 +50,7 @@ func init() {
 	teamRemoveCmd.Flags().String("user", "", "User ID to remove (required)")
 	teamRemoveCmd.MarkFlagRequired("user") //nolint:errcheck
 
-	teamCmd.AddCommand(teamListCmd, teamInviteCmd, teamRemoveCmd)
+	teamCmd.AddCommand(teamListCmd, teamInviteCmd, teamRemoveCmd, teamAutoJoinCmd)
 	rootCmd.AddCommand(teamCmd)
 }
 
@@ -176,4 +177,43 @@ func runTeamRemove(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Removed %s from project\n", userID)
 	return nil
+}
+
+var teamAutoJoinCmd = &cobra.Command{
+	Use:   "auto-join",
+	Short: "Enable auto-join for this project (teammates who clone this repo auto-join on cq startup)",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfgPath := projectDir + "/.c4/config.yaml"
+		// Read existing config, set cloud.auto_join: true, write back
+		data, err := os.ReadFile(cfgPath)
+		if err != nil {
+			return fmt.Errorf("reading config: %w", err)
+		}
+		content := string(data)
+		if strings.Contains(content, "auto_join: true") {
+			fmt.Println("auto-join is already enabled")
+			return nil
+		}
+		// Insert auto_join under cloud section
+		if strings.Contains(content, "auto_join:") {
+			content = strings.Replace(content, "auto_join: false", "auto_join: true", 1)
+		} else if idx := strings.Index(content, "\ncloud:"); idx >= 0 {
+			// Find end of cloud section (next top-level key or EOF)
+			cloudEnd := strings.Index(content[idx+7:], "\n")
+			if cloudEnd < 0 {
+				content += "\n  auto_join: true\n"
+			} else {
+				insertAt := idx + 7 + cloudEnd
+				content = content[:insertAt] + "\n  auto_join: true" + content[insertAt:]
+			}
+		} else {
+			content += "\ncloud:\n  auto_join: true\n"
+		}
+		if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+			return fmt.Errorf("writing config: %w", err)
+		}
+		fmt.Println("auto-join enabled. Commit .c4/config.yaml so teammates auto-join on clone.")
+		return nil
+	},
 }

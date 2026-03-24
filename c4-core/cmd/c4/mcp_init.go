@@ -128,6 +128,33 @@ func newMCPServer() (*mcpServer, error) {
 			}
 			knowledgeCloud = cloud.NewKnowledgeCloudClient(
 				cloudCfg.URL+"/rest/v1", cloudCfg.AnonKey, cloudTP, cloudProjectID)
+			// Auto-join: if logged in + project_id set + auto_join enabled, join project if not already member
+			if cloudCfg.AutoJoin && cloudProjectID != "" && cloudTP != nil {
+				go func() {
+					tc := cloud.NewTeamClient(cloudCfg.URL, cloudCfg.AnonKey, cloudTP.Token())
+					members, err := tc.ListMembers(cloudProjectID)
+					if err != nil {
+						return // silent fail
+					}
+					sess, _ := cloud.NewAuthClient(cloudCfg.URL, cloudCfg.AnonKey).GetSession()
+					if sess == nil || sess.User.ID == "" {
+						return
+					}
+					for _, m := range members {
+						if m.UserID == sess.User.ID {
+							return // already a member
+						}
+					}
+					result, err := tc.InviteOrAdd(cloudProjectID, sess.User.Email)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "cq: auto-join failed: %v\n", err)
+						return
+					}
+					if result.Status == "added" || result.Status == "already_member" {
+						fmt.Fprintf(os.Stderr, "cq: auto-joined project %s\n", cloudProjectID)
+					}
+				}()
+			}
 			// Write ~/.c4/supabase.json for Rust c1 app (list_channels, get_project_id_cmd)
 			writeSupabaseJSON(cloudCfg.URL, cloudCfg.AnonKey)
 		}

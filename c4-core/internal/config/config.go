@@ -53,6 +53,7 @@ type CloudConfig struct {
 	BucketName   string `mapstructure:"bucket_name"    yaml:"bucket_name"`    // default "c4-drive"
 	Mode         string `mapstructure:"mode"           yaml:"mode"`           // "local-first" (default) or "cloud-primary"
 	DirectURL    string `mapstructure:"direct_url"     yaml:"direct_url"`     // Supabase direct connection (port 5432) for LISTEN/NOTIFY
+	AutoJoin     bool   `mapstructure:"auto_join"      yaml:"auto_join"`      // auto-join project on MCP startup if logged in but not member
 }
 
 // LLMProviderConfig holds per-provider settings.
