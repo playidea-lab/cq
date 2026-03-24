@@ -84,8 +84,7 @@ class TestPdfParserSmoke:
     """Smoke tests for PdfParser."""
 
     def test_parse_valid_minimal(self, tmp_path: Path) -> None:
-        pytest.importorskip("fitz")
-        pytest.importorskip("pdfplumber")
+        pytest.importorskip("opendataloader_pdf")
         from c4.c2.parsers.pdf_parser import PdfParser
 
         pdf_path = _create_minimal_pdf(tmp_path)
@@ -96,16 +95,16 @@ class TestPdfParserSmoke:
         assert isinstance(doc.blocks, list)
 
     def test_parse_empty_file(self, tmp_path: Path) -> None:
-        pytest.importorskip("fitz")
-        pytest.importorskip("pdfplumber")
+        pytest.importorskip("opendataloader_pdf")
         from c4.c2.parsers.pdf_parser import PdfParser
 
         empty_path = _create_empty_file(tmp_path, "empty.pdf")
         parser = PdfParser()
 
-        # Empty file should raise a clean exception, not a raw crash
-        with pytest.raises(Exception):
-            parser.parse(empty_path)
+        # Empty/invalid file should return empty document (graceful fallback)
+        doc = parser.parse(empty_path)
+        assert doc is not None
+        assert isinstance(doc.blocks, list)
 
 
 # ---------------------------------------------------------------------------

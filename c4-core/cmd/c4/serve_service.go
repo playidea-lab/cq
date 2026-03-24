@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -35,6 +37,16 @@ func (s *serviceWrapper) Stop(svc service.Service) error {
 	return nil
 }
 
+// runCommand executes a command and returns combined stdout+stderr output.
+func runCommand(name string, args ...string) (string, error) {
+	var buf bytes.Buffer
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	return buf.String(), err
+}
+
 // newServiceConfig returns a service.Config for the cq-serve service.
 func newServiceConfig(execPath, configPath string) service.Config {
 	args := []string{"serve"}
@@ -62,6 +74,12 @@ func newServiceConfig(execPath, configPath string) service.Config {
 	if runtime.GOOS == "darwin" {
 		opt["KeepAlive"] = true
 		opt["RunAtLoad"] = true
+	}
+	// Linux systemd: restart on crash, enable at boot via WantedBy=default.target.
+	if runtime.GOOS == "linux" {
+		opt["Restart"] = "always"
+		opt["RestartSec"] = "5"
+		opt["SuccessExitStatus"] = "143"
 	}
 
 	// Log directory: ~/Library/Logs/ (macOS) or ~/.local/state/cq/ (Linux).
@@ -179,6 +197,17 @@ func installServeService(_ context.Context, start bool) error {
 	}
 	if logDir, ok := svcConfig.Option["LogDirectory"]; ok {
 		fmt.Printf("  Logs:       %s/cq-serve.{out,err}.log\n", logDir)
+	}
+
+	// Linux: enable the user unit so it starts at boot (WantedBy=default.target).
+	if runtime.GOOS == "linux" {
+		if out, enableErr := runCommand("systemctl", "--user", "enable", "cq-serve"); enableErr != nil {
+			fmt.Fprintf(os.Stderr, "cq-serve: systemctl enable failed: %v\n%s\n", enableErr, out)
+		} else {
+			fmt.Println("cq-serve: enabled for auto-start at login (systemctl --user enable).")
+		}
+		fmt.Println("  Note: to start cq-serve without a GUI session (e.g. on headless servers),")
+		fmt.Println("  run: loginctl enable-linger $(whoami)")
 	}
 
 	if start {
