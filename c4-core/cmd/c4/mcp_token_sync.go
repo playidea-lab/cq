@@ -171,17 +171,20 @@ func updateMCPTokensInFile(mcpPath, newToken string) (int, error) {
 }
 
 // findMCPJSONPaths returns all .mcp.json files that should have their tokens refreshed.
-// Includes the current project dir and scans parent directories for monorepo setups.
+// Scans: current project, parent dirs, sibling projects, and home directory.
 func findMCPJSONPaths(projectDir string) []string {
 	var paths []string
 	seen := map[string]bool{}
 
-	// 1. Current project .mcp.json
-	p := filepath.Join(projectDir, ".mcp.json")
-	if _, err := os.Stat(p); err == nil {
-		paths = append(paths, p)
-		seen[p] = true
+	add := func(p string) {
+		if _, err := os.Stat(p); err == nil && !seen[p] {
+			paths = append(paths, p)
+			seen[p] = true
+		}
 	}
+
+	// 1. Current project .mcp.json
+	add(filepath.Join(projectDir, ".mcp.json"))
 
 	// 2. Walk up to find parent .mcp.json (e.g., monorepo root)
 	dir := projectDir
@@ -191,10 +194,19 @@ func findMCPJSONPaths(projectDir string) []string {
 			break
 		}
 		dir = parent
-		p := filepath.Join(dir, ".mcp.json")
-		if _, err := os.Stat(p); err == nil && !seen[p] {
-			paths = append(paths, p)
-			seen[p] = true
+		add(filepath.Join(dir, ".mcp.json"))
+	}
+
+	// 3. Sibling project directories — scan parent of projectDir for .mcp.json
+	// This catches other projects (e.g., ~/git/other-project/.mcp.json) that share
+	// the same relay workers but are outside cq serve's --dir scope.
+	parentDir := filepath.Dir(projectDir)
+	if entries, err := os.ReadDir(parentDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			add(filepath.Join(parentDir, e.Name(), ".mcp.json"))
 		}
 	}
 

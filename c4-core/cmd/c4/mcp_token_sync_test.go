@@ -141,3 +141,26 @@ func TestFindMCPJSONPaths_IncludesParent(t *testing.T) {
 		t.Errorf("expected parent %s in paths, got %v", parentMCP, paths)
 	}
 }
+
+func TestFindMCPJSONPaths_IncludesSibling(t *testing.T) {
+	// Layout: /tmp/git/cq/ (projectDir) + /tmp/git/other-project/.mcp.json
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "cq")
+	sibling := filepath.Join(root, "other-project")
+	os.MkdirAll(projectDir, 0755)
+	os.MkdirAll(sibling, 0755)
+
+	siblingMCP := filepath.Join(sibling, ".mcp.json")
+	os.WriteFile(siblingMCP, []byte(`{}`), 0644)
+
+	paths := findMCPJSONPaths(projectDir)
+	found := false
+	for _, p := range paths {
+		if p == siblingMCP {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected sibling %s in paths, got %v", siblingMCP, paths)
+	}
+}
