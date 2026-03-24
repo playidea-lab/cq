@@ -40,6 +40,7 @@ type Config struct {
 	APIPrefix    string
 	SupabaseURL  string
 	SupabaseKey  string
+	TokenFunc    func() string // optional; called for fresh JWT on each poll cycle
 	Store        *knowledge.Store
 	SeenPath     string
 	PollInterval time.Duration
@@ -76,6 +77,10 @@ func New(cfg Config) *KnowledgeHubPoller {
 		SupabaseURL: cfg.SupabaseURL,
 		SupabaseKey: cfg.SupabaseKey,
 	})
+	// Wire TokenFunc for automatic JWT refresh (cloud session token).
+	if cfg.TokenFunc != nil {
+		client.SetTokenFunc(cfg.TokenFunc)
+	}
 	return &KnowledgeHubPoller{cfg: cfg, client: client, status: "ok"}
 }
 

@@ -139,7 +139,7 @@ func registerStaleCheckerServeComponent(mgr *serve.Manager, cfg config.C4Config,
 // Note: the poller shares the hub.enabled/hub.url gate (no separate serve.hub_poller
 // toggle) because it is a lightweight side-effect of hub connectivity.
 // Returns the created poller (nil if not registered).
-func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config) *hubpoller.KnowledgeHubPoller {
+func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4Config, cloudTP *cloud.TokenProvider) *hubpoller.KnowledgeHubPoller {
 	if !cfg.Hub.Enabled || cfg.Hub.URL == "" {
 		return nil
 	}
@@ -155,7 +155,7 @@ func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4C
 		return nil
 	}
 
-	poller := hubpoller.New(hubpoller.Config{
+	pollerCfg := hubpoller.Config{
 		HubURL:       cfg.Hub.URL,
 		APIKey:       cfg.Hub.APIKey,
 		APIKeyEnv:    cfg.Hub.APIKeyEnv,
@@ -165,7 +165,12 @@ func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4C
 		Store:        ks,
 		SeenPath:     filepath.Join(projectDir, ".c4", "hub_poller_seen.json"),
 		PollInterval: 30 * time.Second,
-	})
+	}
+	// Wire cloud token auto-refresh so the poller survives JWT rotation.
+	if cloudTP != nil && cloudTP.Token() != "" {
+		pollerCfg.TokenFunc = cloudTP.Token
+	}
+	poller := hubpoller.New(pollerCfg)
 	mgr.Register(poller)
 	fmt.Fprintf(os.Stderr, "cq serve: registered hub_knowledge_poller\n")
 	return poller

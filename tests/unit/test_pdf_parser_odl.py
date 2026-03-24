@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-import fitz  # PyMuPDF — for creating test PDFs
 import pytest
+from fpdf import FPDF
 
 from c4.c2.parsers.pdf_parser import PdfParser
 
@@ -20,12 +20,17 @@ def _create_pdf_with_text(tmp_path: Path, texts: list[tuple[tuple, str, float]])
         texts: list of ((x, y), text, fontsize)
     """
     pdf_path = tmp_path / "test.pdf"
-    doc = fitz.open()
-    page = doc.new_page()
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=False)
     for (x, y), text, fontsize in texts:
-        page.insert_text((x, y), text, fontsize=fontsize)
-    doc.save(str(pdf_path))
-    doc.close()
+        pdf.set_font("Helvetica", size=fontsize)
+        # fpdf2 uses mm from top-left; convert approximate pt coords to mm
+        x_mm = x * 0.3528  # 1pt ≈ 0.3528mm
+        y_mm = y * 0.3528
+        pdf.set_xy(x_mm, y_mm)
+        pdf.cell(text=text)
+    pdf.output(str(pdf_path))
     return pdf_path
 
 
@@ -95,25 +100,24 @@ class TestTableConversion:
 
     def test_table_detected(self, parser, tmp_path):
         pdf_path = tmp_path / "table.pdf"
-        doc = fitz.open()
-        page = doc.new_page()
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", size=11)
 
-        # Draw bordered table
+        # Draw bordered table using fpdf2 cells
         headers = ["Name", "Age"]
         data = [["Alice", "30"], ["Bob", "25"]]
-        for i, text in enumerate(headers):
-            x = 72 + i * 200
-            page.draw_rect(fitz.Rect(x, 100, x + 200, 130), color=(0, 0, 0), width=1)
-            page.insert_text((x + 5, 122), text, fontsize=11)
-        for row_idx, row in enumerate(data):
-            y = 130 + row_idx * 30
-            for i, text in enumerate(row):
-                x = 72 + i * 200
-                page.draw_rect(fitz.Rect(x, y, x + 200, y + 30), color=(0, 0, 0), width=1)
-                page.insert_text((x + 5, y + 22), text, fontsize=11)
 
-        doc.save(str(pdf_path))
-        doc.close()
+        pdf.set_xy(20, 30)
+        for text in headers:
+            pdf.cell(w=50, h=10, text=text, border=1)
+        for row in data:
+            pdf.ln()
+            pdf.set_x(20)
+            for text in row:
+                pdf.cell(w=50, h=10, text=text, border=1)
+
+        pdf.output(str(pdf_path))
 
         result = parser.parse(pdf_path)
         tables = [b for b in result.blocks if b.type == "table"]
@@ -127,10 +131,6 @@ class TestImageConversion:
     def test_image_extracted(self, parser, tmp_path):
         import struct
         import zlib
-
-        pdf_path = tmp_path / "image.pdf"
-        doc = fitz.open()
-        page = doc.new_page()
 
         # Create 60x60 red PNG
         width, height = 60, 60
@@ -147,9 +147,15 @@ class TestImageConversion:
         png += png_chunk(b"IDAT", zlib.compress(raw))
         png += png_chunk(b"IEND", b"")
 
-        page.insert_image(fitz.Rect(72, 100, 200, 228), stream=png)
-        doc.save(str(pdf_path))
-        doc.close()
+        # Save PNG to temp file, embed in PDF via fpdf2
+        png_path = tmp_path / "red.png"
+        png_path.write_bytes(png)
+
+        pdf_path = tmp_path / "image.pdf"
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.image(str(png_path), x=20, y=80, w=40, h=40)
+        pdf.output(str(pdf_path))
 
         result = parser.parse_with_images(pdf_path)
         images = [b for b in result.document.blocks if b.type == "image"]

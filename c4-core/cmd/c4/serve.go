@@ -134,7 +134,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	registerHarnessWatcherServeComponent(mgr, cfg, srv.initCtx.db, srv.initCtx.cloudTP, srv.initCtx.cloudProjectID)
 	registerEventSinkServeComponent(mgr, cfg, ebComp)
 	registerHubPollerServeComponent(mgr, cfg, ebComp, srv.initCtx.hubClient)
-	knowledgePoller := registerKnowledgeHubPollerServeComponent(mgr, cfg)
+	knowledgePoller := registerKnowledgeHubPollerServeComponent(mgr, cfg, srv.initCtx.cloudTP)
 	// Wire SSESubscriber → knowledgeHubPoller: job completion events trigger immediate poll.
 	var wakeCh chan struct{}
 	if knowledgePoller != nil {

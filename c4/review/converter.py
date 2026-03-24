@@ -1,11 +1,11 @@
 """
-PDF to image converter using PyMuPDF.
+PDF to image converter using pypdfium2.
 """
 
 import base64
 from pathlib import Path
 
-import fitz  # PyMuPDF
+import pypdfium2 as pdfium
 
 from c4.review.models import PageImage, PaperMetadata
 
@@ -40,35 +40,38 @@ class PDFConverter:
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
         try:
-            doc = fitz.open(pdf_path)
+            doc = pdfium.PdfDocument(pdf_path)
         except Exception as e:
             raise ValueError(f"Invalid or corrupted PDF file: {e}")
 
-        if doc.page_count == 0:
+        page_count = len(doc)
+        if page_count == 0:
             doc.close()
             raise ValueError("PDF file has no pages")
 
         pages = []
         try:
-            for page_num in range(doc.page_count):
+            scale = self.dpi / 72.0
+            for page_num in range(page_count):
                 page = doc[page_num]
 
-                # Calculate zoom factor for desired DPI (default 72 DPI)
-                zoom = self.dpi / 72.0
-                mat = fitz.Matrix(zoom, zoom)
-
-                # Render page to pixmap
-                pix = page.get_pixmap(matrix=mat)
+                # Render page to bitmap
+                bitmap = page.render(scale=scale)
+                pil_image = bitmap.to_pil()
 
                 # Convert to PNG bytes
-                png_data = pix.tobytes("png")
+                import io
+
+                buf = io.BytesIO()
+                pil_image.save(buf, format="PNG")
+                png_data = buf.getvalue()
 
                 pages.append(
                     PageImage(
                         page_number=page_num + 1,  # 1-indexed
                         image_data=png_data,
-                        width=pix.width,
-                        height=pix.height,
+                        width=pil_image.width,
+                        height=pil_image.height,
                     )
                 )
         finally:
@@ -94,24 +97,23 @@ class PDFConverter:
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
         try:
-            doc = fitz.open(pdf_path)
+            doc = pdfium.PdfDocument(pdf_path)
         except Exception as e:
             raise ValueError(f"Invalid or corrupted PDF file: {e}")
 
         try:
-            metadata = doc.metadata or {}
-            title = metadata.get("title", "").strip()
+            metadata = doc.get_metadata_dict()
+            title = metadata.get("Title", "").strip()
             if not title:
-                # Fallback to filename if no title in metadata
                 title = pdf_path.stem
 
-            author = metadata.get("author", "").strip()
+            author = metadata.get("Author", "").strip()
             authors = [author] if author else []
 
             return PaperMetadata(
                 title=title,
                 authors=authors,
-                page_count=doc.page_count,
+                page_count=len(doc),
             )
         finally:
             doc.close()

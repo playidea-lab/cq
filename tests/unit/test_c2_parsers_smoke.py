@@ -15,31 +15,14 @@ import pytest
 
 def _create_minimal_pdf(path: Path) -> Path:
     """Create a minimal valid PDF with one page containing 'Hello'."""
-    # Minimal PDF 1.4 spec -- single page with text
-    content = (
-        b"%PDF-1.4\n"
-        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
-        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
-        b"3 0 obj\n<< /Type /Page /Parent 2 0 R "
-        b"/MediaBox [0 0 612 792] "
-        b"/Contents 4 0 R "
-        b"/Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n"
-        b"4 0 obj\n<< /Length 44 >>\nstream\n"
-        b"BT /F1 12 Tf 100 700 Td (Hello) Tj ET\n"
-        b"endstream\nendobj\n"
-        b"5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
-        b"xref\n0 6\n"
-        b"0000000000 65535 f \n"
-        b"0000000009 00000 n \n"
-        b"0000000058 00000 n \n"
-        b"0000000115 00000 n \n"
-        b"0000000266 00000 n \n"
-        b"0000000360 00000 n \n"
-        b"trailer\n<< /Size 6 /Root 1 0 R >>\n"
-        b"startxref\n441\n%%EOF\n"
-    )
+    from fpdf import FPDF
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=12)
+    pdf.cell(text="Hello")
     pdf_path = path / "minimal.pdf"
-    pdf_path.write_bytes(content)
+    pdf.output(str(pdf_path))
     return pdf_path
 
 
