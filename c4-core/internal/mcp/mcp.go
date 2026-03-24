@@ -60,6 +60,11 @@ type Registry struct {
 	middlewares []Middleware
 	ctxMws      []ContextualMiddleware // context-aware middlewares applied with ctx+name
 
+	// VisibleTools, when non-nil, restricts which tools are returned by ListTools().
+	// Tools not in the set are still callable (skills/workers invoke them directly)
+	// but won't appear in tools/list. Set via SetVisibleTools().
+	VisibleTools map[string]bool
+
 	// OnChange is called after Register/Replace/Unregister mutate the tool list.
 	// Used by the MCP server to send notifications/tools/list_changed.
 	OnChange func()
@@ -272,8 +277,40 @@ func (r *Registry) GetToolSchema(name string) (ToolSchema, bool) {
 	return tool.schema, true
 }
 
-// ListTools returns all registered tool schemas in registration order.
+// SetVisibleTools restricts ListTools() to only return the named tools.
+// Pass nil to show all tools (default). Tools not in the set remain callable.
+func (r *Registry) SetVisibleTools(names []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(names) == 0 {
+		r.VisibleTools = nil
+		return
+	}
+	r.VisibleTools = make(map[string]bool, len(names))
+	for _, n := range names {
+		r.VisibleTools[n] = true
+	}
+}
+
+// ListTools returns registered tool schemas in registration order.
+// If VisibleTools is set, only those tools are returned.
+// All tools remain callable regardless of visibility.
 func (r *Registry) ListTools() []ToolSchema {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	schemas := make([]ToolSchema, 0, len(r.ordering))
+	for _, name := range r.ordering {
+		if r.VisibleTools != nil && !r.VisibleTools[name] {
+			continue
+		}
+		schemas = append(schemas, r.tools[name].schema)
+	}
+	return schemas
+}
+
+// ListAllTools returns all registered tool schemas, ignoring VisibleTools filter.
+func (r *Registry) ListAllTools() []ToolSchema {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

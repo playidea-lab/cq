@@ -744,6 +744,14 @@ func newMCPServer() (*mcpServer, error) {
 		fmt.Fprintln(os.Stderr, "cq: knowledge sync: skipped (no cloud)")
 	}
 
+	// Tool tiering: restrict visible tools to reduce cognitive load.
+	// Default: "basic" (core tools only). Set CQ_TOOL_TIER=full for all tools.
+	if os.Getenv("CQ_TOOL_TIER") != "full" {
+		reg.SetVisibleTools(coreMCPTools)
+		fmt.Fprintf(os.Stderr, "cq: tool tier: basic (%d visible, %d total). Set CQ_TOOL_TIER=full for all.\n",
+			len(coreMCPTools), len(reg.ListAllTools()))
+	}
+
 	return &mcpServer{
 		registry:       reg,
 		sidecar:        lazySidecar,
@@ -754,6 +762,71 @@ func newMCPServer() (*mcpServer, error) {
 		secretStore:    secretStore,
 		resourceStore:  appStore,
 	}, nil
+}
+
+// coreMCPTools is the default set of tools visible to AI agents.
+// All other tools remain callable but don't appear in tools/list.
+// Set CQ_TOOL_TIER=full to expose everything.
+var coreMCPTools = []string{
+	// Project management
+	"c4_status",
+	"c4_add_todo",
+	"c4_task_list",
+	"c4_start",
+	"c4_claim",
+	"c4_report",
+	"c4_mark_blocked",
+	"c4_stale_tasks",
+
+	// Worker protocol
+	"c4_get_task",
+	"c4_submit",
+	"c4_request_changes",
+	"c4_run_validation",
+	"c4_worker_heartbeat",
+
+	// File operations
+	"c4_find_file",
+	"c4_search_for_pattern",
+	"c4_read_file",
+	"c4_replace_content",
+	"c4_create_text_file",
+
+	// Knowledge
+	"c4_knowledge_search",
+	"c4_knowledge_record",
+
+	// Execution & system
+	"c4_execute",
+	"c4_health",
+	"c4_config_get",
+	"c4_notify",
+	"c4_diff_summary",
+	"c4_gpu_status",
+
+	// Hub (remote workers)
+	"c4_hub_submit",
+	"c4_hub_workers",
+	"c4_hub_status",
+	"c4_hub_list",
+	"c4_job_submit",
+	"c4_job_status",
+
+	// LLM
+	"c4_llm_call",
+
+	// Specs & design (planning)
+	"c4_save_spec",
+	"c4_save_design",
+	"c4_get_spec",
+	"c4_get_design",
+	"c4_list_specs",
+	"c4_list_designs",
+	"c4_discovery_complete",
+	"c4_design_complete",
+
+	// Lighthouse
+	"c4_lighthouse",
 }
 
 // providerDefaultEnvVar returns the default environment variable name for a provider's API key.
