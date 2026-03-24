@@ -160,6 +160,8 @@ func registerKnowledgeHubPollerServeComponent(mgr *serve.Manager, cfg config.C4C
 		APIKey:       cfg.Hub.APIKey,
 		APIKeyEnv:    cfg.Hub.APIKeyEnv,
 		APIPrefix:    cfg.Hub.APIPrefix,
+		SupabaseURL:  cfg.Cloud.URL,
+		SupabaseKey:  cfg.Cloud.AnonKey,
 		Store:        ks,
 		SeenPath:     filepath.Join(projectDir, ".c4", "hub_poller_seen.json"),
 		PollInterval: 30 * time.Second,

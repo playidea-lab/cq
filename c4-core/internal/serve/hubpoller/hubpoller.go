@@ -38,6 +38,8 @@ type Config struct {
 	APIKey       string
 	APIKeyEnv    string
 	APIPrefix    string
+	SupabaseURL  string
+	SupabaseKey  string
 	Store        *knowledge.Store
 	SeenPath     string
 	PollInterval time.Duration
@@ -67,10 +69,12 @@ func New(cfg Config) *KnowledgeHubPoller {
 		cfg.PollInterval = 30 * time.Second
 	}
 	client := hub.NewClient(hub.HubConfig{
-		URL:       cfg.HubURL,
-		APIPrefix: cfg.APIPrefix,
-		APIKey:    cfg.APIKey,
-		APIKeyEnv: cfg.APIKeyEnv,
+		URL:         cfg.HubURL,
+		APIPrefix:   cfg.APIPrefix,
+		APIKey:      cfg.APIKey,
+		APIKeyEnv:   cfg.APIKeyEnv,
+		SupabaseURL: cfg.SupabaseURL,
+		SupabaseKey: cfg.SupabaseKey,
 	})
 	return &KnowledgeHubPoller{cfg: cfg, client: client, status: "ok"}
 }
