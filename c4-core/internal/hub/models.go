@@ -137,18 +137,6 @@ type MetricsResponse struct {
 	TotalSteps int           `json:"total_steps"`
 }
 
-// EdgeMetricEntry is a single edge metrics data point.
-type EdgeMetricEntry struct {
-	Timestamp int64              `json:"timestamp"` // Unix seconds
-	Values    map[string]float64 `json:"values"`
-}
-
-// EdgeMetricsResponse is the response from GET /v1/edges/{edge_id}/metrics.
-type EdgeMetricsResponse struct {
-	EdgeID  string            `json:"edge_id"`
-	Metrics []EdgeMetricEntry `json:"metrics"`
-}
-
 // QueueStats holds queue-level statistics.
 type QueueStats struct {
 	Queued    int `json:"queued"`

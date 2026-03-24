@@ -101,53 +101,6 @@ Example:
 	RunE: runHubRun,
 }
 
-var hubEdgeCmd = &cobra.Command{
-	Use:   "edge",
-	Short: "Manage edge devices for artifact deployment",
-	Long: `Manage edge devices registered with the Hub for model deployment.
-
-Subcommands:
-  init     - Configure edge agent credentials (hub URL + API key)
-  start    - Start c5 edge-agent subprocess
-  install  - Install as a system service (systemd / launchd)
-  register - Register this machine as an edge device
-  list     - List all registered edge devices`,
-}
-
-var hubEdgeRegisterCmd = &cobra.Command{
-	Use:   "register",
-	Short: "Register this machine as an edge device",
-	Long: `Register this machine as an edge device for artifact deployment.
-
-Edge devices receive trained model artifacts from Hub workers.
-Supports architecture/runtime detection for deployment filtering.
-
-Example:
-  cq hub edge register --name "jetson-factory-1" --tags onnx,arm64
-  cq hub edge register --name "rpi-fleet" --tags tflite --runtime tflite`,
-	RunE: runHubEdgeRegister,
-}
-
-var hubEdgeListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List registered edge devices",
-	RunE:  runHubEdgeList,
-}
-
-var hubEdgeControlCmd = &cobra.Command{
-	Use:   "control <edge-id> <action>",
-	Short: "Send a control message to an edge device",
-	Long: `Send a control message to a registered edge device.
-
-Actions:
-  collect   - Upload a file from edge to Drive (requires --param local_path=<path>)
-
-Example:
-  cq hub edge control edge-123 collect --param local_path=/home/pi/model.onnx`,
-	Args: cobra.ExactArgs(2),
-	RunE: runHubEdgeControl,
-}
-
 var hubWorkersCmd = &cobra.Command{
 	Use:   "workers",
 	Short: "List registered Hub workers",
@@ -177,9 +130,6 @@ var (
 	hubWorkerName        string
 	hubHeartbeatSec      int
 	hubWatchHistory      bool
-	hubEdgeName          string
-	hubEdgeTags          string
-	hubEdgeRuntime       string
 	hubSubmitRun          string
 	hubSubmitExperiment   string
 	hubSubmitTarget       string
@@ -187,7 +137,6 @@ var (
 	hubSubmitRequiredTags string
 	hubWorkersAll        bool
 	hubPruneDryRun       bool
-	hubEdgeControlParams []string
 	hubJobLogFollow      bool
 	hubJobLogOffset      int
 )
@@ -199,11 +148,6 @@ func init() {
 
 	hubWatchCmd.Flags().BoolVar(&hubWatchHistory, "history", false, "include historical metrics on connect")
 
-	hubEdgeRegisterCmd.Flags().StringVar(&hubEdgeName, "name", "", "edge device name (required)")
-	hubEdgeRegisterCmd.Flags().StringVar(&hubEdgeTags, "tags", "", "comma-separated tags (e.g. onnx,arm64)")
-	hubEdgeRegisterCmd.Flags().StringVar(&hubEdgeRuntime, "runtime", "", "inference runtime (onnx, tflite, tensorrt)")
-	hubEdgeRegisterCmd.MarkFlagRequired("name")
-
 	hubSubmitCmd.Flags().StringVar(&hubSubmitRun, "run", "", "command to execute on the worker")
 	hubSubmitCmd.Flags().StringVar(&hubSubmitExperiment, "experiment", "", "experiment name to register as a Hub experiment run (requires Hub)")
 	hubSubmitCmd.Flags().StringVar(&hubSubmitTarget, "target", "", "route job to a specific worker ID")
@@ -213,12 +157,6 @@ func init() {
 	hubWorkersCmd.Flags().BoolVar(&hubWorkersAll, "all", false, "include offline workers")
 	hubWorkersPruneCmd.Flags().BoolVar(&hubPruneDryRun, "dry-run", false, "show what would be pruned without deleting")
 	hubWorkersCmd.AddCommand(hubWorkersPruneCmd)
-
-	hubEdgeControlCmd.Flags().StringArrayVar(&hubEdgeControlParams, "param", nil, "action parameters as key=value (e.g. --param local_path=/tmp/model.onnx)")
-
-	hubEdgeCmd.AddCommand(hubEdgeRegisterCmd)
-	hubEdgeCmd.AddCommand(hubEdgeListCmd)
-	hubEdgeCmd.AddCommand(hubEdgeControlCmd)
 
 	hubJobLogCmd.Flags().BoolVarP(&hubJobLogFollow, "follow", "f", false, "poll for new log lines until job completes")
 	hubJobLogCmd.Flags().IntVar(&hubJobLogOffset, "offset", 0, "start reading from this line offset")
@@ -230,7 +168,6 @@ func init() {
 	hubCmd.AddCommand(hubRunCmd)
 	hubCmd.AddCommand(hubSubmitCmd)
 	hubCmd.AddCommand(hubWorkersCmd)
-	hubCmd.AddCommand(hubEdgeCmd)
 	hubCmd.AddCommand(hubJobCmd)
 	hubCmd.AddCommand(hubTransferCmd)
 	rootCmd.AddCommand(hubCmd)
@@ -695,129 +632,6 @@ func detectGPUCapabilities() (map[string]any, error) {
 // =========================================================================
 // cq hub edge register
 // =========================================================================
-
-func runHubEdgeRegister(cmd *cobra.Command, args []string) error {
-	client, err := newHubClient()
-	if err != nil {
-		return err
-	}
-
-	if !client.HealthCheck() {
-		return fmt.Errorf("Hub is unreachable")
-	}
-
-	hostname, _ := os.Hostname()
-	caps := map[string]any{
-		"hostname": hostname,
-	}
-	if hubEdgeRuntime != "" {
-		caps["runtime"] = hubEdgeRuntime
-	}
-
-	// Detect architecture
-	caps["arch"] = detectArch()
-
-	var tags []string
-	if hubEdgeTags != "" {
-		tags = strings.Split(hubEdgeTags, ",")
-	}
-
-	fmt.Printf("Registering edge device '%s' with Hub...\n", hubEdgeName)
-	if len(tags) > 0 {
-		fmt.Printf("  Tags: %s\n", strings.Join(tags, ", "))
-	}
-	if hubEdgeRuntime != "" {
-		fmt.Printf("  Runtime: %s\n", hubEdgeRuntime)
-	}
-
-	edgeID, err := client.RegisterEdge(hubEdgeName, tags, caps)
-	if err != nil {
-		return fmt.Errorf("registration failed: %w", err)
-	}
-
-	fmt.Printf("\nRegistered as edge: %s\n", edgeID)
-	return nil
-}
-
-// =========================================================================
-// cq hub edge list
-// =========================================================================
-
-func runHubEdgeList(cmd *cobra.Command, args []string) error {
-	client, err := newHubClient()
-	if err != nil {
-		return err
-	}
-
-	edges, err := client.ListEdges()
-	if err != nil {
-		return err
-	}
-
-	if len(edges) == 0 {
-		fmt.Println("No edge devices registered.")
-		return nil
-	}
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "ID\tNAME\tSTATUS\tARCH\tRUNTIME\tTAGS\n")
-	for _, e := range edges {
-		tags := "-"
-		if len(e.Tags) > 0 {
-			tags = strings.Join(e.Tags, ",")
-		}
-		arch := e.Arch
-		if arch == "" {
-			arch = "-"
-		}
-		runtime := e.Runtime
-		if runtime == "" {
-			runtime = "-"
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			e.ID, e.Name, e.Status, arch, runtime, tags)
-	}
-	w.Flush()
-	return nil
-}
-
-// =========================================================================
-// cq hub edge control
-// =========================================================================
-
-func runHubEdgeControl(cmd *cobra.Command, args []string) error {
-	edgeID := args[0]
-	action := args[1]
-
-	// Parse --param key=value flags into params map.
-	params := make(map[string]any, len(hubEdgeControlParams))
-	for _, p := range hubEdgeControlParams {
-		k, v, ok := strings.Cut(p, "=")
-		if !ok {
-			return fmt.Errorf("invalid --param %q: expected key=value format", p) //nolint:goerr113
-		}
-		params[k] = v
-	}
-
-	client, err := newHubClient()
-	if err != nil {
-		return err
-	}
-
-	req := &hub.EdgeControlRequest{Action: action}
-	if len(params) > 0 {
-		req.Params = params
-	}
-
-	resp, err := client.EdgeControl(edgeID, req)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Control message sent: %s\n", resp.MessageID)
-	fmt.Printf("Status: %s\n", resp.Status)
-	return nil
-}
 
 // =========================================================================
 // cq hub submit
