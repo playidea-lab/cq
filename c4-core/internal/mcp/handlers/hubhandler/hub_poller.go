@@ -146,4 +146,17 @@ func (p *HubPoller) publishTransition(job *hub.Job, prevStatus, newStatus string
 		"prev_status": prevStatus,
 	})
 	p.pub.PublishAsync(evType, "c4.hub", payload, p.projectID)
+
+	// DAG advancement: if this job belongs to a DAG, advance to next nodes.
+	exitCode := 0
+	dagStatus := "succeeded"
+	if newStatus == "FAILED" {
+		exitCode = 1
+		dagStatus = "failed"
+	}
+	if err := p.client.AdvanceDAG(id, dagStatus, exitCode); err != nil {
+		// Non-fatal: AdvanceDAG fails silently if job is not part of a DAG
+		// or if the Supabase RPC doesn't exist yet.
+		fmt.Fprintf(os.Stderr, "cq: hub_poller: advance_dag %s: %v\n", id, err)
+	}
 }
