@@ -258,6 +258,19 @@ func setupShellCompletion() {
 // initAndLaunch initializes the C4 project and launches the AI tool.
 func initAndLaunch(tool string) error {
 	dir := projectDir
+	verbose := os.Getenv("CQ_VERBOSE") == "1"
+	var warnings []string
+	logStep := func(msg string) {
+		if verbose {
+			fmt.Fprintln(os.Stderr, "✓ "+msg)
+		}
+	}
+	logWarn := func(msg string) {
+		warnings = append(warnings, msg)
+		if verbose {
+			fmt.Fprintf(os.Stderr, "cq: warning: %s\n", msg)
+		}
+	}
 
 	// 1. Create .c4/ directory structure
 	dirs := []string{
@@ -269,7 +282,7 @@ func initAndLaunch(tool string) error {
 			return fmt.Errorf("creating directory %s: %w", d, err)
 		}
 	}
-	fmt.Fprintln(os.Stderr, "✓ C4 Engine 로드")
+	logStep("C4 Engine 로드")
 
 	// 1b. Write default config.yaml if it doesn't exist yet.
 	if err := writeDefaultConfig(dir); err != nil {
@@ -285,11 +298,11 @@ func initAndLaunch(tool string) error {
 	if err := setupMCPConfig(dir); err != nil {
 		return fmt.Errorf("setting up .mcp.json: %w", err)
 	}
-	fmt.Fprintln(os.Stderr, "✓ 지식 베이스 연결")
+	logStep("지식 베이스 연결")
 
 	// 3. Create/update CLAUDE.md with C4 overrides
 	if err := setupClaudeMD(dir); err != nil {
-		fmt.Fprintf(os.Stderr, "cq: warning: CLAUDE.md setup failed: %v\n", err)
+		logWarn(fmt.Sprintf("CLAUDE.md setup failed: %v", err))
 	}
 
 	// 3b. Apply standards (rules, skills from embedded standards) — always run.
@@ -304,15 +317,13 @@ func initAndLaunch(tool string) error {
 		} else if lockErr == nil {
 			// lock exists but no team — common-only
 		} else {
-			// no lock file — common-only, print hint
-			fmt.Fprintln(os.Stderr, "cq: hint: run `cq standards apply --team <team>` to apply team-specific rules")
+			// no lock file — common-only
 		}
 		result, err := stdpkg.Apply(dir, applyTeam, applyLangs, stdpkg.ApplyOptions{})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "cq: warning: standards setup failed: %v\n", err)
+			logWarn(fmt.Sprintf("standards setup failed: %v", err))
 		} else {
-			fmt.Fprintf(os.Stderr, "✓ 표준 규칙 적용 (%d files, team=%s, langs=%v)\n",
-				len(result.FilesCreated), result.Team, result.Langs)
+			logStep(fmt.Sprintf("표준 규칙 적용 (%d files)", len(result.FilesCreated)))
 		}
 	}
 
@@ -325,9 +336,9 @@ func initAndLaunch(tool string) error {
 			domains := knowledge.DetectProjectDomains(dir)
 			n, loadErr := gkm.LoadRelevant(projectStore, domains)
 			if loadErr != nil {
-				fmt.Fprintf(os.Stderr, "cq: warning: global knowledge load failed: %v\n", loadErr)
+				logWarn(fmt.Sprintf("global knowledge load failed: %v", loadErr))
 			} else if n > 0 {
-				fmt.Fprintf(os.Stderr, "✓ 글로벌 지식 %d건 로드\n", n)
+				logStep(fmt.Sprintf("글로벌 지식 %d건 로드", n))
 			}
 			projectStore.Close()
 		}
@@ -335,13 +346,13 @@ func initAndLaunch(tool string) error {
 
 	// 4. Deploy C4 skills (symlinks from C4 source)
 	if err := setupSkills(dir); err != nil {
-		fmt.Fprintf(os.Stderr, "cq: warning: skills setup failed: %v\n", err)
+		logWarn(fmt.Sprintf("skills setup failed: %v", err))
 	}
 
 	// 5. Install project hooks to .claude/hooks/ (requires user confirmation)
 	if confirmProjectHooks(dir) {
 		if err := setupProjectHooks(dir); err != nil {
-			fmt.Fprintf(os.Stderr, "cq: warning: hooks setup failed: %v\n", err)
+			logWarn(fmt.Sprintf("hooks setup failed: %v", err))
 		}
 	}
 
@@ -351,10 +362,10 @@ func initAndLaunch(tool string) error {
 	// 6. Codex-specific setup
 	if tool == "codex" {
 		if err := setupCodexConfig(dir); err != nil {
-			fmt.Fprintf(os.Stderr, "cq: warning: codex config setup failed: %v\n", err)
+			logWarn(fmt.Sprintf("codex config setup failed: %v", err))
 		}
 		if err := setupCodexAgents(dir); err != nil {
-			fmt.Fprintf(os.Stderr, "cq: warning: codex agents setup failed: %v\n", err)
+			logWarn(fmt.Sprintf("codex agents setup failed: %v", err))
 		}
 	}
 
@@ -364,14 +375,14 @@ func initAndLaunch(tool string) error {
 			return fmt.Errorf("setting up .cursor/mcp.json: %w", err)
 		}
 	}
-	fmt.Fprintln(os.Stderr, "✓ MCP 서버 준비")
+	logStep("MCP 서버 준비")
 
 	// 6c. Ensure git repo and .cqdata exist (non-fatal)
 	if err := ensureGitRepo(dir); err != nil {
-		fmt.Fprintf(os.Stderr, "cq: warning: git init failed: %v\n", err)
+		logWarn(fmt.Sprintf("git init failed: %v", err))
 	}
 	if err := ensureCQData(dir); err != nil {
-		fmt.Fprintf(os.Stderr, "cq: warning: .cqdata setup failed: %v\n", err)
+		logWarn(fmt.Sprintf(".cqdata setup failed: %v", err))
 	}
 
 	// 6d. Ensure .c4/ is in .gitignore (non-fatal)
@@ -382,9 +393,19 @@ func initAndLaunch(tool string) error {
 
 	// 7b. Ensure cq serve is running in background (non-fatal if it fails)
 	ensureServeRunning(noServe)
-	fmt.Fprintln(os.Stderr, "✓ 세션 컨텍스트 주입")
+	logStep("세션 컨텍스트 주입")
 
-	printReadyBox(os.Stderr)
+	// Print compact ready message (or verbose box)
+	if len(warnings) > 0 {
+		for _, w := range warnings {
+			fmt.Fprintf(os.Stderr, "⚠ %s\n", w)
+		}
+		fmt.Fprintln(os.Stderr, "CQ ready (with warnings).")
+	} else if verbose {
+		printReadyBox(os.Stderr)
+	} else {
+		fmt.Fprintln(os.Stderr, "CQ ready.")
+	}
 
 	// 8. Launch AI tool
 
