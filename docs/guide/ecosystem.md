@@ -24,6 +24,7 @@ Docs       — Document lifecycle (parsing, workspace, profile)
 EventBus   — gRPC event bus (UDS + WebSocket + DLQ)
 Engine     — MCP orchestration engine  ← you are here
 Hub        — Supabase-native worker queue (pgx LISTEN/NOTIFY, lease-based)
+Relay      — WSS NAT traversal + local proxy (token-free .mcp.json)
 Guard      — RBAC access control (policy, audit, role assignment)
 Observe    — Observability layer (metrics, logs, tracing middleware)
 Gate       — External integrations (webhooks, scheduler, connectors)
@@ -44,14 +45,15 @@ Guard, Observe, and Gate are activated via build tags — they are always compil
 
 ## Engine (this project)
 
-The Engine is the orchestration core. It exposes **144 MCP tools (varies by tier)** (`c4_*`) to Claude Code and manages:
+The Engine is the orchestration core. It exposes **169+ MCP tools (varies by tier)** (`c4_*`) to Claude Code and manages:
 
 - **Task lifecycle** — create, assign, review, checkpoint, complete
 - **Worker isolation** — each worker gets a fresh git worktree
 - **Knowledge accumulation** — discoveries recorded automatically, injected into future tasks
 - **Secret store** — AES-256-GCM, never in config files
 - **LLM Gateway** — unified API for Anthropic, OpenAI, Gemini, Ollama
-- **Skills** — 36 slash commands embedded in the binary (/pi, research loop, and more)
+- **Skills** — 39 slash commands embedded in the binary (/pi, research loop, and more)
+- **Relay proxy** — local proxy for remote workers (no tokens in `.mcp.json`)
 
 ---
 
@@ -88,6 +90,19 @@ Supabase-native distributed job queue for running workers at scale:
 - Supabase PostgREST + RPC API
 
 Workers connect directly to Supabase — no Hub server process to start or manage.
+
+---
+
+## Relay
+
+NAT traversal for remote workers:
+
+- **WSS bridge** — workers behind NAT connect outbound to `cq-relay.fly.dev`; no inbound ports needed
+- **Local proxy** — `cq serve` exposes `localhost:4140/w/{worker}/mcp`; auto-injects JWT per request
+- **Token-free `.mcp.json`** — worker entries use localhost URLs with no Bearer token (safe to commit)
+- **Auto-reconnect** — exponential backoff on network drops, token auto-refresh on expiry
+- **WSL2 support** — Windows Task Scheduler auto-registration, nvidia-smi PATH fallback
+- **Worker survivability** — systemd `Restart=always`, macOS `KeepAlive`, boots with OS
 
 ---
 
@@ -165,13 +180,14 @@ Multi-layer knowledge store:
 ```
 Claude Code
     │
-    ▼ MCP (stdio)
-Engine ──────────────── Knowledge (search + record)
-    │                              ▲
-    ├── EventBus ──────────────────┘ (task.completed → auto-record)
+    ├── MCP (stdio) ──► Engine ──── Knowledge (search + record)
+    │                     │                    ▲
+    │                     ├── EventBus ────────┘ (task.completed → auto-record)
+    │                     ├── Supabase (worker queue via LISTEN/NOTIFY)
+    │                     │       └── Artifact storage via Drive
+    │                     └── LLM Gateway (Anthropic / OpenAI / Gemini / Ollama)
     │
-    ├── Supabase (worker queue via pgx LISTEN/NOTIFY)
-    │       └── Artifact storage via Drive
-    │
-    └── LLM Gateway (Anthropic / OpenAI / Gemini / Ollama)
+    └── MCP (http) ──► cq serve (localhost:4140)
+                          ├── Relay proxy ──WSS──► Relay (Fly.io) ──► GPU Workers
+                          └── Token auto-inject (no secrets in .mcp.json)
 ```
