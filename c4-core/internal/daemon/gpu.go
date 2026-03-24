@@ -2,10 +2,14 @@ package daemon
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 )
+
+// wslNvidiaSmiPath is the nvidia-smi path injected by WSL2 for NVIDIA GPU passthrough.
+const wslNvidiaSmiPath = "/usr/lib/wsl/lib/nvidia-smi"
 
 // GpuMonitor detects and queries GPU status via nvidia-smi.
 type GpuMonitor struct {
@@ -81,8 +85,18 @@ func (m *GpuMonitor) GPUCount() int {
 }
 
 // runNvidiaSmi executes nvidia-smi and returns CSV output.
+// On WSL2, falls back to /usr/lib/wsl/lib/nvidia-smi if nvidia-smi is not in PATH.
 func runNvidiaSmi() (string, error) {
-	cmd := exec.Command("nvidia-smi",
+	nvidiaSmi, err := exec.LookPath("nvidia-smi")
+	if err != nil {
+		// Fallback: check WSL2 injected nvidia-smi path
+		if _, statErr := os.Stat(wslNvidiaSmiPath); statErr == nil {
+			nvidiaSmi = wslNvidiaSmiPath
+		} else {
+			return "", fmt.Errorf("nvidia-smi: %w", err)
+		}
+	}
+	cmd := exec.Command(nvidiaSmi,
 		"--query-gpu=index,name,memory.total,memory.free,utilization.gpu,temperature.gpu",
 		"--format=csv,noheader,nounits")
 	out, err := cmd.Output()
