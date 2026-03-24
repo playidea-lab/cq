@@ -374,6 +374,9 @@ func initAndLaunch(tool string) error {
 		fmt.Fprintf(os.Stderr, "cq: warning: .cqdata setup failed: %v\n", err)
 	}
 
+	// 6d. Ensure .c4/ is in .gitignore (non-fatal)
+	ensureGitignoreEntry(dir, ".c4/")
+
 	// 7. Check cloud auth status and prompt login if needed
 	ensureCloudAuth(nil, yesAll)
 
@@ -1237,7 +1240,8 @@ func setupMCPConfig(dir string) error {
 }
 
 // injectRelayWorkers adds connected relay workers as HTTP MCP server entries.
-// Each worker gets a fresh JWT from session.json. Skips silently on any error.
+// Workers are proxied through cq serve's local relay proxy (no Bearer token needed).
+// This keeps .mcp.json free of secrets so it can be committed to git.
 func injectRelayWorkers(servers map[string]any, dir string) {
 	// Load relay config
 	cfgMgr, err := config.New(dir)
@@ -1249,23 +1253,12 @@ func injectRelayWorkers(servers map[string]any, dir string) {
 		return
 	}
 
-	// Get fresh JWT from session
-	home, _ := os.UserHomeDir()
-	sessionPath := filepath.Join(home, ".c4", "session.json")
-	sessionData, err := os.ReadFile(sessionPath)
-	if err != nil {
-		return
-	}
-	var session struct {
-		AccessToken string `json:"access_token"`
-	}
-	if json.Unmarshal(sessionData, &session) != nil || session.AccessToken == "" {
-		return
-	}
-
 	relayHTTPS := strings.Replace(cfg.Relay.URL, "wss://", "https://", 1)
 	relayHTTPS = strings.Replace(relayHTTPS, "ws://", "http://", 1)
 	hostname, _ := os.Hostname()
+
+	// Local proxy URL — cq serve proxies /w/{worker}/mcp → relay with auto JWT.
+	localProxy := fmt.Sprintf("http://localhost:%d", servePort)
 
 	// Query relay for connected workers
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -1282,34 +1275,34 @@ func injectRelayWorkers(servers map[string]any, dir string) {
 	body, _ := io.ReadAll(resp.Body)
 	json.Unmarshal(body, &health)
 
-	// If relay doesn't expose worker names, try known workers from existing .mcp.json
+	// If relay doesn't expose worker names, migrate existing entries to localhost proxy
 	if len(health.Names) == 0 {
-		// Check existing entries for worker-* keys
 		for key := range servers {
-			if strings.HasPrefix(key, "worker-") {
-				existing, ok := servers[key].(map[string]any)
-				if !ok {
-					continue
-				}
-				url, _ := existing["url"].(string)
-				if url == "" {
-					continue
-				}
-				// Refresh token for existing worker entry
+			if !strings.HasPrefix(key, "worker-") {
+				continue
+			}
+			existing, ok := servers[key].(map[string]any)
+			if !ok {
+				continue
+			}
+			url, _ := existing["url"].(string)
+			if url == "" {
+				continue
+			}
+			// Migrate: replace relay URL with localhost proxy, remove headers
+			workerPath := extractWorkerPath(url)
+			if workerPath != "" {
 				servers[key] = map[string]any{
 					"type": "http",
-					"url":  url,
-					"headers": map[string]string{
-						"Authorization": "Bearer " + session.AccessToken,
-					},
+					"url":  localProxy + workerPath,
 				}
-				fmt.Fprintf(os.Stderr, "cq: relay worker %s token refreshed\n", key)
+				fmt.Fprintf(os.Stderr, "cq: relay worker %s migrated to local proxy\n", key)
 			}
 		}
 		return
 	}
 
-	// Register each connected worker (except self)
+	// Register each connected worker (except self) via local proxy
 	for _, name := range health.Names {
 		if name == hostname {
 			continue // skip self
@@ -1317,13 +1310,20 @@ func injectRelayWorkers(servers map[string]any, dir string) {
 		serverName := "worker-" + strings.ReplaceAll(name, ".", "-")
 		servers[serverName] = map[string]any{
 			"type": "http",
-			"url":  relayHTTPS + "/w/" + name + "/mcp",
-			"headers": map[string]string{
-				"Authorization": "Bearer " + session.AccessToken,
-			},
+			"url":  localProxy + "/w/" + name + "/mcp",
 		}
-		fmt.Fprintf(os.Stderr, "cq: relay worker %s registered (%s)\n", serverName, name)
+		fmt.Fprintf(os.Stderr, "cq: relay worker %s registered via local proxy\n", serverName)
 	}
+}
+
+// extractWorkerPath extracts /w/{worker}/mcp from a full relay URL.
+// Returns "" if the URL doesn't match the expected pattern.
+func extractWorkerPath(rawURL string) string {
+	idx := strings.Index(rawURL, "/w/")
+	if idx < 0 {
+		return ""
+	}
+	return rawURL[idx:]
 }
 
 // findCQBinary locates the cq Go binary path for .mcp.json configuration.
@@ -2218,6 +2218,33 @@ func ensureGitRepo(dir string) error {
 	}
 	fmt.Fprintln(os.Stderr, "✓ git 저장소 초기화")
 	return nil
+}
+
+// ensureGitignoreEntry appends an entry to .gitignore if it's not already present.
+// Non-fatal — silently returns on any error.
+func ensureGitignoreEntry(dir, entry string) {
+	gitignorePath := filepath.Join(dir, ".gitignore")
+	data, _ := os.ReadFile(gitignorePath)
+	content := string(data)
+
+	// Check if entry already exists (exact line match)
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == entry {
+			return // already present
+		}
+	}
+
+	// Append entry
+	suffix := "\n"
+	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
+		suffix = "\n\n"
+	}
+	newContent := content + suffix + "# CQ local state\n" + entry + "\n"
+	if err := os.WriteFile(gitignorePath, []byte(newContent), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: warning: .gitignore update failed: %v\n", err)
+		return
+	}
+	fmt.Fprintln(os.Stderr, "✓ .gitignore에 .c4/ 추가")
 }
 
 // ensureCQData creates an empty .cqdata template in dir if one does not exist.

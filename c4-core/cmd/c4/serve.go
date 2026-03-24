@@ -160,11 +160,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	printServeStartupSummary(os.Stderr, os.Getpid(), servePort, mgr.HealthMap())
 
-	// HTTP health server
+	// HTTP health server + relay proxy
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", serve.HealthHandler(mgr))
 	if gpuComp != nil {
 		mux.Handle("/daemon/", http.StripPrefix("/daemon", gpuComp.Handler()))
+	}
+
+	// Relay proxy: /w/{worker}/mcp → relay server with auto-injected JWT.
+	// Allows .mcp.json to use localhost URLs without Bearer tokens.
+	if cfg.Relay.Enabled && cfg.Relay.URL != "" {
+		mux.Handle("/w/", relayProxyHandler(srv.initCtx.cloudTP, cfg.Relay.URL, cfg.Cloud.AnonKey))
+		fmt.Fprintf(os.Stderr, "cq serve: relay proxy on /w/ → %s\n", cfg.Relay.URL)
 	}
 
 	httpServer := &http.Server{

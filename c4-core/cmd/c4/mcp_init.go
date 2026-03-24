@@ -706,10 +706,6 @@ func newMCPServer() (*mcpServer, error) {
 				rc.Close()
 				relayCancel()
 			})
-
-			// Start periodic .mcp.json token sync so Claude Code's HTTP MCP
-			// connections stay alive across JWT rotations.
-			startMCPTokenSync(relayCtx, ctx.projectDir)
 		}
 	}
 
