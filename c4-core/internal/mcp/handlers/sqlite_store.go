@@ -403,6 +403,53 @@ func (s *SQLiteStore) GetTask(taskID string) (*Task, error) {
 	return &t, nil
 }
 
+// AssignSpecificTask assigns a specific task by ID to a worker.
+// The task must be pending with all dependencies resolved.
+func (s *SQLiteStore) AssignSpecificTask(workerID, taskID string) (*TaskAssignment, error) {
+	var title, scope, dod, domain, model string
+	var deps sql.NullString
+	err := s.db.QueryRow(`
+		UPDATE c4_tasks SET status='in_progress', worker_id=?, updated_at=CURRENT_TIMESTAMP
+		WHERE task_id=? AND status='pending'
+		AND NOT EXISTS (
+			SELECT 1 FROM json_each(CASE WHEN dependencies IS NULL OR dependencies='' THEN '[]' ELSE dependencies END) AS dep
+			JOIN c4_tasks dt ON dt.task_id=dep.value WHERE dt.status!='done'
+		)
+		RETURNING title, scope, dod, dependencies, domain, model`,
+		workerID, taskID,
+	).Scan(&title, &scope, &dod, &deps, &domain, &model)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("task %s not found, not pending, or has unresolved dependencies", taskID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("assign specific task: %w", err)
+	}
+
+	assignment := &TaskAssignment{
+		TaskID:               taskID,
+		Title:                title,
+		Scope:                scope,
+		DoD:                  dod,
+		Domain:               domain,
+		WorkerID:             workerID,
+		Model:                model,
+		HeartbeatIntervalSec: 30,
+	}
+	if deps.Valid && deps.String != "" {
+		json.Unmarshal([]byte(deps.String), &assignment.Dependencies) //nolint:errcheck
+	}
+
+	s.enrichWithConfig(assignment, workerID)
+	s.enrichWithSoulContext(assignment)
+	s.enrichWithLighthouse(assignment)
+	s.enrichWithReviewContext(assignment)
+	s.enrichUnified(assignment)
+	s.enrichWithPersonalOntology(assignment)
+	s.enrichWithOntology(assignment)
+	s.enrichWithDatasetContext(assignment)
+	return assignment, nil
+}
+
 // AssignTask finds and assigns the next available task to a worker.
 func (s *SQLiteStore) AssignTask(workerID string) (*TaskAssignment, error) {
 	// 1. Find and assign task (within transaction)
@@ -592,6 +639,25 @@ func matchScopePattern(scopePath, pattern string) bool {
 // reassignStaleOrFindPendingTask queries for the next task to assign.
 // Returns: taskID, title, scope, dod, deps, domain, model, staleReassign, error
 //
+// DiagnoseNoTask returns a human-readable reason why no task was assigned.
+func (s *SQLiteStore) DiagnoseNoTask() string {
+	var totalPending, totalInProgress, blockedByDep, workerMode int
+	s.db.QueryRow(`SELECT COUNT(*) FROM c4_tasks WHERE status='pending'`).Scan(&totalPending)
+	s.db.QueryRow(`SELECT COUNT(*) FROM c4_tasks WHERE status='in_progress'`).Scan(&totalInProgress)
+	s.db.QueryRow(`SELECT COUNT(*) FROM c4_tasks WHERE status='pending' AND execution_mode NOT IN ('','worker','auto') AND execution_mode IS NOT NULL`).Scan(&workerMode)
+	s.db.QueryRow(`
+		SELECT COUNT(*) FROM c4_tasks t
+		WHERE t.status='pending'
+		AND EXISTS (
+			SELECT 1 FROM json_each(CASE WHEN t.dependencies IS NULL OR t.dependencies='' THEN '[]' ELSE t.dependencies END) AS dep
+			JOIN c4_tasks dt ON dt.task_id=dep.value
+			WHERE dt.status!='done'
+		)`).Scan(&blockedByDep)
+	ready := totalPending - blockedByDep - workerMode
+	return fmt.Sprintf("pending=%d in_progress=%d blocked_by_dep=%d non_worker_mode=%d ready=%d",
+		totalPending, totalInProgress, blockedByDep, workerMode, ready)
+}
+
 // Concurrency: uses BEGIN IMMEDIATE to acquire a write-reservation lock before
 // any reads. This prevents SQLITE_BUSY_SNAPSHOT (517) that arises when two
 // processes both BEGIN DEFERRED, read the same snapshot, and then race to UPDATE

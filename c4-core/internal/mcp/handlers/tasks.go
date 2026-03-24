@@ -19,6 +19,7 @@ import (
 // getTaskArgs is the input for c4_get_task.
 type getTaskArgs struct {
 	WorkerID string `json:"worker_id"`
+	TaskID   string `json:"task_id"` // optional: request specific task instead of next-in-queue
 }
 
 // submitArgs is the input for c4_submit.
@@ -85,13 +86,17 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 	// c4_get_task
 	reg.Register(mcp.ToolSchema{
 		Name:        "c4_get_task",
-		Description: "Request next task assignment for a worker",
+		Description: "Request next task assignment for a worker. Optionally specify task_id to request a specific task.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"worker_id": map[string]any{
 					"type":        "string",
 					"description": "Unique identifier for the worker",
+				},
+				"task_id": map[string]any{
+					"type":        "string",
+					"description": "Optional: request a specific task by ID instead of next-in-queue",
 				},
 			},
 			"required": []string{"worker_id"},
@@ -279,14 +284,29 @@ func handleGetTask(store Store, rawArgs json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("worker_id is required")
 	}
 
-	assignment, err := store.AssignTask(args.WorkerID)
+	var assignment *TaskAssignment
+	var err error
+	if args.TaskID != "" {
+		// Specific task requested — claim then enrich via SQLiteStore
+		if ss, ok := store.(*SQLiteStore); ok {
+			assignment, err = ss.AssignSpecificTask(args.WorkerID, args.TaskID)
+		} else {
+			return nil, fmt.Errorf("task_id parameter requires SQLiteStore backend")
+		}
+	} else {
+		assignment, err = store.AssignTask(args.WorkerID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("assigning task: %w", err)
 	}
 
 	if assignment == nil {
-		// No tasks available
-		return map[string]any{}, nil
+		// No tasks available — include diagnostic info
+		reason := "no ready tasks"
+		if ss, ok := store.(*SQLiteStore); ok {
+			reason = ss.DiagnoseNoTask()
+		}
+		return map[string]any{"reason": reason}, nil
 	}
 
 	return assignment, nil

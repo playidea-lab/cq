@@ -376,8 +376,8 @@ func TestHandleGetTask(t *testing.T) {
 				if !ok {
 					t.Fatalf("result type = %T, want map[string]any", result)
 				}
-				if len(m) != 0 {
-					t.Errorf("expected empty map, got %v", m)
+				if _, hasReason := m["reason"]; !hasReason {
+					t.Errorf("expected 'reason' key in response, got %v", m)
 				}
 				return
 			}
