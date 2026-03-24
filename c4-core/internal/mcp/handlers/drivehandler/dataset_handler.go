@@ -49,24 +49,13 @@ func RegisterDatasetHandlers(reg *mcp.Registry, client *drive.DatasetClient, pro
 			return nil, err
 		}
 		// Auto-update .cqdata with the uploaded dataset version
-		cqDataHint := ""
 		if pDir != "" {
 			if cqErr := drive.ApplyCQData(pDir, args.Name, result.VersionHash); cqErr == nil {
-				cqDataHint = fmt.Sprintf(".cqdata updated (%s=%s). Run: git add .cqdata", args.Name, result.VersionHash[:8])
+				result.CqdataUpdated = true
+				result.Hint = fmt.Sprintf(".cqdata updated (%s=%s). Run: git add .cqdata", args.Name, result.VersionHash[:8])
 			}
 		}
-		resp := map[string]any{
-			"name":         result.Name,
-			"version_hash": result.VersionHash,
-			"files":        result.FilesUploaded,
-			"skipped":      result.FilesSkipped,
-			"total_bytes":  result.TotalSizeBytes,
-		}
-		if cqDataHint != "" {
-			resp["cqdata_updated"] = true
-			resp["hint"] = cqDataHint
-		}
-		return resp, nil
+		return result, nil
 	})
 
 	// c4_drive_dataset_list — List dataset versions

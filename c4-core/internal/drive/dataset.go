@@ -32,6 +32,8 @@ type DatasetUploadResult struct {
 	FilesSkipped   int    `json:"files_skipped"`
 	TotalSizeBytes int64  `json:"total_size_bytes"`
 	Changed        bool   `json:"changed"`
+	CqdataUpdated  bool   `json:"cqdata_updated,omitempty"`
+	Hint           string `json:"hint,omitempty"`
 }
 
 // DatasetPullResult holds the result of a dataset pull operation.
