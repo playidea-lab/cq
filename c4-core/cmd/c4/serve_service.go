@@ -208,6 +208,24 @@ func installServeService(_ context.Context, start bool) error {
 		}
 		fmt.Println("  Note: to start cq-serve without a GUI session (e.g. on headless servers),")
 		fmt.Println("  run: loginctl enable-linger $(whoami)")
+
+		// WSL2: additionally register Windows Task Scheduler task for boot-time auto-start.
+		if isWSL2() {
+			fmt.Println("cq-serve: WSL2 detected — registering Windows Task Scheduler task...")
+			if err := registerWindowsTask(execPath, configPath, svcConfig.WorkingDirectory); err != nil {
+				fmt.Fprintf(os.Stderr, "cq-serve: Windows Task Scheduler registration failed: %v\n", err)
+				fmt.Fprintln(os.Stderr, "  (WSL systemd service is still installed; Windows auto-start skipped)")
+			} else {
+				fmt.Printf("cq-serve: Windows Task '%s' registered (starts on Windows boot).\n", wslTaskName)
+			}
+			// Check wsl.conf for systemd=true
+			if !checkWslConf() {
+				fmt.Fprintln(os.Stderr, "  ⚠️  /etc/wsl.conf does not have [boot] systemd=true")
+				fmt.Fprintln(os.Stderr, "  Add the following to /etc/wsl.conf for systemd services:")
+				fmt.Fprintln(os.Stderr, "    [boot]")
+				fmt.Fprintln(os.Stderr, "    systemd=true")
+			}
+		}
 	}
 
 	if start {
@@ -260,6 +278,15 @@ func runServeUninstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("uninstall service: %w", err)
 	}
 	fmt.Println("cq-serve service uninstalled.")
+
+	// WSL2: also remove Windows Task Scheduler task.
+	if runtime.GOOS == "linux" && isWSL2() {
+		if err := unregisterWindowsTask(); err != nil {
+			fmt.Fprintf(os.Stderr, "cq-serve: Windows Task removal failed: %v\n", err)
+		} else {
+			fmt.Printf("cq-serve: Windows Task '%s' removed.\n", wslTaskName)
+		}
+	}
 	return nil
 }
 
