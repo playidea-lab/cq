@@ -883,7 +883,8 @@ func patchProjectSettings(projectDir string) error {
 		allowList = arr
 	}
 	for _, tool := range []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch",
-		"Skill(c4-*)", "Skill(c9-*)", "Skill(pi)", "Skill(research-loop)", "mcp__cq__*"} {
+		"Skill(c4-*)", "Skill(c9-*)", "Skill(pi)", "Skill(research-loop)",
+		"mcp__cq__*", "mcp__worker-*__*"} {
 		found := false
 		for _, v := range allowList {
 			if s, ok := v.(string); ok && s == tool {
