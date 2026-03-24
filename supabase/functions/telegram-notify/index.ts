@@ -138,6 +138,31 @@ async function handleJobUpdate(
   );
 }
 
+async function handleWorkerUpdate(
+  record: Record<string, unknown>,
+  oldRecord: Record<string, unknown> | null,
+): Promise<string | null> {
+  const status = record.status as string;
+  const oldStatus = oldRecord?.status as string | undefined;
+
+  // Only notify on online → offline transition
+  if (oldStatus !== "online" || status !== "offline") return null;
+
+  const workerId = record.id as string;
+  const name = (record.name as string) || workerId;
+  const hostname = (record.hostname as string) || "—";
+  const projectId = record.project_id as string;
+  const project = await resolveProjectName(projectId);
+  const tag = project ? `<b>[${project}]</b> ` : "";
+
+  return (
+    `${tag}🔴 <b>Worker offline</b>\n` +
+    `<b>Name:</b> ${name}\n` +
+    `<b>Host:</b> ${hostname}\n` +
+    `<b>ID:</b> <code>${workerId}</code>`
+  );
+}
+
 serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
@@ -169,6 +194,9 @@ serve(async (req: Request) => {
       break;
     case "hub_jobs":
       message = await handleJobUpdate(record, old_record);
+      break;
+    case "hub_workers":
+      message = await handleWorkerUpdate(record, old_record);
       break;
     default:
       console.log(`Unknown table: ${table}`);
