@@ -145,9 +145,16 @@ func init() {
 // Falls back to the first .c4/ directory found if none have config.yaml.
 // Returns the original dir if no .c4/ is found anywhere.
 func findBestC4Root(dir string) string {
+	home, _ := os.UserHomeDir()
 	first := "" // first dir with .c4/ (fallback)
 	cur := dir
 	for {
+		// Never treat the home directory as a project root.
+		// ~/.c4/ is the global config directory used by cq serve/auth — not a project.
+		if home != "" && cur == home {
+			break
+		}
+
 		c4 := filepath.Join(cur, ".c4")
 		if info, err := os.Stat(c4); err == nil && info.IsDir() {
 			if first == "" {
@@ -159,6 +166,16 @@ func findBestC4Root(dir string) string {
 				return cur
 			}
 		}
+
+		// Stop at git repository root — .git/ is the project boundary.
+		// This prevents climbing out of a repo into a parent that happens
+		// to have .c4/ (e.g., home directory or a monorepo container).
+		gitDir := filepath.Join(cur, ".git")
+		if info, err := os.Stat(gitDir); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
+			// .git can be a file (worktree) or directory — both mean git root.
+			break
+		}
+
 		parent := filepath.Dir(cur)
 		if parent == cur {
 			break // reached filesystem root
