@@ -88,6 +88,23 @@ func hookConfigFromC4Config(cfg *config.C4Config) hookConfigJSON {
 	}
 }
 
+// mergePatterns returns the union of two string slices, preserving order (base first, then extras).
+func mergePatterns(base, extra []string) []string {
+	seen := make(map[string]bool, len(base))
+	for _, p := range base {
+		seen[p] = true
+	}
+	merged := make([]string, len(base))
+	copy(merged, base)
+	for _, p := range extra {
+		if !seen[p] {
+			merged = append(merged, p)
+			seen[p] = true
+		}
+	}
+	return merged
+}
+
 // resolveHookModel maps short model aliases to full Anthropic model IDs.
 func resolveHookModel(model string) string {
 	// ResolveAlias does not define "" key — guard required
@@ -121,6 +138,23 @@ func writeHookConfigJSON(projectDir string, cfg *config.C4Config) {
 	}
 
 	path := filepath.Join(dir, "hook-config.json")
+
+	// Merge: preserve user-added allow_patterns and block_patterns from existing file.
+	if existing, err := os.ReadFile(path); err == nil {
+		var prev hookConfigJSON
+		if json.Unmarshal(existing, &prev) == nil {
+			merged := mergePatterns(hcfg.AllowPatterns, prev.AllowPatterns)
+			hcfg.AllowPatterns = merged
+			mergedBlock := mergePatterns(hcfg.BlockPatterns, prev.BlockPatterns)
+			hcfg.BlockPatterns = mergedBlock
+			// Re-marshal with merged patterns
+			data, err = json.MarshalIndent(hcfg, "", "  ")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "cq: hook-config.json re-marshal failed: %v\n", err)
+				return
+			}
+		}
+	}
 
 	// Skip write if existing file has identical content.
 	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, data) {
