@@ -97,9 +97,44 @@ cq serve status # check service status
 cq stop         # stop the service
 ```
 
+Once installed, the worker **survives all failure modes automatically**:
+
+| Failure | Recovery |
+|---------|----------|
+| Process crash | systemd `Restart=always` (5s delay) / macOS `KeepAlive` |
+| Token expiry | `TokenProvider` auto-refreshes 5 min before expiry |
+| Network drop | Relay `reconnectLoop` with exponential backoff |
+| OS reboot | systemd `enable` / macOS `RunAtLoad` |
+| `.mcp.json` stale | Auto-synced every 10 min from `session.json` |
+
+The only things that stop a worker: `cq serve uninstall` (explicit removal) or `refresh_token` expiry (long-term inactivity — re-run `cq auth login`).
+
 Logs:
 - **macOS**: `~/Library/Logs/cq-serve.{out,err}.log`
 - **Linux**: `~/.local/state/cq/cq-serve.{out,err}.log`
+
+### WSL2 Support *(v1.32.1+)*
+
+CQ auto-detects WSL2 and applies additional hardening:
+
+- **Windows Task Scheduler** — `cq serve install` registers a `CQ-Serve-WSL` task that starts WSL + cq serve on Windows boot
+- **nvidia-smi fallback** — auto-discovers `/usr/lib/wsl/lib/nvidia-smi` when the standard PATH lacks it (GPU passthrough)
+- **systemd check** — warns if `/etc/wsl.conf` doesn't have `[boot] systemd=true`
+
+```sh
+# On WSL2:
+cq serve install
+# Output:
+# cq-serve: service installed.
+# cq-serve: WSL2 detected — registering Windows Task Scheduler task...
+# cq-serve: Windows Task 'CQ-Serve-WSL' registered (starts on Windows boot).
+```
+
+To uninstall (removes both systemd unit and Windows task):
+
+```sh
+cq serve uninstall
+```
 
 ::: details Manual systemd setup (legacy)
 If you need a custom unit file for Hub worker specifically:

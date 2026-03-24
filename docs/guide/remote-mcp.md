@@ -39,7 +39,9 @@ Add to `.mcp.json`:
 }
 ```
 
-JWT expires in 1 hour — the relay client auto-refreshes, but the `.mcp.json` header is static. For long-term access, use `cq serve` on the remote machine directly.
+::: tip Auto-refresh (v1.32.1+)
+`cq serve` automatically syncs the JWT from `session.json` to all `.mcp.json` worker entries every 10 minutes. No manual token rotation needed — as long as `cq serve` is running, the relay connection and `.mcp.json` tokens stay fresh.
+:::
 
 ---
 

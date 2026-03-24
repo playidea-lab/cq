@@ -85,9 +85,45 @@ Hub URL 설정이 필요 없습니다. `C5_HUB_URL`이나 `C5_API_KEY` 환경변
 
 ---
 
-## 영구 서비스로 실행 (systemd)
+## 영구 서비스로 실행
 
-SSH 종료 후에도 워커를 유지하려면:
+`cq`가 OS 서비스를 자동으로 설치합니다 (macOS LaunchAgent / Linux systemd):
+
+```sh
+cq              # 자동 설치 및 시작
+cq serve status # 서비스 상태 확인
+cq stop         # 서비스 중지
+```
+
+설치 후 워커는 **모든 장애 상황에서 자동 복구**됩니다:
+
+| 장애 | 복구 |
+|------|------|
+| 프로세스 크래시 | systemd `Restart=always` (5초 후) / macOS `KeepAlive` |
+| 토큰 만료 | `TokenProvider` 만료 5분 전 자동 갱신 |
+| 네트워크 끊김 | Relay `reconnectLoop` (지수 백오프) |
+| OS 재부팅 | systemd `enable` / macOS `RunAtLoad` |
+| `.mcp.json` 만료 | 10분 주기로 `session.json`에서 자동 동기화 |
+
+로그:
+- **macOS**: `~/Library/Logs/cq-serve.{out,err}.log`
+- **Linux**: `~/.local/state/cq/cq-serve.{out,err}.log`
+
+### WSL2 지원 *(v1.32.1+)*
+
+CQ가 WSL2를 자동 감지하여 추가 보강:
+
+- **Windows Task Scheduler** — 윈도우 부팅 시 WSL + cq serve 자동 시작
+- **nvidia-smi fallback** — `/usr/lib/wsl/lib/nvidia-smi` 자동 탐색 (GPU 패스스루)
+- **systemd 확인** — `/etc/wsl.conf`에 `[boot] systemd=true` 없으면 경고
+
+```sh
+cq serve install   # WSL2에서: systemd + Windows Task Scheduler 이중 등록
+cq serve uninstall # 양쪽 모두 제거
+```
+
+::: details 레거시 수동 systemd 설정
+별도 유닛 파일이 필요한 경우:
 
 ```sh
 cat > ~/.config/systemd/user/cq-worker.service << 'EOF'
