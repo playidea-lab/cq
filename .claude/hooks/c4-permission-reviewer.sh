@@ -116,6 +116,13 @@ done
 # =============================================================================
 if [[ "$PERMISSION_MODE" == "model" ]]; then
     api_key="${ANTHROPIC_API_KEY:-}"
+    # Fallback: read from cq secrets if env var not set
+    if [[ -z "$api_key" ]] && command -v cq &>/dev/null; then
+        api_key=$(cq secret get anthropic.api_key 2>/dev/null)
+    fi
+    if [[ -z "$api_key" ]] && [[ -x "${HOME}/.local/bin/cq" ]]; then
+        api_key=$("${HOME}/.local/bin/cq" secret get anthropic.api_key 2>/dev/null)
+    fi
     if [[ -z "$api_key" ]] || ! command -v jq &>/dev/null; then
         # No API key or jq — allow (fail open)
         exit 0
@@ -140,9 +147,11 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
             }]
         }')
 
-    response=$(curl -s --max-time 8 \
+    # Pass API key via curl config stdin to avoid exposing it in process list
+    response=$(printf 'header = "x-api-key: %s"\n' "$api_key" | \
+        curl -s --max-time 8 \
         "https://api.anthropic.com/v1/messages" \
-        -H "x-api-key: $api_key" \
+        --config - \
         -H "anthropic-version: 2023-06-01" \
         -H "content-type: application/json" \
         -d "$payload" 2>/dev/null)
@@ -150,6 +159,8 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
     if [[ -n "$response" ]]; then
         text=$(echo "$response" | jq -r '.content[0].text' 2>/dev/null)
         if [[ -n "$text" && "$text" != "null" ]]; then
+            # Strip markdown code fences (```json ... ```) that Haiku sometimes wraps
+            text=$(echo "$text" | sed 's/^```[a-z]*//;s/```$//' | tr -d '\n' | sed 's/^[[:space:]]*//')
             allow=$(echo "$text" | jq -r '.allow // "null"' 2>/dev/null)
             reason=$(echo "$text" | jq -r '.reason // ""' 2>/dev/null)
             if [[ "$allow" == "false" ]]; then
