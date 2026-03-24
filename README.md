@@ -8,7 +8,7 @@ AI codes fast but forgets, skips planning, and doesn't learn.
 CQ is the brain it's missing.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
-![MCP Tools](https://img.shields.io/badge/MCP_Tools-148-blueviolet)
+![MCP Tools](https://img.shields.io/badge/MCP_Tools-169-blueviolet)
 ![License](https://img.shields.io/badge/License-Personal_Study-orange)
 
 </div>

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -24,8 +26,6 @@ func relayProxyHandler(cloudTP *cloud.TokenProvider, relayURL, anonKey string) h
 	client := &http.Client{Timeout: 60 * time.Second}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Extract /w/{worker}/mcp from path
-		// Path format: /w/pi-System-Product-Name/mcp
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 			return
@@ -36,16 +36,17 @@ func relayProxyHandler(cloudTP *cloud.TokenProvider, relayURL, anonKey string) h
 
 		// Read request body
 		body, err := io.ReadAll(r.Body)
+		r.Body.Close()
 		if err != nil {
 			http.Error(w, "Bad Request", http.StatusBadRequest)
 			return
 		}
-		defer r.Body.Close()
 
 		// Create forwarding request
-		proxyReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, targetURL, strings.NewReader(string(body)))
+		proxyReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, targetURL, bytes.NewReader(body))
 		if err != nil {
-			http.Error(w, fmt.Sprintf("proxy request: %v", err), http.StatusInternalServerError)
+			fmt.Fprintf(os.Stderr, "cq: relay proxy: request creation failed: %v\n", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 		proxyReq.Header.Set("Content-Type", "application/json")
@@ -66,7 +67,8 @@ func relayProxyHandler(cloudTP *cloud.TokenProvider, relayURL, anonKey string) h
 		// Forward to relay
 		resp, err := client.Do(proxyReq)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("relay error: %v", err), http.StatusBadGateway)
+			fmt.Fprintf(os.Stderr, "cq: relay proxy: upstream error: %v\n", err)
+			http.Error(w, "Bad Gateway", http.StatusBadGateway)
 			return
 		}
 		defer resp.Body.Close()
@@ -78,6 +80,8 @@ func relayProxyHandler(cloudTP *cloud.TokenProvider, relayURL, anonKey string) h
 			}
 		}
 		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
+		if _, err := io.Copy(w, resp.Body); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: relay proxy: response copy failed: %v\n", err)
+		}
 	})
 }
