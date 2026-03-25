@@ -1,0 +1,7 @@
+name = "mcp-wellknown-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+routes = [
+  { pattern = "mcp.pilab.kr/.well-known/*", zone_name = "pilab.kr" }
+]

@@ -281,6 +281,34 @@ Deno.serve(async (req: Request) => {
     );
   }
 
+  // Proxy Authorization Server Metadata — ChatGPT looks for this on the MCP domain
+  if (
+    url.pathname.includes("/.well-known/oauth-authorization-server") ||
+    url.searchParams.get("path") === ".well-known/oauth-authorization-server"
+  ) {
+    const asRes = await fetch(
+      `${AUTH_SERVER}/../.well-known/oauth-authorization-server/auth/v1`,
+    );
+    const asBody = await asRes.text();
+    return new Response(asBody, {
+      status: asRes.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // Proxy OpenID Configuration — ChatGPT may also check this
+  if (
+    url.pathname.includes("/.well-known/openid-configuration") ||
+    url.searchParams.get("path") === ".well-known/openid-configuration"
+  ) {
+    const oidcRes = await fetch(`${AUTH_SERVER}/.well-known/openid-configuration`);
+    const oidcBody = await oidcRes.text();
+    return new Response(oidcBody, {
+      status: oidcRes.status,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const supabase = getSupabase();
 
   // Auth: URL token, API key header, or JWT
@@ -307,6 +335,24 @@ Deno.serve(async (req: Request) => {
     if (!error) {
       authorized = true;
     }
+  }
+
+  // Allow discovery methods without auth (needed for connector setup)
+  if (!authorized && req.method === "POST") {
+    try {
+      const bodyText = await req.text();
+      const bodyJson = JSON.parse(bodyText);
+      const method = bodyJson.method;
+      if (method === "initialize" || method === "tools/list" || method === "notifications/initialized") {
+        authorized = true;
+      }
+      (req as any)._bodyText = bodyText;
+    } catch { /* not JSON */ }
+  }
+
+  // GET (SSE keepalive, metadata) allowed without auth
+  if (!authorized && req.method === "GET") {
+    authorized = true;
   }
 
   if (!authorized) {
