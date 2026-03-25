@@ -18,6 +18,7 @@ import (
 	"github.com/changmin/c4-core/internal/serve"
 	"github.com/changmin/c4-core/internal/serve/hubpoller"
 	"github.com/changmin/c4-core/internal/serve/hypothesissuggester"
+	"github.com/changmin/c4-core/internal/serve/knowledgesync"
 	"github.com/changmin/c4-core/internal/serve/mcphttp"
 	"github.com/changmin/c4-core/internal/serve/suggestpoller"
 )
@@ -230,6 +231,18 @@ func registerKnowledgeSuggestPollerServeComponent(mgr *serve.Manager, cfg config
 // registerHypothesisSuggesterComponent delegates to the hypothesissuggester package.
 func registerHypothesisSuggesterComponent(mgr *serve.Manager, cfg config.C4Config, gw *llm.Gateway, kStore *knowledge.Store) {
 	hypothesissuggester.RegisterComponent(mgr, cfg, gw, kStore)
+}
+
+// registerKnowledgeCloudSyncComponent registers the knowledge Cloud→Local sync component
+// when cloud credentials are available and the knowledge store is open.
+// Errors are logged only — never crashes serve.
+func registerKnowledgeCloudSyncComponent(mgr *serve.Manager, kStore *knowledge.Store, cloudClient knowledgesync.CloudSyncer) {
+	if kStore == nil || cloudClient == nil {
+		return
+	}
+	comp := knowledgesync.New(kStore, cloudClient)
+	mgr.Register(comp)
+	fmt.Fprintf(os.Stderr, "cq serve: registered knowledge-cloud-sync\n")
 }
 
 // mcpServerRequestHandler adapts *mcpServer to the mcphttp.RequestHandler interface.
