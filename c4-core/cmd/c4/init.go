@@ -1484,9 +1484,14 @@ func launchToolNamed(tool, projectDir, name string) error {
 	}
 
 	// Determine or create UUID for this session.
+	// If name is already a UUID, use it directly for --resume (skip named session lookup).
 	currentUUID := ""
 	isNew := true
-	if entry, ok := sessions[name]; ok {
+	if isUUID(name) {
+		currentUUID = name
+		isNew = false
+		fmt.Fprintf(os.Stderr, "cq: using raw session UUID: %s\n", name)
+	} else if entry, ok := sessions[name]; ok {
 		if entry.Dir != "" && entry.Dir != projectDir {
 			fmt.Fprintf(os.Stderr, "cq: session '%s' belongs to %s (current: %s), starting new session...\n",
 				name, entry.Dir, projectDir)
@@ -1534,6 +1539,9 @@ func launchToolNamed(tool, projectDir, name string) error {
 			if tool == "gemini" {
 				resumeID := findGeminiSessionIndex(currentUUID)
 				toolArgs = []string{"--resume", resumeID}
+			} else if isUUID(name) {
+				// Raw UUID: resume without --name (no named session to track)
+				toolArgs = []string{"--resume", currentUUID}
 			} else {
 				toolArgs = []string{"--resume", currentUUID, "--name", name}
 			}
