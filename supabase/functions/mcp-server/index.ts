@@ -283,44 +283,30 @@ Deno.serve(async (req: Request) => {
 
   const supabase = getSupabase();
 
-  // Auth check: skip for discovery methods (initialize, tools/list), require for tool calls
+  // Auth: URL token, API key header, or JWT
+  const urlToken = url.searchParams.get("token");
   const apiKey = req.headers.get("X-API-Key");
   const authHeader = req.headers.get("Authorization");
   const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
 
   let authorized = false;
 
-  // Check API key
-  if (MCP_API_KEY && (apiKey === MCP_API_KEY || bearerToken === MCP_API_KEY)) {
+  // 1. URL token (for ChatGPT which can't send custom headers)
+  if (MCP_API_KEY && urlToken === MCP_API_KEY) {
     authorized = true;
   }
 
-  // Check JWT
+  // 2. API key header (for Claude Code .mcp.json)
+  if (!authorized && MCP_API_KEY && (apiKey === MCP_API_KEY || bearerToken === MCP_API_KEY)) {
+    authorized = true;
+  }
+
+  // 3. JWT (for OAuth flow, future use)
   if (!authorized && bearerToken) {
     const { error } = await supabase.auth.getUser(bearerToken);
     if (!error) {
       authorized = true;
     }
-  }
-
-  // Allow unauthenticated access to discovery methods (initialize, tools/list, notifications/initialized)
-  // These are needed for ChatGPT connector setup before OAuth completes
-  if (!authorized && req.method === "POST") {
-    try {
-      const bodyText = await req.text();
-      const bodyJson = JSON.parse(bodyText);
-      const method = bodyJson.method;
-      if (method === "initialize" || method === "tools/list" || method === "notifications/initialized" || method === "tools/call") {
-        authorized = true;
-      }
-      // Store body for later use since we consumed it
-      (req as any)._bodyText = bodyText;
-    } catch { /* not JSON, will fail later */ }
-  }
-
-  // GET (SSE) is allowed without auth
-  if (!authorized && req.method === "GET") {
-    authorized = true;
   }
 
   if (!authorized) {

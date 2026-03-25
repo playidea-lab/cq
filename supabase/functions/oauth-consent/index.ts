@@ -121,12 +121,17 @@ Deno.serve(async (req: Request) => {
       return new Response("Missing authorization_id", { status: 400 });
     }
 
-    // Auto-approve immediately: login as default user and approve in one shot
+    // Auto-approve: login as configured user and approve in one shot
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+    const oauthEmail = Deno.env.get("OAUTH_AUTO_EMAIL") ?? "";
+    const oauthPassword = Deno.env.get("OAUTH_AUTO_PASSWORD") ?? "";
+    if (!oauthEmail || !oauthPassword) {
+      return new Response("OAuth auto-approve not configured. Set OAUTH_AUTO_EMAIL and OAUTH_AUTO_PASSWORD secrets.", { status: 500 });
+    }
     const loginRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: anonKey || SUPABASE_SERVICE_ROLE_KEY },
-      body: JSON.stringify({ email: "changmin@pilab.kr", password: "cq-mcp-2026!" }),
+      body: JSON.stringify({ email: oauthEmail, password: oauthPassword }),
     });
     if (!loginRes.ok) {
       return new Response("Auto-login failed: " + await loginRes.text(), { status: 500 });
