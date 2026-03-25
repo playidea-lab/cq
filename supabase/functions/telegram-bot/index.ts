@@ -3,7 +3,7 @@
 // Commands: /status, /cancel <id>, /workers, /jobs
 // Uses grammY framework + Supabase client for DB access.
 
-import { Bot, webhookCallback } from "https://deno.land/x/grammy@v1.21.1/mod.ts";
+import { Bot, webhookCallback } from "https://esm.sh/grammy@1.21.1";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
@@ -142,6 +142,54 @@ bot.command("jobs", async (ctx) => {
   await ctx.reply(`<b>Recent Jobs</b>\n${lines.join("\n")}`, {
     parse_mode: "HTML",
   });
+});
+
+// /start [code] — welcome message or pairing via code
+bot.command("start", async (ctx) => {
+  const code = ctx.match?.trim();
+
+  if (!code) {
+    await ctx.reply("CQ 알림 봇입니다. /status, /workers, /jobs 명령을 사용하세요.");
+    return;
+  }
+
+  const supabase = getSupabase();
+
+  // Look up the pairing code
+  const { data: pairing, error: pairingError } = await supabase
+    .from("notification_pairings")
+    .select("code, project_id, channel_type, expires_at, used")
+    .eq("code", code)
+    .single();
+
+  if (pairingError || !pairing || pairing.used || new Date(pairing.expires_at) <= new Date()) {
+    await ctx.reply("❌ 잘못된 코드입니다. cq notify add telegram으로 새 코드를 받으세요");
+    return;
+  }
+
+  const chatId = ctx.chat.id;
+
+  // Insert the notification channel
+  const { error: insertError } = await supabase
+    .from("project_notification_channels")
+    .insert({
+      project_id: pairing.project_id,
+      channel_type: "telegram",
+      config: { chat_id: chatId },
+    });
+
+  if (insertError) {
+    await ctx.reply(`Error: ${insertError.message}`);
+    return;
+  }
+
+  // Mark pairing code as used
+  await supabase
+    .from("notification_pairings")
+    .update({ used: true })
+    .eq("code", code);
+
+  await ctx.reply("✅ 알림 연결 완료! 프로젝트의 알림을 받습니다");
 });
 
 const handleUpdate = webhookCallback(bot, "std/http");

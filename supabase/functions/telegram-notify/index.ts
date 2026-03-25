@@ -21,6 +21,68 @@ interface WebhookPayload {
 // Cache project names to avoid repeated lookups within the same invocation.
 const projectNameCache = new Map<string, string>();
 
+// Map table name + record status to notification event type.
+function resolveEventType(table: string, record: Record<string, unknown>): string | null {
+  switch (table) {
+    case "hub_workers":
+      return "worker.offline";
+    case "hub_jobs": {
+      const status = (record.status as string || "").toLowerCase();
+      if (status === "complete") return "job.complete";
+      if (status === "failed") return "job.failed";
+      if (status === "cancelled") return "job.cancelled";
+      return null;
+    }
+    case "c4_tasks": {
+      const status = record.status as string;
+      if (status === "done") return "task.done";
+      if (status === "blocked") return "task.blocked";
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
+async function getNotificationChannels(projectId: string, eventType: string): Promise<string[]> {
+  // Fallback to env var when project_id is empty or Supabase is not configured.
+  if (!projectId || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return CHAT_ID ? [CHAT_ID] : [];
+  }
+
+  try {
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data, error } = await supabase
+      .from("project_notification_channels")
+      .select("config, events")
+      .eq("project_id", projectId)
+      .eq("channel_type", "telegram");
+
+    if (error) {
+      console.error("Failed to query notification channels:", error.message);
+      return CHAT_ID ? [CHAT_ID] : [];
+    }
+
+    if (!data || data.length === 0) {
+      return CHAT_ID ? [CHAT_ID] : [];
+    }
+
+    // Client-side filter: only channels that subscribe to this event type.
+    const chatIds: string[] = [];
+    for (const row of data) {
+      const events = row.events as string[] | null;
+      if (events && !events.includes(eventType)) continue;
+      const chatId = (row.config as Record<string, unknown>)?.chat_id as string | undefined;
+      if (chatId) chatIds.push(chatId);
+    }
+
+    return chatIds.length > 0 ? chatIds : (CHAT_ID ? [CHAT_ID] : []);
+  } catch (err) {
+    console.error("Unexpected error querying notification channels:", err);
+    return CHAT_ID ? [CHAT_ID] : [];
+  }
+}
+
 async function resolveProjectName(projectId: string): Promise<string> {
   if (!projectId) return "";
   if (projectNameCache.has(projectId)) return projectNameCache.get(projectId)!;
@@ -42,13 +104,13 @@ async function resolveProjectName(projectId: string): Promise<string> {
   }
 }
 
-async function sendTelegramMessage(text: string): Promise<void> {
+async function sendTelegramMessage(chatId: string, text: string): Promise<void> {
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      chat_id: CHAT_ID,
+      chat_id: chatId,
       text,
       parse_mode: "HTML",
     }),
@@ -168,8 +230,8 @@ serve(async (req: Request) => {
     return new Response("Method Not Allowed", { status: 405 });
   }
 
-  if (!BOT_TOKEN || !CHAT_ID) {
-    console.error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID");
+  if (!BOT_TOKEN) {
+    console.error("Missing TELEGRAM_BOT_TOKEN");
     return new Response("Configuration error", { status: 500 });
   }
 
@@ -203,7 +265,13 @@ serve(async (req: Request) => {
   }
 
   if (message) {
-    await sendTelegramMessage(message);
+    const eventType = resolveEventType(table, record);
+    const projectId = (record.project_id as string) || "";
+    const chatIds = eventType
+      ? await getNotificationChannels(projectId, eventType)
+      : (CHAT_ID ? [CHAT_ID] : []);
+
+    await Promise.all(chatIds.map((id) => sendTelegramMessage(id, message!)));
   }
 
   return new Response("OK", { status: 200 });

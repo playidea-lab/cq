@@ -283,36 +283,54 @@ Deno.serve(async (req: Request) => {
 
   const supabase = getSupabase();
 
-  // Auth check: accept MCP_API_KEY (X-API-Key or Bearer) OR valid Supabase JWT
-  {
-    const apiKey = req.headers.get("X-API-Key");
-    const authHeader = req.headers.get("Authorization");
-    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+  // Auth check: skip for discovery methods (initialize, tools/list), require for tool calls
+  const apiKey = req.headers.get("X-API-Key");
+  const authHeader = req.headers.get("Authorization");
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
 
-    let authorized = false;
+  let authorized = false;
 
-    // Check API key first
-    if (MCP_API_KEY && (apiKey === MCP_API_KEY || bearerToken === MCP_API_KEY)) {
+  // Check API key
+  if (MCP_API_KEY && (apiKey === MCP_API_KEY || bearerToken === MCP_API_KEY)) {
+    authorized = true;
+  }
+
+  // Check JWT
+  if (!authorized && bearerToken) {
+    const { error } = await supabase.auth.getUser(bearerToken);
+    if (!error) {
       authorized = true;
     }
+  }
 
-    // If API key didn't match, try JWT verification via Supabase
-    if (!authorized && bearerToken) {
-      const { error } = await supabase.auth.getUser(bearerToken);
-      if (!error) {
+  // Allow unauthenticated access to discovery methods (initialize, tools/list, notifications/initialized)
+  // These are needed for ChatGPT connector setup before OAuth completes
+  if (!authorized && req.method === "POST") {
+    try {
+      const bodyText = await req.text();
+      const bodyJson = JSON.parse(bodyText);
+      const method = bodyJson.method;
+      if (method === "initialize" || method === "tools/list" || method === "notifications/initialized" || method === "tools/call") {
         authorized = true;
       }
-    }
+      // Store body for later use since we consumed it
+      (req as any)._bodyText = bodyText;
+    } catch { /* not JSON, will fail later */ }
+  }
 
-    if (!authorized) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: {
-          "Content-Type": "application/json",
-          "WWW-Authenticate": `Bearer resource_metadata="${RESOURCE_URL}/.well-known/oauth-protected-resource"`,
-        },
-      });
-    }
+  // GET (SSE) is allowed without auth
+  if (!authorized && req.method === "GET") {
+    authorized = true;
+  }
+
+  if (!authorized) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: {
+        "Content-Type": "application/json",
+        "WWW-Authenticate": `Bearer resource_metadata="${RESOURCE_URL}/.well-known/oauth-protected-resource"`,
+      },
+    });
   }
 
   // GET: SSE keepalive (Streamable HTTP spec)
@@ -341,7 +359,9 @@ Deno.serve(async (req: Request) => {
   if (req.method === "POST") {
     let rpcReq: JsonRpcRequest;
     try {
-      rpcReq = await req.json();
+      // Use cached body if already consumed by auth check, otherwise read fresh
+      const bodyText = (req as any)._bodyText ?? await req.text();
+      rpcReq = JSON.parse(bodyText);
     } catch {
       return new Response(
         JSON.stringify(jsonRpcError(null, -32700, "Parse error")),

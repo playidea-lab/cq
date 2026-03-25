@@ -14,21 +14,7 @@
 --     supabase secrets set TELEGRAM_BOT_TOKEN=<bot-token>
 --     supabase secrets set TELEGRAM_CHAT_ID=<chat-id>
 
--- Ensure the c4_tasks webhook exists (idempotent)
-INSERT INTO supabase_functions.hooks (hook_table_id, hook_name, hook_type, hook_function_id, request_id)
-SELECT
-  c.oid,
-  'telegram_notify_tasks',
-  'http_request',
-  NULL,
-  NULL
-FROM pg_class c
-JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = 'public' AND c.relname = 'c4_tasks'
-ON CONFLICT DO NOTHING;
-
--- NOTE: The above is a placeholder showing intent.
--- Supabase DB webhooks are best configured via Dashboard:
+-- DB webhooks are configured via Supabase Dashboard (not SQL):
 --
 --   1. Go to Database → Webhooks → Create new webhook
 --   2. Name: telegram-notify-tasks
