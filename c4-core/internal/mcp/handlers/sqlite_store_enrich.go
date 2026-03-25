@@ -317,6 +317,45 @@ func (s *SQLiteStore) enrichUnified(assignment *TaskAssignment) {
 		}
 	}
 
+	// Wire 4: Hook denial injection — past security/permission denials as warnings.
+	// Reads HOOK_DENIED events from .c4/events/hook-deny-*.json (written by hooks).
+	if s.projectRoot != "" {
+		eventsDir := filepath.Join(s.projectRoot, ".c4", "events")
+		entries, _ := os.ReadDir(eventsDir)
+		var denials []string
+		for _, e := range entries {
+			if !strings.HasPrefix(e.Name(), "hook-deny-") {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(eventsDir, e.Name()))
+			if err != nil {
+				continue
+			}
+			var ev struct {
+				Reason  string `json:"reason"`
+				Command string `json:"command"`
+				Tool    string `json:"tool"`
+			}
+			if json.Unmarshal(data, &ev) == nil && ev.Reason != "" {
+				denial := ev.Reason
+				if ev.Command != "" {
+					denial += " (cmd: " + ev.Command + ")"
+				}
+				denials = append(denials, denial)
+			}
+		}
+		if len(denials) > 0 {
+			// Cap at 5 most recent
+			if len(denials) > 5 {
+				denials = denials[len(denials)-5:]
+			}
+			b.WriteString("\n### Past Security Denials (hook)\n")
+			for _, d := range denials {
+				fmt.Fprintf(&b, "  - ⚠️ %s\n", d)
+			}
+		}
+	}
+
 	ctx := b.String()
 	if ctx != "## Context (auto-injected)\n" { // has content beyond header
 		assignment.KnowledgeContext = ctx

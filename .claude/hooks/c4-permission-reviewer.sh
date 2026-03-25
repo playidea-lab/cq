@@ -82,6 +82,27 @@ _emit_allow() {
 
 _emit_deny() {
     local message="${1:-Denied}"
+
+    # Record denial as hook event for learn loop (Wire 4).
+    if [[ -n "${C4_ROOT}" ]] && command -v jq &>/dev/null; then
+        local ts
+        ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
+        local events_dir="${C4_ROOT}/.c4/events"
+        mkdir -p "$events_dir" 2>/dev/null
+        jq -n \
+            --arg ts "$ts" \
+            --arg reason "$message" \
+            --arg command "${COMMAND:-${FILE_PATH:-}}" \
+            --arg tool "${TOOL_NAME:-}" \
+            '{
+                type: "HOOK_DENIED",
+                timestamp: $ts,
+                tool: $tool,
+                command: $command,
+                reason: $reason
+            }' > "${events_dir}/hook-deny-${ts//[:T]/-}.json" 2>/dev/null
+    fi
+
     jq -n --arg msg "$message" '{
         hookSpecificOutput: {
             hookEventName: "PermissionRequest",
