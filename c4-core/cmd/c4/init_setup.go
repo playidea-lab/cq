@@ -1,0 +1,879 @@
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
+	"io"
+	"io/fs"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/changmin/c4-core/internal/config"
+)
+
+// setupClaudeMD creates or updates CLAUDE.md with C4 override rules.
+// If CLAUDE.md already contains the C4 marker, it is left unchanged.
+// If CLAUDE.md exists without the marker, the C4 section is prepended.
+// If CLAUDE.md does not exist, a new one is created from template.
+func setupClaudeMD(dir string) error {
+	claudePath := filepath.Join(dir, "CLAUDE.md")
+	const marker = "## CRITICAL: C4 Overrides"
+
+	// Check for AGENTS.md symlink (C4 repo itself — skip template deployment)
+	if target, err := os.Readlink(claudePath); err == nil {
+		if strings.Contains(target, "AGENTS.md") {
+			fmt.Fprintln(os.Stderr, "cq: CLAUDE.md is AGENTS.md symlink (C4 repo), skipping template")
+			return nil
+		}
+	}
+
+	if data, err := os.ReadFile(claudePath); err == nil {
+		content := string(data)
+		if strings.Contains(content, marker) {
+			fmt.Fprintln(os.Stderr, "cq: CLAUDE.md already has C4 overrides")
+			return nil
+		}
+		// Prepend C4 section to existing CLAUDE.md
+		newContent := claudeMDTemplate + "\n\n---\n\n<!-- Original CLAUDE.md content below -->\n\n" + content
+		if err := os.WriteFile(claudePath, []byte(newContent), 0644); err != nil {
+			return fmt.Errorf("updating CLAUDE.md: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "cq: CLAUDE.md updated with C4 overrides (existing content preserved)")
+		return nil
+	}
+
+	// Create new CLAUDE.md from template
+	if err := os.WriteFile(claudePath, []byte(claudeMDTemplate), 0644); err != nil {
+		return fmt.Errorf("creating CLAUDE.md: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "cq: CLAUDE.md created")
+	return nil
+}
+
+// setupSkills deploys C4 skills to the target project.
+// Priority order:
+//  1. findC4Root() succeeds → symlink mode (development)
+//  2. EmbeddedSkillsFS != nil → extract to ~/.c4/skills/ (installed binary)
+//  3. Neither → skip gracefully
+func setupSkills(dir string) error {
+	// 1. Development mode: symlink from source root
+	if c4Root, err := findC4Root(); err == nil {
+		return setupSkillsSymlink(dir, c4Root)
+	}
+
+	// 2. Embedded mode: extract to ~/.c4/skills/
+	if EmbeddedSkillsFS != nil {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			slog.Warn("skills embed: cannot determine home dir", "err", err)
+			return nil
+		}
+		skillsDir := filepath.Join(home, ".c4", "skills")
+		if err := extractEmbeddedSkills(skillsDir); err != nil {
+			slog.Warn("skills embed: extraction failed", "err", err)
+			return nil
+		}
+		return setupSkillsFromExtracted(dir, skillsDir)
+	}
+
+	// 3. Neither available
+	slog.Info("skills not embedded, skipping")
+	return nil
+}
+
+// setupSkillsSymlink creates symlinks from c4Root skills to the project.
+func setupSkillsSymlink(dir, c4Root string) error {
+	sourceSkillsDir := filepath.Join(c4Root, ".claude", "skills")
+	entries, err := os.ReadDir(sourceSkillsDir)
+	if err != nil {
+		return nil // No skills to deploy
+	}
+
+	targetSkillsDir := filepath.Join(dir, ".claude", "skills")
+	if err := os.MkdirAll(targetSkillsDir, 0755); err != nil {
+		return fmt.Errorf("creating .claude/skills/: %w", err)
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		target := filepath.Join(targetSkillsDir, entry.Name())
+		// Skip if already exists (file, dir, or symlink)
+		if _, err := os.Lstat(target); err == nil {
+			continue
+		}
+		source := filepath.Join(sourceSkillsDir, entry.Name())
+		if err := os.Symlink(source, target); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: symlink skill %s: %v\n", entry.Name(), err)
+			continue
+		}
+		count++
+	}
+	if count > 0 {
+		fmt.Fprintf(os.Stderr, "cq: %d skills deployed (symlinked from %s)\n", count, c4Root)
+	} else {
+		fmt.Fprintln(os.Stderr, "cq: skills up to date")
+	}
+	return nil
+}
+
+// setupSkillsFromExtracted creates symlinks from the extracted skills dir to the project.
+func setupSkillsFromExtracted(dir, skillsDir string) error {
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return nil
+	}
+
+	targetSkillsDir := filepath.Join(dir, ".claude", "skills")
+	if err := os.MkdirAll(targetSkillsDir, 0755); err != nil {
+		return fmt.Errorf("creating .claude/skills/: %w", err)
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == ".version" {
+			continue
+		}
+		target := filepath.Join(targetSkillsDir, entry.Name())
+		if _, err := os.Lstat(target); err == nil {
+			continue
+		}
+		source := filepath.Join(skillsDir, entry.Name())
+		if err := os.Symlink(source, target); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: symlink skill %s: %v\n", entry.Name(), err)
+			continue
+		}
+		count++
+	}
+	if count > 0 {
+		fmt.Fprintf(os.Stderr, "cq: %d skills deployed (extracted from embed)\n", count)
+	} else {
+		fmt.Fprintln(os.Stderr, "cq: skills up to date")
+	}
+	return nil
+}
+
+// extractEmbeddedSkills extracts skills from EmbeddedSkillsFS to destDir.
+// It is version-aware: if ~/.c4/skills/.version matches the embedded version, extraction is skipped.
+// Write failures are logged as warnings and return nil (CI read-only mount safety).
+func extractEmbeddedSkills(destDir string) error {
+	// Read embedded version from skills_src/.version
+	embeddedVersionBytes, err := fs.ReadFile(EmbeddedSkillsFS, "skills_src/.version")
+	embeddedVersion := strings.TrimSpace(string(embeddedVersionBytes))
+	if err != nil {
+		embeddedVersion = ""
+	}
+
+	// Fast path: check if installed version matches embedded version
+	if embeddedVersion != "" {
+		installedVersionBytes, err := os.ReadFile(filepath.Join(destDir, ".version"))
+		if err == nil {
+			installedVersion := strings.TrimSpace(string(installedVersionBytes))
+			if installedVersion == embeddedVersion {
+				return nil // already up to date
+			}
+		}
+	}
+
+	// Extract all files from skills_src/
+	if err := fs.WalkDir(EmbeddedSkillsFS, "skills_src", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Compute destination path by stripping "skills_src/" prefix
+		rel, stripErr := filepath.Rel("skills_src", path)
+		if stripErr != nil {
+			return stripErr
+		}
+		dest := filepath.Join(destDir, rel)
+
+		if d.IsDir() {
+			mkErr := os.MkdirAll(dest, 0755)
+			if mkErr != nil {
+				slog.Warn("skills embed: mkdir failed", "path", dest, "err", mkErr)
+			}
+			return nil
+		}
+
+		data, readErr := fs.ReadFile(EmbeddedSkillsFS, path)
+		if readErr != nil {
+			return readErr
+		}
+
+		if writeErr := os.WriteFile(dest, data, 0644); writeErr != nil {
+			slog.Warn("skills embed: write failed", "path", dest, "err", writeErr)
+			return nil // graceful: don't abort on write failure
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("extractEmbeddedSkills walk: %w", err)
+	}
+
+	// Update .version file
+	if embeddedVersion != "" {
+		versionPath := filepath.Join(destDir, ".version")
+		if writeErr := os.WriteFile(versionPath, []byte(embeddedVersion+"\n"), 0644); writeErr != nil {
+			slog.Warn("skills embed: version write failed", "err", writeErr)
+		}
+	}
+
+	return nil
+}
+
+// hookNeedsUpdate returns true if the file at path doesn't exist or
+// its SHA256 hash differs from the embedded content.
+func hookNeedsUpdate(path string, embeddedContent string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return true // file missing
+	}
+	existing := sha256.Sum256(data)
+	embedded := sha256.Sum256([]byte(embeddedContent))
+	return existing != embedded
+}
+
+// setupProjectHooks installs C4 hooks to {projectDir}/.claude/hooks/.
+// Deploys c4-gate.sh (PreToolUse) and c4-permission-reviewer.sh (PermissionRequest),
+// then registers them in {projectDir}/.claude/settings.json using $CLAUDE_PROJECT_DIR.
+func setupProjectHooks(projectDir string) error {
+	hooksDir := filepath.Join(projectDir, ".claude", "hooks")
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return fmt.Errorf("creating hooks dir: %w", err)
+	}
+
+	gateHookPath := filepath.Join(hooksDir, "c4-gate.sh")
+	gateUpdated := hookNeedsUpdate(gateHookPath, gateHookContent)
+	if gateUpdated {
+		if err := os.WriteFile(gateHookPath, []byte(gateHookContent), 0755); err != nil {
+			return fmt.Errorf("writing gate hook: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "cq: gate hook installed → "+gateHookPath)
+	}
+
+	permHookPath := filepath.Join(hooksDir, "c4-permission-reviewer.sh")
+	permUpdated := hookNeedsUpdate(permHookPath, permissionReviewerContent)
+	if permUpdated {
+		if err := os.WriteFile(permHookPath, []byte(permissionReviewerContent), 0755); err != nil {
+			return fmt.Errorf("writing permission reviewer hook: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "cq: permission reviewer hook installed → "+permHookPath)
+	}
+
+	if !gateUpdated && !permUpdated {
+		fmt.Fprintln(os.Stderr, "cq: hooks up-to-date")
+	}
+
+	// Register hooks in {projectDir}/.claude/settings.json using $CLAUDE_PROJECT_DIR
+	if err := patchProjectSettings(projectDir); err != nil {
+		return fmt.Errorf("patching settings.json: %w", err)
+	}
+
+	return nil
+}
+
+// patchProjectSettings registers C4 hooks in {projectDir}/.claude/settings.json.
+// Uses $CLAUDE_PROJECT_DIR so the paths work on any machine after cq init.
+// Installs:
+//   - PreToolUse: Bash|Edit|Write   → c4-gate.sh
+//   - PermissionRequest: (all tools except AskUserQuestion) → c4-permission-reviewer.sh
+//   - permissions.allow: Read, Glob, Grep, WebFetch, WebSearch
+//
+// It is idempotent. Corrupted JSON is backed up and replaced.
+func patchProjectSettings(projectDir string) error {
+	settingsDir := filepath.Join(projectDir, ".claude")
+	settingsPath := filepath.Join(settingsDir, "settings.json")
+
+	// Use $CLAUDE_PROJECT_DIR variable in hook command paths (portable across machines)
+	gateCmd := `"$CLAUDE_PROJECT_DIR"/.claude/hooks/c4-gate.sh`
+	permCmd := `"$CLAUDE_PROJECT_DIR"/.claude/hooks/c4-permission-reviewer.sh`
+
+	// Read existing settings or start fresh
+	var settings map[string]any
+	data, err := os.ReadFile(settingsPath)
+	if err == nil {
+		if jsonErr := json.Unmarshal(data, &settings); jsonErr != nil {
+			backupName := fmt.Sprintf("settings.json.bak.%s", time.Now().Format("20060102150405"))
+			backupPath := filepath.Join(settingsDir, backupName)
+			_ = os.WriteFile(backupPath, data, 0644)
+			fmt.Fprintf(os.Stderr, "cq: settings.json corrupted, backed up → %s\n", backupPath)
+			settings = map[string]any{}
+		}
+	} else {
+		settings = map[string]any{}
+	}
+
+	// Navigate to hooks
+	hooks, _ := settings["hooks"].(map[string]any)
+	if hooks == nil {
+		hooks = map[string]any{}
+	}
+
+	// Helper: idempotently patch a hook event array.
+	// deprecatedNames lists legacy basenames that should be replaced by the new entry
+	// (e.g. "permission-reviewer.py" superseded by "c4-permission-reviewer.sh").
+	patchHookEvent := func(eventName, matcher, cmdStr, baseName string, timeout int, deprecatedNames ...string) {
+		eventRaw, _ := hooks[eventName]
+		var eventArr []any
+		if arr, ok := eventRaw.([]any); ok {
+			eventArr = arr
+		}
+
+		hookEntry := map[string]any{"type": "command", "command": cmdStr}
+		if timeout > 0 {
+			hookEntry["timeout"] = timeout
+		}
+
+		matchesKnownBaseName := func(cmd string) bool {
+			if strings.Contains(cmd, baseName) {
+				return true
+			}
+			for _, dep := range deprecatedNames {
+				if strings.Contains(cmd, dep) {
+					return true
+				}
+			}
+			return false
+		}
+
+		// Phase 1: scan ALL entries for baseName (or deprecated names) regardless of
+		// matcher. Handles stale entries with a different matcher string or a legacy
+		// script name, ensuring we never create duplicate entries.
+		for i, entry := range eventArr {
+			entryMap, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			innerHooks, _ := entryMap["hooks"].([]any)
+			for j, h := range innerHooks {
+				hMap, ok := h.(map[string]any)
+				if !ok {
+					continue
+				}
+				cmd, _ := hMap["command"].(string)
+				if cmd == cmdStr && entryMap["matcher"] == matcher {
+					return // already correct, nothing to do
+				}
+				if matchesKnownBaseName(cmd) {
+					// Stale entry (wrong path, wrong matcher, or deprecated script):
+					// replace entire hook entry and update matcher so it is fully current.
+					innerHooks[j] = hookEntry
+					entryMap["hooks"] = innerHooks
+					entryMap["matcher"] = matcher
+					eventArr[i] = entryMap
+					hooks[eventName] = eventArr
+					return
+				}
+			}
+		}
+
+		// Phase 2: exact matcher match — replace hooks list (baseName not yet present).
+		for i, entry := range eventArr {
+			entryMap, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			if entryMap["matcher"] != matcher {
+				continue
+			}
+			entryMap["hooks"] = []any{hookEntry}
+			eventArr[i] = entryMap
+			hooks[eventName] = eventArr
+			return
+		}
+
+		// Phase 3: no existing entry — append new one.
+		eventArr = append(eventArr, map[string]any{
+			"matcher": matcher,
+			"hooks":   []any{hookEntry},
+		})
+		hooks[eventName] = eventArr
+	}
+
+	// PreToolUse: gate hook (Bash|Edit|Write)
+	// deprecated: c4-bash-security-hook.sh, c4-edit-security-hook.sh (v0.23 global hooks)
+	patchHookEvent("PreToolUse", "Bash|Edit|Write", gateCmd, "c4-gate.sh", 0,
+		"c4-bash-security-hook.sh", "c4-edit-security-hook.sh")
+	// PermissionRequest: permission reviewer (explicit include list; excludes AskUserQuestion)
+	// deprecated: permission-reviewer.py (pre-v0.24 Python-based reviewer)
+	patchHookEvent("PermissionRequest",
+		"Bash|Read|Edit|Write|NotebookEdit|WebFetch|WebSearch|Search|Skill",
+		permCmd, "c4-permission-reviewer.sh", 20,
+		"permission-reviewer.py")
+
+	settings["hooks"] = hooks
+
+	// Ensure permissions.allow contains safe read-only tools (no side effects)
+	perms, _ := settings["permissions"].(map[string]any)
+	if perms == nil {
+		perms = map[string]any{}
+	}
+	allowRaw, _ := perms["allow"]
+	var allowList []any
+	if arr, ok := allowRaw.([]any); ok {
+		allowList = arr
+	}
+	for _, tool := range []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch",
+		"Skill(c4-*)", "Skill(c9-*)", "Skill(pi)", "Skill(research-loop)",
+		"mcp__cq__*", "mcp__worker-*__*"} {
+		found := false
+		for _, v := range allowList {
+			if s, ok := v.(string); ok && s == tool {
+				found = true
+				break
+			}
+		}
+		if !found {
+			allowList = append(allowList, tool)
+		}
+	}
+	perms["allow"] = allowList
+	settings["permissions"] = perms
+
+	// Atomic write: tempfile → rename
+	if mkErr := os.MkdirAll(settingsDir, 0755); mkErr != nil {
+		return fmt.Errorf("creating settings dir: %w", mkErr)
+	}
+	out, marshalErr := json.MarshalIndent(settings, "", "  ")
+	if marshalErr != nil {
+		return fmt.Errorf("marshaling settings: %w", marshalErr)
+	}
+	out = append(out, '\n')
+
+	tmpFile, tmpErr := os.CreateTemp(settingsDir, "settings-*.json.tmp")
+	if tmpErr != nil {
+		return fmt.Errorf("creating temp file: %w", tmpErr)
+	}
+	tmpPath := tmpFile.Name()
+	if _, wErr := tmpFile.Write(out); wErr != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("writing temp file: %w", wErr)
+	}
+	if cErr := tmpFile.Close(); cErr != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("closing temp file: %w", cErr)
+	}
+	if rErr := os.Rename(tmpPath, settingsPath); rErr != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("renaming temp file: %w", rErr)
+	}
+	_ = os.Chmod(settingsPath, 0644)
+
+	fmt.Fprintln(os.Stderr, "cq: hooks registered in .claude/settings.json")
+	return nil
+}
+
+// setupCodexConfig creates or updates ~/.codex/config.toml with cq MCP server entry.
+func setupCodexConfig(dir string) error {
+	configPath, err := codexConfigPath()
+	if err != nil {
+		return err
+	}
+	binPath, err := findCQBinary()
+	if err != nil {
+		return err
+	}
+
+	content := ""
+	if data, readErr := os.ReadFile(configPath); readErr == nil {
+		content = string(data)
+	} else if !os.IsNotExist(readErr) {
+		return fmt.Errorf("reading %s: %w", configPath, readErr)
+	}
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+
+	updated := strings.Contains(content, "[mcp_servers.cq]")
+	cleaned := removeTOMLTable(content, "[mcp_servers.cq]")
+	cleaned = strings.TrimRight(cleaned, "\n")
+
+	block := codexMCPBlock(binPath, dir)
+	var final strings.Builder
+	if cleaned != "" {
+		final.WriteString(cleaned)
+		final.WriteString("\n\n")
+	}
+	final.WriteString(block)
+	final.WriteString("\n")
+
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		return fmt.Errorf("creating codex config directory: %w", err)
+	}
+	if err := os.WriteFile(configPath, []byte(final.String()), 0644); err != nil {
+		return fmt.Errorf("writing codex config: %w", err)
+	}
+
+	if updated {
+		fmt.Fprintf(os.Stderr, "cq: codex MCP config updated (%s)\n", configPath)
+	} else {
+		fmt.Fprintf(os.Stderr, "cq: codex MCP config added (%s)\n", configPath)
+	}
+	return nil
+}
+
+func codexConfigPath() (string, error) {
+	if path := os.Getenv("CODEX_CONFIG"); path != "" {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine home directory for codex config: %w", err)
+	}
+	return filepath.Join(home, ".codex", "config.toml"), nil
+}
+
+func codexMCPBlock(binPath, dir string) string {
+	lines := []string{
+		"[mcp_servers.cq]",
+		fmt.Sprintf("command = %s", strconv.Quote(binPath)),
+		fmt.Sprintf("args = [\"mcp\", \"--dir\", %s]", strconv.Quote(dir)),
+		fmt.Sprintf("env = { C4_PROJECT_ROOT = %s }", strconv.Quote(dir)),
+	}
+	return strings.Join(lines, "\n")
+}
+
+func removeTOMLTable(content, header string) string {
+	if content == "" {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	out := make([]string, 0, len(lines))
+	skipping := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !skipping {
+			if trimmed == header {
+				skipping = true
+				continue
+			}
+			out = append(out, line)
+			continue
+		}
+		// End skip when next TOML table header begins.
+		// Match [section] but not [[array-of-tables]] headers.
+		if trimmed != "" && strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") &&
+			!strings.HasPrefix(trimmed, "[[") {
+			skipping = false
+			out = append(out, line)
+		}
+	}
+
+	return strings.Join(out, "\n")
+}
+
+// setupCodexAgents deploys project-level Codex agent files via symlinks.
+func setupCodexAgents(dir string) error {
+	c4Root, err := findC4Root()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cq: codex agents setup skipped (C4 source root not found)")
+		return nil
+	}
+
+	sourceAgentsDir := filepath.Join(c4Root, ".codex", "agents")
+	entries, err := os.ReadDir(sourceAgentsDir)
+	if err != nil {
+		return nil // No agents to deploy
+	}
+
+	targetAgentsDir := filepath.Join(dir, ".codex", "agents")
+	if err := os.MkdirAll(targetAgentsDir, 0755); err != nil {
+		return fmt.Errorf("creating .codex/agents/: %w", err)
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasPrefix(name, "c4-") || !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		target := filepath.Join(targetAgentsDir, name)
+		if _, err := os.Lstat(target); err == nil {
+			continue
+		}
+		source := filepath.Join(sourceAgentsDir, name)
+		if err := os.Symlink(source, target); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: symlink codex agent %s: %v\n", name, err)
+			continue
+		}
+		count++
+	}
+	if count > 0 {
+		fmt.Fprintf(os.Stderr, "cq: %d codex agents deployed (symlinked from %s)\n", count, c4Root)
+	} else {
+		fmt.Fprintln(os.Stderr, "cq: codex agents up to date")
+	}
+	return nil
+}
+
+// findC4Root locates the C4 source repository root directory.
+// Search order: C4_SOURCE_ROOT env, builtinC4Root (ldflags), ~/.c4-install-path,
+// then derivation from binary path (c4-core/bin/cq → repo root).
+func findC4Root() (string, error) {
+	// 1. Environment variable
+	if root := os.Getenv("C4_SOURCE_ROOT"); root != "" {
+		if hasSkills(root) {
+			return root, nil
+		}
+	}
+
+	// 2. Build-time embedded via ldflags
+	if builtinC4Root != "" && hasSkills(builtinC4Root) {
+		return builtinC4Root, nil
+	}
+
+	// 3. ~/.c4-install-path
+	if home, err := os.UserHomeDir(); err == nil {
+		if data, err := os.ReadFile(filepath.Join(home, ".c4-install-path")); err == nil {
+			root := strings.TrimSpace(string(data))
+			if hasSkills(root) {
+				return root, nil
+			}
+		}
+	}
+
+	// 4. Derive from binary path: {root}/c4-core/bin/cq → {root}
+	if binPath, err := os.Executable(); err == nil {
+		if binPath, err = filepath.EvalSymlinks(binPath); err == nil {
+			// Try c4-core/bin/cq layout
+			root := filepath.Dir(filepath.Dir(filepath.Dir(binPath)))
+			if hasSkills(root) {
+				return root, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("C4 source root not found")
+}
+
+// hasSkills checks if the given directory has .claude/skills/.
+func hasSkills(root string) bool {
+	info, err := os.Stat(filepath.Join(root, ".claude", "skills"))
+	return err == nil && info.IsDir()
+}
+
+// setupCursorMCPConfig creates or updates .cursor/mcp.json so Cursor loads C4 MCP when opening the project.
+func setupCursorMCPConfig(dir string) error {
+	cursorDir := filepath.Join(dir, ".cursor")
+	if err := os.MkdirAll(cursorDir, 0755); err != nil {
+		return fmt.Errorf("creating .cursor: %w", err)
+	}
+	mcpPath := filepath.Join(cursorDir, "mcp.json")
+
+	binPath, err := findCQBinary()
+	if err != nil {
+		return err
+	}
+
+	c4Entry := map[string]any{
+		"type":    "stdio",
+		"command": binPath,
+		"args":    []string{"mcp", "--dir", dir},
+		"env": map[string]string{
+			"C4_PROJECT_ROOT": dir,
+		},
+	}
+
+	var config map[string]any
+	if data, readErr := os.ReadFile(mcpPath); readErr == nil {
+		if json.Unmarshal(data, &config) != nil {
+			fmt.Fprintf(os.Stderr, "cq: WARNING: %s has invalid JSON, overwriting with new config\n", mcpPath)
+			config = nil
+		}
+	}
+	if config == nil {
+		config = map[string]any{}
+	}
+
+	servers, _ := config["mcpServers"].(map[string]any)
+	if servers == nil {
+		servers = map[string]any{}
+	}
+	servers["cq"] = c4Entry
+	config["mcpServers"] = servers
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+	data = append(data, '\n')
+
+	if err := os.WriteFile(mcpPath, data, 0644); err != nil {
+		return fmt.Errorf("writing .cursor/mcp.json: %w", err)
+	}
+
+	fmt.Fprintln(os.Stderr, "cq: .cursor/mcp.json configured (C4 MCP will load when Cursor opens this project)")
+	return nil
+}
+
+// setupMCPConfig creates or updates .mcp.json with the C4 MCP server entry.
+func setupMCPConfig(dir string) error {
+	mcpPath := filepath.Join(dir, ".mcp.json")
+
+	binPath, err := findCQBinary()
+	if err != nil {
+		return err
+	}
+
+	c4Entry := map[string]any{
+		"type":    "stdio",
+		"command": binPath,
+		"args":    []string{"mcp", "--dir", dir},
+		"env": map[string]string{
+			"C4_PROJECT_ROOT": dir,
+		},
+	}
+
+	// Read existing .mcp.json or create new
+	var config map[string]any
+	if data, readErr := os.ReadFile(mcpPath); readErr == nil {
+		fmt.Fprintf(os.Stderr, "cq: .mcp.json already exists, updating (cq entry will be overwritten)\n")
+		if json.Unmarshal(data, &config) != nil {
+			fmt.Fprintf(os.Stderr, "cq: WARNING: %s has invalid JSON, overwriting with new config\n", mcpPath)
+			config = nil
+		}
+	}
+	if config == nil {
+		config = map[string]any{}
+	}
+
+	servers, ok := config["mcpServers"].(map[string]any)
+	if !ok {
+		servers = map[string]any{}
+	}
+	servers["cq"] = c4Entry
+
+	// Auto-register relay workers with fresh JWT token.
+	// Reads relay config + session token, queries relay /health for connected workers,
+	// and adds each remote worker as an HTTP MCP server entry.
+	injectRelayWorkers(servers, dir)
+
+	config["mcpServers"] = servers
+
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+	data = append(data, '\n')
+
+	if err := os.WriteFile(mcpPath, data, 0644); err != nil {
+		return fmt.Errorf("writing .mcp.json: %w", err)
+	}
+
+	fmt.Fprintln(os.Stderr, "cq: .mcp.json configured")
+	return nil
+}
+
+// injectRelayWorkers adds connected relay workers as HTTP MCP server entries.
+// Workers are proxied through cq serve's local relay proxy (no Bearer token needed).
+// This keeps .mcp.json free of secrets so it can be committed to git.
+func injectRelayWorkers(servers map[string]any, dir string) {
+	// Load relay config
+	cfgMgr, err := config.New(dir)
+	if err != nil {
+		return
+	}
+	cfg := cfgMgr.GetConfig()
+	if !cfg.Relay.Enabled || cfg.Relay.URL == "" {
+		return
+	}
+
+	relayHTTPS := strings.Replace(cfg.Relay.URL, "wss://", "https://", 1)
+	relayHTTPS = strings.Replace(relayHTTPS, "ws://", "http://", 1)
+	hostname, _ := os.Hostname()
+
+	// Local proxy URL — cq serve proxies /w/{worker}/mcp → relay with auto JWT.
+	localProxy := fmt.Sprintf("http://localhost:%d", servePort)
+
+	// Query relay for connected workers
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(relayHTTPS + "/health")
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var health struct {
+		Status  string   `json:"status"`
+		Workers int      `json:"workers"`
+		Names   []string `json:"worker_names"`
+	}
+	body, _ := io.ReadAll(resp.Body)
+	json.Unmarshal(body, &health)
+
+	// If relay doesn't expose worker names, migrate existing entries to localhost proxy
+	if len(health.Names) == 0 {
+		for key := range servers {
+			if !strings.HasPrefix(key, "worker-") {
+				continue
+			}
+			existing, ok := servers[key].(map[string]any)
+			if !ok {
+				continue
+			}
+			url, _ := existing["url"].(string)
+			if url == "" {
+				continue
+			}
+			// Migrate: replace relay URL with localhost proxy, remove headers
+			workerPath := extractWorkerPath(url)
+			if workerPath != "" {
+				servers[key] = map[string]any{
+					"type": "http",
+					"url":  localProxy + workerPath,
+				}
+				fmt.Fprintf(os.Stderr, "cq: relay worker %s migrated to local proxy\n", key)
+			}
+		}
+		return
+	}
+
+	// Register each connected worker (except self) via local proxy
+	for _, name := range health.Names {
+		if name == hostname {
+			continue // skip self
+		}
+		serverName := "worker-" + strings.ReplaceAll(name, ".", "-")
+		servers[serverName] = map[string]any{
+			"type": "http",
+			"url":  localProxy + "/w/" + name + "/mcp",
+		}
+		fmt.Fprintf(os.Stderr, "cq: relay worker %s registered via local proxy\n", serverName)
+	}
+}
+
+// extractWorkerPath extracts /w/{worker}/mcp from a full relay URL.
+// Returns "" if the URL doesn't match the expected pattern.
+func extractWorkerPath(rawURL string) string {
+	idx := strings.Index(rawURL, "/w/")
+	if idx < 0 {
+		return ""
+	}
+	return rawURL[idx:]
+}
+
+// findCQBinary locates the cq Go binary path for .mcp.json configuration.
+func findCQBinary() (string, error) {
+	binPath, err := os.Executable()
+	if err == nil {
+		binPath, err = filepath.EvalSymlinks(binPath)
+		if err == nil {
+			return binPath, nil
+		}
+	}
+	if p, err := exec.LookPath("cq"); err == nil {
+		return filepath.Abs(p)
+	}
+	return "", fmt.Errorf("cannot determine cq binary path")
+}
