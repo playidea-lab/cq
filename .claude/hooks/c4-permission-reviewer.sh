@@ -167,7 +167,7 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
 
     response=$(curl -s --max-time 8 \
         "https://api.anthropic.com/v1/messages" \
-        -H "x-api-key: $api_key" \
+        --config <(printf 'header = "x-api-key: %s"\n' "$api_key") \
         -H "anthropic-version: 2023-06-01" \
         -H "content-type: application/json" \
         -d "$payload" 2>/dev/null)
