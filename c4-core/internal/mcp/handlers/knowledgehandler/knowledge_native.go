@@ -290,6 +290,9 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 		}, knowledgeDistillNativeHandler(opts))
 	}
 
+	// 16 & 17. cq_snapshot + cq_recall — conversation snapshot save/search
+	RegisterSnapshotHandlers(reg, opts)
+
 }
 
 // =========================================================================
