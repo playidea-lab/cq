@@ -4,48 +4,43 @@
 
 ## 1단계: 프로젝트 초기화
 
-프로젝트 디렉토리에서 터미널을 열고 AI 도구에 맞는 명령을 실행합니다:
+프로젝트 디렉토리에서 터미널을 열고 실행합니다:
 
 ```sh
 cd your-project
+cq
+```
+
+이 한 명령으로 모든 것이 처리됩니다:
+1. **로그인** — 미로그인 시 GitHub OAuth 자동 실행 (API 키 불필요)
+2. **서비스 설치** — `cq serve`를 OS 서비스로 등록 (LaunchAgent / systemd `Restart=always`)
+3. **프로젝트 설정** — `CLAUDE.md`, `.c4/`, MCP 설정 파일 생성
+4. **실행** — AI 도구 자동 감지 후 실행 (Claude Code, Cursor 등)
+
+```
+CQ ready.
+```
+
+이게 전부입니다. CQ가 백그라운드에서 영구적으로 실행됩니다 — relay, journal 동기화, 토큰 갱신 모두 활성. 워커는 systemd `Restart=always` (Linux) 또는 LaunchAgent (macOS)를 통해 재부팅에서도 살아남습니다.
+
+AI 도구를 명시적으로 지정할 수도 있습니다:
+
+```sh
 cq claude   # Claude Code
 cq cursor   # Cursor
 cq codex    # OpenAI Codex CLI
 cq gemini   # Gemini CLI
 ```
 
-각 명령은 `.CLAUDE.md`, `.c4/`, 그리고 해당 도구의 MCP 설정 파일을 생성합니다:
-
-| 명령 | MCP 설정 | 에이전트 지침 |
-|------|---------|--------------|
-| `cq claude` | `.mcp.json` | `CLAUDE.md` |
-| `cq cursor` | `.cursor/mcp.json` | `CLAUDE.md` |
-| `cq codex` | `~/.codex/config.toml` | `.codex/agents/` |
-| `cq gemini` | (Gemini CLI 설정) | `CLAUDE.md` |
-
-그 다음 **AI 도구를 재시작**하여 새 MCP 서버를 불러옵니다.
-
 ::: tip 다른 AI 도구
 [AGENTS.md 표준](https://agents.md)을 지원하는 모든 도구는 `CLAUDE.md`를 직접 읽을 수 있습니다 — `cq init` 불필요.
 :::
 
-## 1.5단계: 로그인 (connected / full 티어)
+::: tip 토큰 없는 MCP 설정
+`.mcp.json`의 워커 항목은 `http://localhost:4140/w/{worker}/mcp`를 사용하며 Bearer 토큰이 없습니다. `cq serve`가 로컬 프록시로서 모든 요청에 JWT를 자동 주입합니다.
+:::
 
-`connected` 또는 `full` 티어를 사용한다면 한 번 인증합니다:
-
-```sh
-cq auth login
-```
-
-브라우저에서 GitHub OAuth를 엽니다. **API 키 불필요** — `cq auth`만으로 클라우드 연결이 자동으로 설정됩니다. 로그인 후 시작 시:
-
-```
-✓ Cloud: user@example.com (expires in 47h)
-```
-
-클라우드가 단일 진실 공급원(SSOT)이 됩니다: 태스크, 지식, LLM 호출이 모두 클라우드를 통해 처리됩니다. `solo` 티어는 이 단계를 건너뛰세요 — 로그인 불필요.
-
-## 1.6단계: Telegram 봇 설정 (선택 사항)
+## 1.5단계: Telegram 봇 설정 (선택 사항)
 
 텔레그램 봇을 연결하여 원격 접속하려면:
 
@@ -55,7 +50,7 @@ cq --bot
 
 메뉴에서 "새 봇 만들기"를 선택하고 위자드를 따르세요 (BotFather 토큰 + Telegram ID). 설정 후 `cq --bot` 또는 `cq --bot <봇이름>`으로 텔레그램이 연결된 세션을 실행할 수 있습니다.
 
-## 1.7단계: `cq doctor --fix`로 자동 설정
+## 1.6단계: `cq doctor --fix`로 자동 설정
 
 초기화 후 doctor를 실행하여 일반적인 설정 문제를 확인하고 자동으로 수정합니다:
 
@@ -144,15 +139,17 @@ CQ가:
 
 ---
 
-## 최소 예시 (단일 태스크)
+## 자동 라우팅
 
-소규모 작업은 계획 단계를 건너뜁니다:
+CQ는 요청 크기에 따라 자동으로 경로를 선택합니다 (CLAUDE.md에 설정):
 
-```
-/c4-quick "모바일에서 로그인 버튼 클릭이 안 돼"
-```
+| 크기 | 경로 | 언제 |
+|------|------|------|
+| **Small** | 직접 수정 | 타이포, 1줄 수정, 설정 변경 |
+| **Medium** | `/c4-quick` | 단일 태스크 버그 수정 또는 작은 기능 |
+| **Large** | `/pi` → plan → run → finish | 다중 파일 기능, 아키텍처 변경 |
 
-하나의 태스크를 생성하고, 워커에게 할당하여 즉시 실행합니다.
+직접 선택할 필요 없이 필요한 것을 설명하면 CQ가 올바른 경로를 선택합니다.
 
 ## 뒷단에서 일어나는 일
 
@@ -168,5 +165,5 @@ CQ가:
 
 ## 다음
 
-- [티어 이해하기 →](/ko/guide/tiers)
+- [포함된 기능 →](/ko/guide/tiers)
 - [전체 워크플로우 학습 →](/ko/workflow/)

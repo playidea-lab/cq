@@ -4,68 +4,53 @@ This guide takes you from zero to your first CQ-managed task in under 5 minutes.
 
 ## Step 1: Initialize your project
 
-Open a terminal in your project directory and run the command for your AI tool:
+Open a terminal in your project directory and run:
 
 ```sh
 cd your-project
+cq
+```
+
+This single command handles everything:
+1. **Login** — opens GitHub OAuth if not logged in (no API key needed)
+2. **Service install** — registers `cq serve` as an OS service (LaunchAgent / systemd with `Restart=always`)
+3. **Project setup** — creates `CLAUDE.md`, `.c4/`, and MCP config
+4. **Launch** — starts your AI tool (auto-detects Claude Code, Cursor, etc.)
+
+```
+CQ ready.
+```
+
+That's it. CQ runs in the background permanently — relay, journal sync, and token refresh all active. Workers survive reboots via systemd `Restart=always` (Linux) or LaunchAgent (macOS).
+
+You can also specify the AI tool explicitly:
+
+```sh
 cq claude   # Claude Code
 cq cursor   # Cursor
 cq codex    # OpenAI Codex CLI
 cq gemini   # Gemini CLI
 ```
 
-Each command creates `CLAUDE.md`, `.c4/`, and the MCP config for your tool:
-
-| Command | MCP config | Agent instructions |
-|---------|-----------|-------------------|
-| `cq claude` | `.mcp.json` | `CLAUDE.md` |
-| `cq cursor` | `.cursor/mcp.json` | `CLAUDE.md` |
-| `cq codex` | `~/.codex/config.toml` | `.codex/agents/` |
-| `cq gemini` | (Gemini CLI config) | `CLAUDE.md` |
-
-Then **restart your AI tool** so it picks up the new MCP server.
-
 ::: tip Other AI tools
 Any tool that supports the [AGENTS.md standard](https://agents.md) can read `CLAUDE.md` directly — no `cq init` required.
 :::
 
-## Step 1.5: Start CQ service (connected / full tier)
+::: tip Token-free MCP config
+Worker entries in `.mcp.json` use `http://localhost:4140/w/{worker}/mcp` with no Bearer token. `cq serve` acts as a local proxy and auto-injects JWT on every request.
+:::
 
-If you're using the `connected` or `full` tier, just run:
-
-```sh
-cq
-```
-
-This single command handles everything:
-1. **Login** — opens GitHub OAuth if not logged in (no API key needed)
-2. **Service install** — registers cq serve as an OS service (LaunchAgent / systemd)
-3. **Status check** — shows service health
-
-```
-  CQ v1.27.1
-  ----------------------------------------
-  Service: running (7/7 components)
-  ----------------------------------------
-
-  Ready! Next steps:
-    cq claude        Start Claude Code
-    cq status        Service + project status
-```
-
-After this, CQ runs in the background permanently — relay, journal sync, and token refresh all active. Skip this step for the `solo` tier.
-
-## Step 1.6: Set up Telegram bot (optional)
+## Step 1.5: Set up Telegram bot (optional)
 
 To connect a Telegram bot for remote access:
 
 ```sh
-cq claude --bot
+cq --bot
 ```
 
-Select "새 봇 만들기" from the menu and follow the wizard (BotFather token + your Telegram ID). After setup, use `cq claude --bot` or `cq claude --bot <botname>` to launch with Telegram.
+Select "새 봇 만들기" from the menu and follow the wizard (BotFather token + your Telegram ID). After setup, use `cq --bot` or `cq --bot <botname>` to launch with Telegram.
 
-## Step 1.7: Explore ideas first (optional)
+## Step 1.6: Explore ideas first (optional)
 
 Before planning, use `/pi` to brainstorm and refine your idea:
 
@@ -75,7 +60,7 @@ Before planning, use `/pi` to brainstorm and refine your idea:
 
 `/pi` enters ideation mode — diverge, converge, research, debate. When ready, it automatically launches `/c4-plan`.
 
-## Step 1.8: Auto-configure with `cq doctor --fix`
+## Step 1.7: Auto-configure with `cq doctor --fix`
 
 After initializing, run the doctor to verify and auto-fix common setup issues:
 
@@ -88,8 +73,8 @@ This checks and automatically fixes:
 - Hook installation (`.claude/hooks/c4-gate.sh`)
 - Python sidecar (`c4-bridge`) installation
 - MCP server configuration
-- **Relay** connectivity (connected/full tier)
-- **OS service** status (cq serve)
+- **Relay** connectivity
+- **OS service** status (`cq serve`)
 
 If everything is healthy, you'll see all green checks:
 
@@ -98,7 +83,7 @@ If everything is healthy, you'll see all green checks:
 ✓ hooks             c4-gate.sh installed
 ✓ sidecar           c4-bridge ready
 ✓ relay             connected (2 workers)
-✓ os-service        installed (running)
+✓ os-service        running (Restart=always)
 ```
 
 ::: tip
@@ -171,15 +156,17 @@ If you need to make manual changes afterward, wrap up with:
 
 ---
 
-## Minimal example (single task)
+## Auto-routing
 
-For small tasks, skip the full plan flow:
+CQ auto-routes requests by size (configured in CLAUDE.md):
 
-```
-/c4-quick "fix the login button not responding on mobile"
-```
+| Size | Route | When |
+|------|-------|------|
+| **Small** | Direct edit | Typo, 1-line fix, config tweak |
+| **Medium** | `/c4-quick` | Single-task bug fix or small feature |
+| **Large** | `/pi` → plan → run → finish | Multi-file feature, architecture change |
 
-This creates one task, assigns it to a worker, and runs immediately.
+You don't need to pick — just describe what you need and CQ chooses the right path.
 
 ## What happens behind the scenes
 
@@ -195,5 +182,5 @@ These are Go-level checks that cannot be skipped. The more you use CQ, the sharp
 
 ## Next
 
-- [Understand tiers →](/guide/tiers)
+- [What's included →](/guide/tiers)
 - [Learn the full workflow →](/workflow/)

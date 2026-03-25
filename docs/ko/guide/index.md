@@ -20,7 +20,9 @@ AI 기반 개발에 구조를 추가합니다:
                → 빌드, 테스트, 커밋
 ```
 
-CQ는 **Model Context Protocol (MCP)**를 사용합니다 — Claude Code가 100개 이상의 도구(`c4_*` 접두사)를 통해 CQ 바이너리와 통신합니다.
+CQ는 **Model Context Protocol (MCP)**를 사용합니다 — Claude Code가 169개 이상의 도구(`c4_*` 접두사)를 통해 CQ 바이너리와 통신합니다. 기본적으로 ~40개 핵심 도구만 표시되며, `CQ_TOOL_TIER=full`로 전체를 노출할 수 있습니다.
+
+CQ는 요청 크기에 따라 자동 라우팅합니다: **Small** (직접 수정), **Medium** (`/c4-quick`), **Large** (`/pi` → plan → run → finish).
 
 ## CQ가 아닌 것
 

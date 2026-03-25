@@ -28,7 +28,7 @@ features:
 
   - icon: ⚡
     title: 설정 제로
-    details: "curl 설치 → cq auth → 시작. API 키 없음. 설정 파일 없음. 두뇌는 클라우드에, 손발은 당신의 머신에."
+    details: "curl 설치 → cq → 시작. API 키 없음. 설정 파일 없음. 두뇌는 클라우드에, 손발은 당신의 머신에."
 
 ---
 
@@ -51,10 +51,12 @@ features:
 
 | 지표 | 값 |
 |------|---|
-| 완료된 태스크 | 1,200+ |
+| 완료된 태스크 | 2,200+ |
+| MCP 도구 | 169+ |
+| 스킬 | 39개 (★ core / [internal]) |
 | 리뷰 승인률 | 93% |
-| 설치 시간 (connected) | 2분 |
-| 필요한 API 키 | 0개 (connected tier) |
+| 설치 시간 | 2분 |
+| 필요한 API 키 | 0개 |
 | 지원 언어 | Go, Python, TypeScript, Rust |
 
 ---
@@ -98,10 +100,11 @@ AI는 코드를 빠르게 씁니다. 하지만 누가 확인합니까? CQ는 시
 CQ는 오케스트레이션 레이어입니다. AI는 플러그형:
 
 ```sh
-cq claude    # Claude Code (권장)
-cq cursor    # Cursor
-cq codex     # OpenAI Codex
-cq gemini    # Gemini CLI
+cq           # AI 도구 자동 감지 (Claude Code, Cursor, Codex, Gemini)
+cq claude    # 또는 명시적으로 지정
+cq cursor
+cq codex
+cq gemini
 ```
 
 ---

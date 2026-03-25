@@ -20,7 +20,9 @@ You describe a feature → /c4-plan creates tasks with DoD
                        → build, test, commit
 ```
 
-CQ uses the **Model Context Protocol (MCP)** — Claude Code talks to the CQ binary via 144 tools (`c4_*` prefix).
+CQ uses the **Model Context Protocol (MCP)** — Claude Code talks to the CQ binary via 169+ tools (`c4_*` prefix). Only ~40 core tools are shown by default; set `CQ_TOOL_TIER=full` to expose all of them.
+
+CQ auto-routes requests by size: **Small** (direct edit), **Medium** (`/c4-quick`), **Large** (`/pi` → plan → run → finish).
 
 ## What CQ is not
 

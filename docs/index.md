@@ -28,7 +28,7 @@ features:
 
   - icon: ⚡
     title: Zero Config
-    details: "curl install → cq auth → start. No API keys. No config files. Brain in the cloud, hands on your machine."
+    details: "curl install → cq → start. No API keys. No config files. Brain in the cloud, hands on your machine."
 
 ---
 
@@ -51,10 +51,12 @@ Every step is **gated**: plans require critique review, implementations require 
 
 | Metric | Value |
 |--------|-------|
-| Tasks completed | 1,200+ |
+| Tasks completed | 2,200+ |
+| MCP tools | 169+ |
+| Skills | 39 (★ core / [internal]) |
 | Review approval rate | 93% |
-| Setup time (connected) | 2 minutes |
-| API keys required | 0 (connected tier) |
+| Setup time | 2 minutes |
+| API keys required | 0 |
 | Languages | Go, Python, TypeScript, Rust |
 
 ---
@@ -98,10 +100,11 @@ Set it before bed. Wake up to committed, reviewed, tested code.
 CQ is the orchestration layer. The AI is pluggable:
 
 ```sh
-cq claude    # Claude Code (recommended)
-cq cursor    # Cursor
-cq codex     # OpenAI Codex
-cq gemini    # Gemini CLI
+cq           # auto-detects Claude Code, Cursor, Codex, Gemini
+cq claude    # or specify explicitly
+cq cursor
+cq codex
+cq gemini
 ```
 
 ---
@@ -110,8 +113,7 @@ cq gemini    # Gemini CLI
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
-cq auth login    # GitHub OAuth — no API key needed
-cq claude        # or: cq cursor / cq codex / cq gemini
+cq               # login, service install, and launch — all automatic
 ```
 
-Then just say what you need. The brain is in the cloud.
+Then just say what you need. CQ auto-routes your request: small edits happen directly, medium tasks go through `/c4-quick`, and large features get the full `/pi` planning pipeline.
