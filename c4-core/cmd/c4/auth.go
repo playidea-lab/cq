@@ -193,7 +193,7 @@ func runAuthLoginHeadless(cmd *cobra.Command, isDevice bool) error {
 		// Have a refresh token — try refreshing.
 		newSession, refreshErr := authClient.RefreshTokenWithToken(session.RefreshToken)
 		if refreshErr == nil {
-			fmt.Printf("✓ 토큰 갱신 성공 (%s)\n", newSession.User.Email)
+			fmt.Printf("✓ 토큰 갱신 성공 (기존 세션에서 refresh, %s)\n", newSession.User.Email)
 			url := patchCloudConfigAfterLogin(projectDir)
 			if url != "" {
 				fmt.Fprintf(os.Stderr, "Cloud configured: %s\n", url)
