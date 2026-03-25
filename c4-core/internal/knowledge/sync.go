@@ -33,7 +33,8 @@ type PullResult struct {
 
 // Pull downloads documents from cloud to local store.
 // force=true overwrites existing local docs regardless of version.
-func Pull(store *Store, cloud CloudSyncer, docType string, limit int, force bool) (*PullResult, error) {
+// If searcher is non-nil, pulled/updated docs are re-indexed for vector search.
+func Pull(store *Store, cloud CloudSyncer, docType string, limit int, force bool, searcher ...*Searcher) (*PullResult, error) {
 	if cloud == nil {
 		return nil, fmt.Errorf("cloud not configured")
 	}
@@ -114,6 +115,13 @@ func Pull(store *Store, cloud CloudSyncer, docType string, limit int, force bool
 			}
 			result.Pulled++
 			result.PulledIDs = append(result.PulledIDs, docID)
+		}
+
+		// 6. Re-index for vector search (best-effort, non-blocking)
+		if len(searcher) > 0 && searcher[0] != nil {
+			if doc, getErr := store.Get(docID); getErr == nil && doc != nil {
+				_ = searcher[0].IndexDocument(docID, doc)
+			}
 		}
 	}
 

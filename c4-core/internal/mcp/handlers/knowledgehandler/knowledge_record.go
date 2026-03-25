@@ -251,7 +251,7 @@ func knowledgePullNativeHandler(opts *KnowledgeNativeOpts) mcp.HandlerFunc {
 		}
 		force, _ := params["force"].(bool)
 
-		result, err := knowledge.Pull(opts.Store, opts.Cloud, docType, limit, force)
+		result, err := knowledge.Pull(opts.Store, opts.Cloud, docType, limit, force, opts.Searcher)
 		if err != nil {
 			return nil, err
 		}

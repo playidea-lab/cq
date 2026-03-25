@@ -726,7 +726,7 @@ func newMCPServer() (*mcpServer, error) {
 			}
 			ch := make(chan pullResult, 1)
 			go func() {
-				r, err := knowledge.Pull(knowledgeStore, knowledgeCloud, "", 50, false)
+				r, err := knowledge.Pull(knowledgeStore, knowledgeCloud, "", 50, false, knowledgeSearcher)
 				ch <- pullResult{r, err}
 			}()
 			select {
