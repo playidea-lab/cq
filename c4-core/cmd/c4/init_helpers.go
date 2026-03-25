@@ -23,31 +23,49 @@ func ensureGitRepo(dir string) error {
 	return nil
 }
 
-// ensureGitignoreEntry appends an entry to .gitignore if it's not already present.
+// cqGitignoreEntries are files/dirs CQ creates that should not be committed.
+// CLAUDE.md and .mcp.json are intentionally NOT here — they should be committed
+// (CLAUDE.md = project AI instructions, .mcp.json = team-shared MCP config, no secrets).
+var cqGitignoreEntries = []string{
+	".c4/",
+	".cqdata",
+	".piki-lock.yaml",
+}
+
+// ensureGitignore adds CQ entries to .gitignore if not already present.
 // Non-fatal — silently returns on any error.
-func ensureGitignoreEntry(dir, entry string) {
+func ensureGitignore(dir string) {
 	gitignorePath := filepath.Join(dir, ".gitignore")
 	data, _ := os.ReadFile(gitignorePath)
 	content := string(data)
 
-	// Check if entry already exists (exact line match)
+	existingLines := make(map[string]bool)
 	for _, line := range strings.Split(content, "\n") {
-		if strings.TrimSpace(line) == entry {
-			return // already present
+		existingLines[strings.TrimSpace(line)] = true
+	}
+
+	var toAdd []string
+	for _, entry := range cqGitignoreEntries {
+		if !existingLines[entry] {
+			toAdd = append(toAdd, entry)
 		}
 	}
 
-	// Append entry
+	if len(toAdd) == 0 {
+		return
+	}
+
 	suffix := "\n"
 	if len(content) > 0 && !strings.HasSuffix(content, "\n") {
 		suffix = "\n\n"
 	}
-	newContent := content + suffix + "# CQ local state\n" + entry + "\n"
-	if err := os.WriteFile(gitignorePath, []byte(newContent), 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "cq: warning: .gitignore update failed: %v\n", err)
-		return
+	block := suffix + "# CQ\n"
+	for _, entry := range toAdd {
+		block += entry + "\n"
 	}
-	fmt.Fprintln(os.Stderr, "✓ .gitignore에 .c4/ 추가")
+	if err := os.WriteFile(gitignorePath, []byte(content+block), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: warning: .gitignore update failed: %v\n", err)
+	}
 }
 
 // ensureCQData creates an empty .cqdata template in dir if one does not exist.

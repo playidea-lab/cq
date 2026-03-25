@@ -258,6 +258,18 @@ func initAndLaunch(tool string) error {
 		}
 	}
 
+	// Quiet mode: suppress setup functions' stderr output unless verbose.
+	// Errors are still propagated via return values — only informational
+	// messages (e.g. "cq: CLAUDE.md created") are suppressed.
+	var origStderr *os.File
+	if !verbose {
+		devNull, _ := os.Open(os.DevNull)
+		if devNull != nil {
+			origStderr = os.Stderr
+			os.Stderr = devNull
+		}
+	}
+
 	// 1. Create .c4/ directory structure
 	dirs := []string{
 		filepath.Join(dir, ".c4"),
@@ -371,8 +383,8 @@ func initAndLaunch(tool string) error {
 		logWarn(fmt.Sprintf(".cqdata setup failed: %v", err))
 	}
 
-	// 6d. Ensure .c4/ is in .gitignore (non-fatal)
-	ensureGitignoreEntry(dir, ".c4/")
+	// 6d. Ensure CQ files are in .gitignore (non-fatal)
+	ensureGitignore(dir)
 
 	// 7. Check cloud auth status and prompt login if needed
 	ensureCloudAuth(nil, yesAll)
@@ -380,6 +392,11 @@ func initAndLaunch(tool string) error {
 	// 7b. Ensure cq serve is running in background (non-fatal if it fails)
 	ensureServeRunning(noServe)
 	logStep("세션 컨텍스트 주입")
+
+	// Restore stderr before printing ready message.
+	if origStderr != nil {
+		os.Stderr = origStderr
+	}
 
 	// Print compact ready message (or verbose box)
 	if len(warnings) > 0 {
