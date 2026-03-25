@@ -91,6 +91,10 @@ func NewWithPaths(dbPath, masterKeyPath string) (*Store, error) {
 		return nil, fmt.Errorf("init db: %w", err)
 	}
 
+	// Ensure secrets.db is only readable by owner (0600).
+	// SQLite creates files with umask-dependent permissions; we tighten explicitly.
+	os.Chmod(dbPath, 0600)
+
 	return &Store{db: db, masterKey: masterKey, dirtyKeys: make(map[string]struct{})}, nil
 }
 
