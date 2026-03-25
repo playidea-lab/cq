@@ -249,6 +249,9 @@ async function handleJsonRpc(req: JsonRpcRequest) {
 
 // --- HTTP handler ---
 
+const RESOURCE_URL = "https://mcp.pilab.kr/functions/v1/mcp-server";
+const AUTH_SERVER = "https://fhuomvsswxiwbfqjsgit.supabase.co/auth/v1";
+
 Deno.serve(async (req: Request) => {
   // CORS
   if (req.method === "OPTIONS") {
@@ -259,6 +262,23 @@ Deno.serve(async (req: Request) => {
         "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key",
       },
     });
+  }
+
+  // OAuth 2.0 Protected Resource Metadata (RFC 9728)
+  const url = new URL(req.url);
+  if (
+    url.pathname.endsWith("/.well-known/oauth-protected-resource") ||
+    url.searchParams.get("path") === ".well-known/oauth-protected-resource"
+  ) {
+    return new Response(
+      JSON.stringify({
+        resource: RESOURCE_URL,
+        authorization_servers: [AUTH_SERVER],
+        bearer_methods_supported: ["header"],
+        scopes_supported: ["openid"],
+      }),
+      { headers: { "Content-Type": "application/json" } },
+    );
   }
 
   const supabase = getSupabase();
@@ -287,7 +307,10 @@ Deno.serve(async (req: Request) => {
     if (!authorized) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "WWW-Authenticate": `Bearer resource_metadata="${RESOURCE_URL}/.well-known/oauth-protected-resource"`,
+        },
       });
     }
   }
