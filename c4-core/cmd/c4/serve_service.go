@@ -206,8 +206,29 @@ func installServeService(_ context.Context, start bool) error {
 		} else {
 			fmt.Println("cq-serve: enabled for auto-start at login (systemctl --user enable).")
 		}
-		fmt.Println("  Note: to start cq-serve without a GUI session (e.g. on headless servers),")
-		fmt.Println("  run: loginctl enable-linger $(whoami)")
+		// Enable linger so the user service survives SSH disconnection and runs at boot.
+		// Try sudo first (works on NOPASSWD servers), fall back to non-sudo, then just advise.
+		user := os.Getenv("USER")
+		if user == "" {
+			user = "$(whoami)"
+		}
+		if _, err := runCommand("loginctl", "show-user", user); err == nil {
+			// Check current linger status
+			out, _ := runCommand("loginctl", "show-user", user, "--property=Linger")
+			if !strings.Contains(out, "Linger=yes") {
+				// Try enabling — sudo first, then without
+				if _, err := runCommand("sudo", "-n", "loginctl", "enable-linger", user); err != nil {
+					if _, err := runCommand("loginctl", "enable-linger", user); err != nil {
+						fmt.Fprintf(os.Stderr, "cq-serve: ⚠️  linger not enabled (service may stop when SSH disconnects)\n")
+						fmt.Fprintf(os.Stderr, "  Run manually: sudo loginctl enable-linger %s\n", user)
+					} else {
+						fmt.Printf("cq-serve: linger enabled for %s (survives SSH disconnect).\n", user)
+					}
+				} else {
+					fmt.Printf("cq-serve: linger enabled for %s (survives SSH disconnect).\n", user)
+				}
+			}
+		}
 
 		// WSL2: additionally register Windows Task Scheduler task for boot-time auto-start.
 		if isWSL2() {
