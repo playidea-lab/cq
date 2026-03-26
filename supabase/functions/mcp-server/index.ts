@@ -41,7 +41,7 @@ async function embed(text: string): Promise<number[] | null> {
 
 const TOOLS = [
   {
-    name: "c4_knowledge_record",
+    name: "cq_knowledge_record",
     description: "Save knowledge to the CQ shared knowledge base — an external memory accessible from any LLM (ChatGPT, Claude, Codex, Cursor). Call this when the user asks to save, remember, or preserve something, OR when a conversation reaches a meaningful conclusion worth keeping. The knowledge becomes searchable by any LLM via c4_knowledge_search. Write the content as if a different person or LLM will read it cold in a future session — lead with conclusions, not process.",
     inputSchema: {
       type: "object",
@@ -69,7 +69,7 @@ const TOOLS = [
     },
   },
   {
-    name: "c4_knowledge_search",
+    name: "cq_knowledge_search",
     description: "Search the CQ knowledge base for previously saved knowledge from any LLM or session. Call when the user asks to recall, continue, or reference prior work ('what did we decide about X', 'pick up where we left off'). Also call proactively when starting a task that likely has prior context — checking prevents redundant work and contradictory decisions.",
     inputSchema: {
       type: "object",
@@ -87,7 +87,7 @@ const TOOLS = [
     },
   },
   {
-    name: "c4_status",
+    name: "cq_status",
     description: "Get a real-time overview of the CQ project: task counts by state, active workers, and progress. Call when the user asks about project status or what's in flight. Also useful at the start of a session to orient before taking on new work.",
     inputSchema: {
       type: "object",
@@ -268,13 +268,13 @@ async function handleJsonRpc(req: JsonRpcRequest) {
 
       let result: string;
       switch (toolName) {
-        case "c4_knowledge_record":
+        case "cq_knowledge_record":
           result = await handleKnowledgeRecord(toolArgs);
           break;
-        case "c4_knowledge_search":
+        case "cq_knowledge_search":
           result = await handleRecall(toolArgs);
           break;
-        case "c4_status":
+        case "cq_status":
           result = await handleStatus();
           break;
         default:
