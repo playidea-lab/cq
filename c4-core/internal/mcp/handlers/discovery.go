@@ -25,7 +25,7 @@ type SpecStore interface {
 func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 	// c4_save_spec
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_save_spec",
+		Name:        "cq_save_spec",
 		Description: "Save a specification document",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -41,7 +41,7 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 
 	// c4_get_spec
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_get_spec",
+		Name:        "cq_get_spec",
 		Description: "Get a specification by name",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -56,7 +56,7 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 
 	// c4_list_specs
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_list_specs",
+		Name:        "cq_list_specs",
 		Description: "List all specifications",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -68,7 +68,7 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 
 	// c4_save_design
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_save_design",
+		Name:        "cq_save_design",
 		Description: "Save a design document",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -84,7 +84,7 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 
 	// c4_get_design
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_get_design",
+		Name:        "cq_get_design",
 		Description: "Get a design document by name",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -99,7 +99,7 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 
 	// c4_list_designs
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_list_designs",
+		Name:        "cq_list_designs",
 		Description: "List all design documents",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -111,7 +111,7 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 
 	// c4_discovery_complete — transitions state DISCOVERY → DESIGN
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_discovery_complete",
+		Name:        "cq_discovery_complete",
 		Description: "Mark discovery phase as complete and transition to DESIGN",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -121,7 +121,7 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 
 	// c4_design_complete — transitions state DESIGN → PLAN
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_design_complete",
+		Name:        "cq_design_complete",
 		Description: "Mark design phase as complete and transition to PLAN",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -133,7 +133,7 @@ func RegisterDiscoveryHandlers(reg *mcp.Registry, store Store, rootDir string) {
 	// Supervisor is managed internally by the Go MCP server lifecycle.
 	// Kept for backward compatibility with older workflows.
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_ensure_supervisor",
+		Name:        "cq_ensure_supervisor",
 		Description: "Ensure supervisor process is running (noop — managed by Go MCP server)",
 		InputSchema: map[string]any{
 			"type":       "object",

@@ -33,7 +33,7 @@ func Register(reg *mcp.Registry, opts *Opts) {
 	}
 
 	reg.RegisterBlocking(mcp.ToolSchema{
-		Name:        "c4_pop_extract",
+		Name:        "cq_pop_extract",
 		Description: "Run a POP (Proactive Output Pipeline) extraction cycle: fetch recent messages, extract knowledge proposals via LLM, record them. Optionally pass `content` to inject conversation text, `diff` to extract from git diff output, or set `review` to true to learn from completed review tasks.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -55,7 +55,7 @@ func Register(reg *mcp.Registry, opts *Opts) {
 	}, extractHandler(opts))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_pop_status",
+		Name:        "cq_pop_status",
 		Description: "Show POP pipeline status: last extraction time, gauge values, knowledge stats",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -64,7 +64,7 @@ func Register(reg *mcp.Registry, opts *Opts) {
 	}, statusHandler(opts))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_pop_reflect",
+		Name:        "cq_pop_reflect",
 		Description: "Reflect on pending high-confidence POP proposals",
 		InputSchema: map[string]any{
 			"type":       "object",

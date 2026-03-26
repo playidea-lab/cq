@@ -53,7 +53,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 1. c4_knowledge_record
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_record",
+		Name:        "cq_knowledge_record",
 		Description: "Record a new knowledge document",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -71,7 +71,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 2. c4_knowledge_get
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_get",
+		Name:        "cq_knowledge_get",
 		Description: "Get a knowledge document by ID",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -85,7 +85,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 3. c4_knowledge_search
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_search",
+		Name:        "cq_knowledge_search",
 		Description: "Search knowledge base documents with hybrid vector + FTS search",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -101,7 +101,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 4. c4_experiment_record (alias: creates type=experiment)
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_experiment_record",
+		Name:        "cq_experiment_record",
 		Description: "Record an experiment result. Optionally auto-upload artifact files to Drive.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -121,7 +121,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 5. c4_experiment_search (alias: search with type=experiment filter)
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_experiment_search",
+		Name:        "cq_experiment_search",
 		Description: "Search experiment records",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -140,7 +140,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 6. c4_pattern_suggest (alias: search with type=pattern, context→query)
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_pattern_suggest",
+		Name:        "cq_pattern_suggest",
 		Description: "Get pattern suggestions based on current context",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -153,7 +153,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 7. c4_knowledge_pull
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_pull",
+		Name:        "cq_knowledge_pull",
 		Description: "Pull knowledge documents from cloud to local store",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -167,7 +167,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 8. c4_knowledge_delete
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_delete",
+		Name:        "cq_knowledge_delete",
 		Description: "Delete a knowledge document (FTS5 + vector + markdown)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -180,7 +180,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 9. c4_knowledge_discover — cross-project public knowledge search
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_discover",
+		Name:        "cq_knowledge_discover",
 		Description: "Search public knowledge documents across all projects for cross-project discovery",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -195,7 +195,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 10. c4_knowledge_ingest — document ingestion (file/URL → chunk → embed → search)
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_ingest",
+		Name:        "cq_knowledge_ingest",
 		Description: "Ingest a document file or URL into knowledge base with chunking and embedding for RAG search",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -212,7 +212,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 11. c4_knowledge_stats
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_stats",
+		Name:        "cq_knowledge_stats",
 		Description: "Get knowledge base statistics: document counts by type and visibility",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -222,7 +222,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 12. c4_knowledge_reindex
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_reindex",
+		Name:        "cq_knowledge_reindex",
 		Description: "Rebuild the knowledge search index from Markdown source files",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -232,7 +232,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 
 	// 13. c4_knowledge_publish — opt-in community publishing
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_publish",
+		Name:        "cq_knowledge_publish",
 		Description: "Publish a knowledge document to the community pool (opt-in, metadata stripped)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -246,7 +246,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 	// 14. c4_knowledge_ingest_paper — LLM-based lesson extraction from paper/URL/text
 	if opts.LLM != nil {
 		reg.Register(mcp.ToolSchema{
-			Name:        "c4_knowledge_ingest_paper",
+			Name:        "cq_knowledge_ingest_paper",
 			Description: "Extract software development lessons from a paper, URL, or text using LLM and save them as knowledge documents",
 			InputSchema: map[string]any{
 				"type": "object",
@@ -262,7 +262,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 	// 15. c4_research_suggest — on-demand hypothesis generation from experiment documents
 	if opts.LLM != nil {
 		reg.Register(mcp.ToolSchema{
-			Name:        "c4_research_suggest",
+			Name:        "cq_research_suggest",
 			Description: "Analyze experiment records and generate a hypothesis with a cq.yaml draft",
 			InputSchema: map[string]any{
 				"type": "object",
@@ -277,7 +277,7 @@ func RegisterKnowledgeNativeHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpt
 	// 15. c4_knowledge_distill — LLM-based pattern extraction from similar document clusters
 	if opts.LLM != nil && opts.Searcher != nil {
 		reg.Register(mcp.ToolSchema{
-			Name:        "c4_knowledge_distill",
+			Name:        "cq_knowledge_distill",
 			Description: "Auto-distill similar document clusters into pattern documents using LLM",
 			InputSchema: map[string]any{
 				"type": "object",

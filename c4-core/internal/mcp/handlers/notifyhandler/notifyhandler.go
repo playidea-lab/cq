@@ -63,7 +63,7 @@ func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
 	bs, bsErr := botstore.New(projectDir)
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_notification_set",
+		Name:        "cq_notification_set",
 		Description: "Configure a notification channel (Telegram bot). Stores bot_username and optional event filter in .c4/notifications.json. The bot must be registered in the botstore.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -106,7 +106,7 @@ func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_notification_get",
+		Name:        "cq_notification_get",
 		Description: "Get configured notification channel. Returns {configured:false} if not set.",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -128,7 +128,7 @@ func Register(reg *mcp.Registry, projectDir string, router *chat.Router) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_notify",
+		Name:        "cq_notify",
 		Description: "Send a notification message via the configured Telegram bot. If event is provided and events filter is configured, skips silently when event not in list.",
 		InputSchema: map[string]any{
 			"type": "object",

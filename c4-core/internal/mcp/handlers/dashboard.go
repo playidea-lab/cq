@@ -36,21 +36,21 @@ func RegisterDashboardHandler(reg *mcp.Registry, store *SQLiteStore, deps *Dashb
 	// Promote c4_dashboard in the lighthouse registry (best-effort, non-fatal).
 	// Try promote first (stub may exist from /c4-plan), fall back to register.
 	if store != nil {
-		if err := store.promoteLighthouse("c4_dashboard", "auto-register"); err != nil {
+		if err := store.promoteLighthouse("cq_dashboard", "auto-register"); err != nil {
 			// Stub doesn't exist — register as new implemented entry.
-			if _, err2 := lighthouseRegisterExisting(store, "c4_dashboard",
+			if _, err2 := lighthouseRegisterExisting(store, "cq_dashboard",
 				"Get CQ system status dashboard — task queue, workers, knowledge, and recent activity",
 				`{"type":"object","properties":{"format":{"type":"string","enum":["widget","text"]}}}`,
 				"Returns status data + MCP Apps widget (_meta.ui.resourceUri=ui://cq/dashboard).",
 				"auto-register",
 			); err2 != nil {
-				fmt.Fprintf(os.Stderr, "c4_dashboard: lighthouse register: %v\n", err2)
+				fmt.Fprintf(os.Stderr, "cq_dashboard: lighthouse register: %v\n", err2)
 			}
 		}
 	}
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_dashboard",
+		Name:        "cq_dashboard",
 		Description: "Get CQ system status dashboard — task queue, workers, knowledge, and recent activity",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -112,7 +112,7 @@ func collectDashboardData(store *SQLiteStore, deps *DashboardDeps) map[string]an
 	if store != nil {
 		status, err := store.GetStatus()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "c4_dashboard: get status: %v\n", err)
+			fmt.Fprintf(os.Stderr, "cq_dashboard: get status: %v\n", err)
 		} else {
 			data["status"] = status.State
 			data["jobs_total"] = status.TotalTasks
@@ -132,7 +132,7 @@ func collectDashboardData(store *SQLiteStore, deps *DashboardDeps) map[string]an
 		if err := deps.KnowledgeStore.DB().QueryRow("SELECT COUNT(*) FROM knowledge_docs").Scan(&count); err == nil {
 			data["memory_count"] = count
 		} else {
-			fmt.Fprintf(os.Stderr, "c4_dashboard: knowledge count: %v\n", err)
+			fmt.Fprintf(os.Stderr, "cq_dashboard: knowledge count: %v\n", err)
 		}
 		// Fetch only recent 4 docs for learnings display
 		docs, err := deps.KnowledgeStore.List("", "", 4)

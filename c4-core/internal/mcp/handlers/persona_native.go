@@ -32,7 +32,7 @@ func RegisterPersonaNativeHandlers(reg *mcp.Registry, llmGW *llm.Gateway, projec
 	gw := llmGW
 	// Persona learning tools (2)
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_persona_learn",
+		Name:        "cq_persona_learn",
 		Description: "Compare AI draft vs user final edit to extract writing patterns and update profile",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -47,7 +47,7 @@ func RegisterPersonaNativeHandlers(reg *mcp.Registry, llmGW *llm.Gateway, projec
 	}, personaLearnHandler())
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_persona_learn_from_diff",
+		Name:        "cq_persona_learn_from_diff",
 		Description: "Extract coding patterns from git diff and append to raw_patterns.json. Also updates the user's ontology via OntologyExtractor. Use after polish/finish to learn from user edits.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -60,7 +60,7 @@ func RegisterPersonaNativeHandlers(reg *mcp.Registry, llmGW *llm.Gateway, projec
 
 	// Profile tools (2)
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_profile_load",
+		Name:        "cq_profile_load",
 		Description: "Load c2 user profile from YAML",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -71,7 +71,7 @@ func RegisterPersonaNativeHandlers(reg *mcp.Registry, llmGW *llm.Gateway, projec
 	}, profileLoadHandler())
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_profile_save",
+		Name:        "cq_profile_save",
 		Description: "Save c2 user profile to YAML",
 		InputSchema: map[string]any{
 			"type": "object",

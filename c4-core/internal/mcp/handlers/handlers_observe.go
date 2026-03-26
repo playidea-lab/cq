@@ -38,7 +38,7 @@ func InitObserveState(logger *observe.Logger, metrics *observe.Metrics, level sl
 func RegisterObserveHandlers(reg *mcp.Registry) {
 	// c4_observe_metrics — return current metrics snapshot
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_observe_metrics",
+		Name:        "cq_observe_metrics",
 		Description: "Return a current snapshot of per-tool call counts, error counts, and latencies",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -56,7 +56,7 @@ func RegisterObserveHandlers(reg *mcp.Registry) {
 
 	// c4_observe_logs — return last N log entries (filter by level/tool)
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_observe_logs",
+		Name:        "cq_observe_logs",
 		Description: "Return recent structured log entries. Supports filtering by minimum level and tool name prefix.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -119,7 +119,7 @@ func RegisterObserveHandlers(reg *mcp.Registry) {
 
 	// c4_observe_config — dynamically change log level/format
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_observe_config",
+		Name:        "cq_observe_config",
 		Description: "Read or update observability configuration (log level, log format) at runtime",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -209,7 +209,7 @@ func RegisterObserveHandlers(reg *mcp.Registry) {
 
 	// c4_observe_health — system health check
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_observe_health",
+		Name:        "cq_observe_health",
 		Description: "Return health status of observable C4 components (logger, metrics, log ring)",
 		InputSchema: map[string]any{
 			"type":       "object",

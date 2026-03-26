@@ -13,7 +13,7 @@ import (
 func registerHubInfraHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	// c4_hub_workers — List workers
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_workers",
+		Name:        "cq_hub_workers",
 		Description: "List workers connected to the PiQ Hub with GPU status",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -25,7 +25,7 @@ func registerHubInfraHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_stats — Queue statistics
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_stats",
+		Name:        "cq_hub_stats",
 		Description: "Get Hub queue statistics (queued/running/succeeded/failed counts)",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -37,7 +37,7 @@ func registerHubInfraHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_upload — Upload artifact for a job
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_upload",
+		Name:        "cq_hub_upload",
 		Description: "Upload a local file as a Hub job artifact (presigned URL + SHA256 verification)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -54,7 +54,7 @@ func registerHubInfraHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_download — Download artifact from a job
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_download",
+		Name:        "cq_hub_download",
 		Description: "Download a Hub job artifact to a local file",
 		InputSchema: map[string]any{
 			"type": "object",

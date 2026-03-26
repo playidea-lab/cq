@@ -113,7 +113,7 @@ func RegisterExperimentHandlers(reg *mcp.Registry, h ExperimentHandlers) {
 	}
 
 	reg.RegisterBlocking(mcp.ToolSchema{
-		Name:        "c4_experiment_register",
+		Name:        "cq_experiment_register",
 		Description: "Register a new experiment run and return a run_id for checkpoint tracking.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -128,7 +128,7 @@ func RegisterExperimentHandlers(reg *mcp.Registry, h ExperimentHandlers) {
 	}, registerRunHandler(h))
 
 	reg.RegisterBlocking(mcp.ToolSchema{
-		Name:        "c4_run_checkpoint",
+		Name:        "cq_run_checkpoint",
 		Description: "Record an experiment checkpoint metric. Called automatically by C5 wrapper on epoch pattern match.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -142,7 +142,7 @@ func RegisterExperimentHandlers(reg *mcp.Registry, h ExperimentHandlers) {
 	}, checkpointHandler(h))
 
 	reg.RegisterBlocking(mcp.ToolSchema{
-		Name:        "c4_run_complete",
+		Name:        "cq_run_complete",
 		Description: "Mark an experiment run complete and auto-bridge results to knowledge store.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -157,7 +157,7 @@ func RegisterExperimentHandlers(reg *mcp.Registry, h ExperimentHandlers) {
 	}, completeRunHandler(h))
 
 	reg.RegisterBlocking(mcp.ToolSchema{
-		Name:        "c4_run_should_continue",
+		Name:        "cq_run_should_continue",
 		Description: "Check whether an experiment run should continue (not cancelled/completed).",
 		InputSchema: map[string]any{
 			"type": "object",

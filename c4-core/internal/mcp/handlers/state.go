@@ -17,7 +17,7 @@ type clearArgs struct {
 func RegisterStateHandlers(reg *mcp.Registry, store Store) {
 	// c4_status
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_status",
+		Name:        "cq_status",
 		Description: "Get current C4 project status including state, queue, and workers",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -30,7 +30,7 @@ func RegisterStateHandlers(reg *mcp.Registry, store Store) {
 
 	// c4_start
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_start",
+		Name:        "cq_start",
 		Description: "Start execution by transitioning from PLAN/HALTED to EXECUTE state",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -43,7 +43,7 @@ func RegisterStateHandlers(reg *mcp.Registry, store Store) {
 
 	// c4_clear
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_clear",
+		Name:        "cq_clear",
 		Description: "Clear C4 state completely. Deletes .c4 directory and clears daemon cache.",
 		InputSchema: map[string]any{
 			"type": "object",

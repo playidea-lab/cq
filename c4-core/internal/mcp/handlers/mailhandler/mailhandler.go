@@ -16,7 +16,7 @@ import (
 func Register(reg *mcp.Registry, ms *mailbox.MailStore, router *chat.Router) {
 	// c4_mail_send — send a message to a session
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_mail_send",
+		Name:        "cq_mail_send",
 		Description: "Send a local (in-process) message to a CQ session. The message is stored unread until c4_mail_read is called.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -77,7 +77,7 @@ func Register(reg *mcp.Registry, ms *mailbox.MailStore, router *chat.Router) {
 
 	// c4_mail_ls — list messages
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_mail_ls",
+		Name:        "cq_mail_ls",
 		Description: "List mail messages. Optionally filter by session (to_addr) and/or unread-only.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -125,7 +125,7 @@ func Register(reg *mcp.Registry, ms *mailbox.MailStore, router *chat.Router) {
 
 	// c4_mail_read — read (and mark as read) a message by ID
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_mail_read",
+		Name:        "cq_mail_read",
 		Description: "Read a mail message by ID. Marks the message as read (sets read_at).",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -164,7 +164,7 @@ func Register(reg *mcp.Registry, ms *mailbox.MailStore, router *chat.Router) {
 
 	// c4_mail_rm — delete a message by ID
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_mail_rm",
+		Name:        "cq_mail_rm",
 		Description: "Delete a mail message by ID.",
 		InputSchema: map[string]any{
 			"type": "object",

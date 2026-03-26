@@ -20,7 +20,7 @@ var validLighthouseName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]{0,63}$`)
 // value copies and are not updated concurrently.
 func RegisterLighthouseHandlers(reg *mcp.Registry, store *SQLiteStore) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_lighthouse",
+		Name:        "cq_lighthouse",
 		Description: "Spec-as-MCP: register/promote/manage lighthouse stub tools",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -186,7 +186,7 @@ func lighthouseRegisterAll(reg *mcp.Registry, store *SQLiteStore, agentID string
 	for _, tool := range tools {
 		name := tool.Name
 		// Skip the lighthouse tool itself
-		if name == "c4_lighthouse" {
+		if name == "cq_lighthouse" {
 			skipped++
 			continue
 		}
@@ -612,39 +612,39 @@ func categorize(name string) string {
 		prefix string
 		cat    string
 	}{
-		{"c4_status", "status"}, {"c4_start", "status"}, {"c4_clear", "status"},
-		{"c4_config", "status"}, {"c4_health", "status"},
-		{"c4_add_todo", "task"}, {"c4_get_task", "task"}, {"c4_submit", "task"},
-		{"c4_mark_blocked", "task"}, {"c4_claim", "task"}, {"c4_report", "task"},
-		{"c4_task_list", "task"},
-		{"c4_checkpoint", "review"}, {"c4_request_changes", "review"},
-		{"c4_ensure_supervisor", "review"}, {"c4_run_validation", "review"},
-		{"c4_find_file", "file"}, {"c4_search_for_pattern", "file"},
-		{"c4_read_file", "file"}, {"c4_replace_content", "file"},
-		{"c4_create_text_file", "file"}, {"c4_list_dir", "file"},
-		{"c4_worktree", "git"}, {"c4_analyze_history", "git"}, {"c4_search_commits", "git"},
-		{"c4_save_spec", "discovery"}, {"c4_get_spec", "discovery"}, {"c4_list_specs", "discovery"},
-		{"c4_save_design", "discovery"}, {"c4_get_design", "discovery"}, {"c4_list_designs", "discovery"},
-		{"c4_discovery_complete", "discovery"}, {"c4_design_complete", "discovery"},
-		{"c4_artifact", "artifact"},
-		{"c4_find_symbol", "lsp"}, {"c4_get_symbols", "lsp"}, {"c4_replace_symbol", "lsp"},
-		{"c4_insert_before", "lsp"}, {"c4_insert_after", "lsp"}, {"c4_rename_symbol", "lsp"},
-		{"c4_find_referencing", "lsp"},
-		{"c4_knowledge", "knowledge"}, {"c4_experiment", "knowledge"}, {"c4_pattern_suggest", "knowledge"},
-		{"c4_research", "research"},
-		{"c4_soul", "soul"}, {"c4_whoami", "soul"}, {"c4_persona", "soul"}, {"c4_reflect", "soul"},
-		{"c4_llm", "llm"},
-		{"c4_cdp", "cdp"}, {"c4_webmcp", "cdp"},
-		{"c4_web_fetch", "web"},
+		{"cq_status", "status"}, {"cq_start", "status"}, {"cq_clear", "status"},
+		{"cq_config", "status"}, {"cq_health", "status"},
+		{"cq_add_todo", "task"}, {"cq_get_task", "task"}, {"cq_submit", "task"},
+		{"cq_mark_blocked", "task"}, {"cq_claim", "task"}, {"cq_report", "task"},
+		{"cq_task_list", "task"},
+		{"cq_checkpoint", "review"}, {"cq_request_changes", "review"},
+		{"cq_ensure_supervisor", "review"}, {"cq_run_validation", "review"},
+		{"cq_find_file", "file"}, {"cq_search_for_pattern", "file"},
+		{"cq_read_file", "file"}, {"cq_replace_content", "file"},
+		{"cq_create_text_file", "file"}, {"cq_list_dir", "file"},
+		{"cq_worktree", "git"}, {"cq_analyze_history", "git"}, {"cq_search_commits", "git"},
+		{"cq_save_spec", "discovery"}, {"cq_get_spec", "discovery"}, {"cq_list_specs", "discovery"},
+		{"cq_save_design", "discovery"}, {"cq_get_design", "discovery"}, {"cq_list_designs", "discovery"},
+		{"cq_discovery_complete", "discovery"}, {"cq_design_complete", "discovery"},
+		{"cq_artifact", "artifact"},
+		{"cq_find_symbol", "lsp"}, {"cq_get_symbols", "lsp"}, {"cq_replace_symbol", "lsp"},
+		{"cq_insert_before", "lsp"}, {"cq_insert_after", "lsp"}, {"cq_rename_symbol", "lsp"},
+		{"cq_find_referencing", "lsp"},
+		{"cq_knowledge", "knowledge"}, {"cq_experiment", "knowledge"}, {"cq_pattern_suggest", "knowledge"},
+		{"cq_research", "research"},
+		{"cq_soul", "soul"}, {"cq_whoami", "soul"}, {"cq_persona", "soul"}, {"cq_reflect", "soul"},
+		{"cq_llm", "llm"},
+		{"cq_cdp", "cdp"}, {"cq_webmcp", "cdp"},
+		{"cq_web_fetch", "web"},
 		{"c1_", "c1"},
-		{"c4_parse_document", "c2"}, {"c4_extract_text", "c2"},
-		{"c4_workspace", "c2"}, {"c4_profile", "c2"}, {"c4_persona_learn", "c2"},
-		{"c4_drive", "drive"},
-		{"c4_event", "event"}, {"c4_rule", "event"},
-		{"c4_hub", "hub"},
-		{"c4_gpu", "gpu"}, {"c4_job_submit", "gpu"},
-		{"c4_lighthouse", "lighthouse"},
-		{"c4_onboard", "other"},
+		{"cq_parse_document", "c2"}, {"cq_extract_text", "c2"},
+		{"cq_workspace", "c2"}, {"cq_profile", "c2"}, {"cq_persona_learn", "c2"},
+		{"cq_drive", "drive"},
+		{"cq_event", "event"}, {"cq_rule", "event"},
+		{"cq_hub", "hub"},
+		{"cq_gpu", "gpu"}, {"cq_job_submit", "gpu"},
+		{"cq_lighthouse", "lighthouse"},
+		{"cq_onboard", "other"},
 	}
 
 	for _, p := range prefixes {

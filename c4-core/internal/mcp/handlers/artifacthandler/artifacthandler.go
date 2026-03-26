@@ -17,7 +17,7 @@ import (
 func Register(reg *mcp.Registry, rootDir string) {
 	// c4_artifact_save
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_artifact_save",
+		Name:        "cq_artifact_save",
 		Description: "Save a file as a versioned artifact with content-hash",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -34,7 +34,7 @@ func Register(reg *mcp.Registry, rootDir string) {
 
 	// c4_artifact_list
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_artifact_list",
+		Name:        "cq_artifact_list",
 		Description: "List all saved artifacts",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -46,7 +46,7 @@ func Register(reg *mcp.Registry, rootDir string) {
 
 	// c4_artifact_get
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_artifact_get",
+		Name:        "cq_artifact_get",
 		Description: "Get artifact metadata and content path by name",
 		InputSchema: map[string]any{
 			"type": "object",

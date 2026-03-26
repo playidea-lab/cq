@@ -24,7 +24,7 @@ func registerGet(reg *mcp.Registry, cfgMgr *config.Manager) {
 		return
 	}
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_config_get",
+		Name:        "cq_config_get",
 		Description: "Get runtime configuration (sensitive fields masked)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -168,7 +168,7 @@ func registerSet(reg *mcp.Registry, cfgMgr *config.Manager, projectRoot string) 
 		return
 	}
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_config_set",
+		Name:        "cq_config_set",
 		Description: "Set a configuration value (persists to .c4/config.yaml and applies immediately)",
 		InputSchema: map[string]any{
 			"type": "object",

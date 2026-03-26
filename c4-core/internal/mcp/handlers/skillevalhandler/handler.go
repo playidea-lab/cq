@@ -28,7 +28,7 @@ func Register(reg *mcp.Registry, opts *Opts) {
 	}
 
 	reg.RegisterBlocking(mcp.ToolSchema{
-		Name:        "c4_skill_eval_generate",
+		Name:        "cq_skill_eval_generate",
 		Description: "SKILL.md를 분석하여 EVAL.md를 자동 생성한다. skill='all'이면 전체 스킬 일괄 생성.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -43,7 +43,7 @@ func Register(reg *mcp.Registry, opts *Opts) {
 	}, generateHandler(opts))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_skill_eval_status",
+		Name:        "cq_skill_eval_status",
 		Description: "전체 스킬 헬스 요약 조회. C9 experiment_record에서 최신 trigger_accuracy를 읽어 반환한다.",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -52,7 +52,7 @@ func Register(reg *mcp.Registry, opts *Opts) {
 	}, statusHandler(opts))
 
 	reg.RegisterBlocking(mcp.ToolSchema{
-		Name:        "c4_skill_optimize",
+		Name:        "cq_skill_optimize",
 		Description: "스킬의 SKILL.md를 자동 최적화한다. 베이스라인 측정 후 변이→평가→유지/폐기 루프를 반복해 pass rate를 높인다.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -94,7 +94,7 @@ func Register(reg *mcp.Registry, opts *Opts) {
 	}, optimizeHandler(opts))
 
 	reg.RegisterBlocking(mcp.ToolSchema{
-		Name:        "c4_skill_eval_run",
+		Name:        "cq_skill_eval_run",
 		Description: "스킬의 트리거 정확도를 haiku 분류 호출로 측정하고 결과를 C9에 저장한다.",
 		InputSchema: map[string]any{
 			"type": "object",

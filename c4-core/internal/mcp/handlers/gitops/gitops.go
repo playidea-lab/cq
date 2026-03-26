@@ -14,7 +14,7 @@ import (
 func Register(reg *mcp.Registry, rootDir string) {
 	// c4_worktree_status
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_worktree_status",
+		Name:        "cq_worktree_status",
 		Description: "Get git worktree and branch status",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -26,7 +26,7 @@ func Register(reg *mcp.Registry, rootDir string) {
 
 	// c4_worktree_cleanup
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_worktree_cleanup",
+		Name:        "cq_worktree_cleanup",
 		Description: "Clean up stale git worktrees",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -44,7 +44,7 @@ func Register(reg *mcp.Registry, rootDir string) {
 
 	// c4_analyze_history
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_analyze_history",
+		Name:        "cq_analyze_history",
 		Description: "Analyze git commit history for patterns",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -69,7 +69,7 @@ func Register(reg *mcp.Registry, rootDir string) {
 
 	// c4_search_commits
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_search_commits",
+		Name:        "cq_search_commits",
 		Description: "Search git commits by message or content",
 		InputSchema: map[string]any{
 			"type": "object",

@@ -137,7 +137,7 @@ func (s *SQLiteStore) BuildTwinReview() *TwinReview {
 // RegisterTwinHandlers registers the c4_reflect MCP tool.
 func RegisterTwinHandlers(reg *mcp.Registry, store *SQLiteStore) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_reflect",
+		Name:        "cq_reflect",
 		Description: "Digital Twin reflection — patterns, growth, challenges, permission audit",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -170,7 +170,7 @@ func RegisterTwinHandlers(reg *mcp.Registry, store *SQLiteStore) {
 // ks may be nil (knowledge store optional); in that case the tool returns an empty list.
 func RegisterPopReflectHandlers(reg *mcp.Registry, ks *knowledge.Store) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_pop_reflect",
+		Name:        "cq_pop_reflect",
 		Description: "List pending HIGH-confidence proposals awaiting user validation. Use `cq reflect` CLI for interactive validation. This tool returns the list for programmatic access.",
 		InputSchema: map[string]any{
 			"type": "object",

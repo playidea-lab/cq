@@ -17,7 +17,7 @@ func Register(reg *mcp.Registry) {
 
 func registerWithOpts(reg *mcp.Registry, defaultOpts *c2webcontent.FetchOpts) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_web_fetch",
+		Name:        "cq_web_fetch",
 		Description: "Fetch web content as clean markdown. Uses native markdown (Cloudflare/Vercel) when available, HTML-to-markdown fallback otherwise.",
 		InputSchema: map[string]any{
 			"type": "object",

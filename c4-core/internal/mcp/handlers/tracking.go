@@ -41,7 +41,7 @@ type checkpointArgs struct {
 func RegisterTrackingHandlers(reg *mcp.Registry, store Store) {
 	// c4_record_gate
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_record_gate",
+		Name:        "cq_record_gate",
 		Description: "Record a workflow gate result into c4_gates table. Use this instead of direct sqlite3 calls.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -68,7 +68,7 @@ func RegisterTrackingHandlers(reg *mcp.Registry, store Store) {
 
 	// c4_claim
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_claim",
+		Name:        "cq_claim",
 		Description: "Claim a task for direct execution by the main session (no worker protocol)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -86,7 +86,7 @@ func RegisterTrackingHandlers(reg *mcp.Registry, store Store) {
 
 	// c4_report
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_report",
+		Name:        "cq_report",
 		Description: "Report task completion for direct mode",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -113,7 +113,7 @@ func RegisterTrackingHandlers(reg *mcp.Registry, store Store) {
 
 	// c4_checkpoint
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_checkpoint",
+		Name:        "cq_checkpoint",
 		Description: "Record supervisor checkpoint decision. Use target_task_id/target_review_id for explicit attribution (no latest-in_progress heuristic).",
 		InputSchema: map[string]any{
 			"type": "object",

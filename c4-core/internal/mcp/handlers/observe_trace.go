@@ -47,7 +47,7 @@ func SetObserveTraceGateway(gw *llm.Gateway) {
 func RegisterObserveTraceHandlers(reg *mcp.Registry) {
 	// c4_observe_traces — list recent traces with optional filters
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_observe_traces",
+		Name:        "cq_observe_traces",
 		Description: "List recent LLM traces with optional filtering by session_id, task_id, or limit",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -154,7 +154,7 @@ WHERE 1=1`
 
 	// c4_observe_trace_stats — per task_type model performance statistics
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_observe_trace_stats",
+		Name:        "cq_observe_trace_stats",
 		Description: "Return per-task_type model performance statistics (success rate, quality, latency, cost) computed from trace data",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -213,7 +213,7 @@ WHERE 1=1`
 
 	// c4_observe_policy — compare current RoutingTable with SuggestRoutes()
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_observe_policy",
+		Name:        "cq_observe_policy",
 		Description: "Show the current LLM routing table and compare it with data-driven route suggestions from trace analysis",
 		InputSchema: map[string]any{
 			"type":       "object",

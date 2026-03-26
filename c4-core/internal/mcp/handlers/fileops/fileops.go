@@ -17,7 +17,7 @@ import (
 func Register(reg *mcp.Registry, rootDir string) {
 	// c4_find_file
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_find_file",
+		Name:        "cq_find_file",
 		Description: "Find files matching a glob pattern in the project",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -39,7 +39,7 @@ func Register(reg *mcp.Registry, rootDir string) {
 
 	// c4_search_for_pattern
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_search_for_pattern",
+		Name:        "cq_search_for_pattern",
 		Description: "Search for a regex pattern in project files",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -69,7 +69,7 @@ func Register(reg *mcp.Registry, rootDir string) {
 
 	// c4_read_file
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_read_file",
+		Name:        "cq_read_file",
 		Description: "Read a file's contents with optional line range",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -95,7 +95,7 @@ func Register(reg *mcp.Registry, rootDir string) {
 
 	// c4_replace_content
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_replace_content",
+		Name:        "cq_replace_content",
 		Description: "Replace text content in a file",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -126,7 +126,7 @@ func Register(reg *mcp.Registry, rootDir string) {
 
 	// c4_create_text_file
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_create_text_file",
+		Name:        "cq_create_text_file",
 		Description: "Create a new text file with given content",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -148,7 +148,7 @@ func Register(reg *mcp.Registry, rootDir string) {
 
 	// c4_list_dir
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_list_dir",
+		Name:        "cq_list_dir",
 		Description: "List directory contents",
 		InputSchema: map[string]any{
 			"type": "object",

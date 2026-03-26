@@ -45,7 +45,7 @@ func RegisterErrorTraceHandler(reg *mcp.Registry, store *SQLiteStore, deps *Erro
 	}
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_error_trace",
+		Name:        "cq_error_trace",
 		Description: "Parse error stack traces (Go panic, Python traceback, JS Error) into structured frames with cause highlighting",
 		InputSchema: map[string]any{
 			"type": "object",

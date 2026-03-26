@@ -13,7 +13,7 @@ import (
 func registerHubDAGHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	// c4_hub_dag_create — Create a new DAG
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_dag_create",
+		Name:        "cq_hub_dag_create",
 		Description: "Create a new experiment DAG (Directed Acyclic Graph) for multi-step ML pipelines",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -30,7 +30,7 @@ func registerHubDAGHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_dag_add_node — Add a job node to a DAG
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_dag_add_node",
+		Name:        "cq_hub_dag_add_node",
 		Description: "Add a job node to a DAG. Each node is a single executable task (preprocess, train, eval)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -52,7 +52,7 @@ func registerHubDAGHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_dag_add_dep — Add a dependency between two DAG nodes
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_dag_add_dep",
+		Name:        "cq_hub_dag_add_dep",
 		Description: "Add a dependency between two nodes. Target runs only after source completes",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -70,7 +70,7 @@ func registerHubDAGHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_dag_execute — Start DAG execution
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_dag_execute",
+		Name:        "cq_hub_dag_execute",
 		Description: "Start execution of a DAG. Nodes run in dependency order with parallelism where possible",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -86,7 +86,7 @@ func registerHubDAGHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_dag_status — Get DAG execution status
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_dag_status",
+		Name:        "cq_hub_dag_status",
 		Description: "Get execution status of a DAG with per-node progress and timing",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -101,7 +101,7 @@ func registerHubDAGHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_dag_list — List DAGs
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_dag_list",
+		Name:        "cq_hub_dag_list",
 		Description: "List DAGs with optional status filter",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -120,7 +120,7 @@ func registerHubDAGHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_dag_from_yaml — Create DAG from YAML definition
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_dag_from_yaml",
+		Name:        "cq_hub_dag_from_yaml",
 		Description: "Create a complete DAG from a YAML definition. Define nodes, dependencies, and settings in one document",
 		InputSchema: map[string]any{
 			"type": "object",

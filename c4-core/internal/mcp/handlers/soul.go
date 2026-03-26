@@ -106,7 +106,7 @@ var validSoulID = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 func RegisterSoulHandlers(reg *mcp.Registry, projectRoot string) {
 	// c4_soul_get
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_soul_get",
+		Name:        "cq_soul_get",
 		Description: "Get user's soul file for a role, or list all souls",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -151,7 +151,7 @@ func RegisterSoulHandlers(reg *mcp.Registry, projectRoot string) {
 
 	// c4_soul_set
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_soul_set",
+		Name:        "cq_soul_set",
 		Description: "Set a section of user's soul file (Principles/Preferences/Overrides/Learned)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -207,7 +207,7 @@ func RegisterSoulHandlers(reg *mcp.Registry, projectRoot string) {
 
 	// c4_soul_resolve
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_soul_resolve",
+		Name:        "cq_soul_resolve",
 		Description: "Resolve merged persona+soul for a user's role",
 		InputSchema: map[string]any{
 			"type": "object",

@@ -22,7 +22,7 @@ type CollectiveOpts struct {
 // RegisterCollectiveHandlers registers c4_collective_sync and c4_collective_stats.
 func RegisterCollectiveHandlers(reg *mcp.Registry, opts CollectiveOpts) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_collective_sync",
+		Name:        "cq_collective_sync",
 		Description: "Upload local project ontology to Hub and/or download collective patterns",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -37,7 +37,7 @@ func RegisterCollectiveHandlers(reg *mcp.Registry, opts CollectiveOpts) {
 	}, collectiveSyncHandler(opts))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_collective_stats",
+		Name:        "cq_collective_stats",
 		Description: "Show collective ontology statistics (local + Hub)",
 		InputSchema: map[string]any{
 			"type":       "object",

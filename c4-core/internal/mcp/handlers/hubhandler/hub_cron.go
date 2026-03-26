@@ -14,7 +14,7 @@ import (
 func registerCronHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	// c4_cron_create — Create a new cron schedule
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_cron_create",
+		Name:        "cq_cron_create",
 		Description: "Create a new cron schedule. Provide either command (runs as a job) or dag_id (triggers a DAG).",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -33,7 +33,7 @@ func registerCronHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_cron_list — List all cron schedules
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_cron_list",
+		Name:        "cq_cron_list",
 		Description: "List all cron schedules",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -45,7 +45,7 @@ func registerCronHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_cron_delete — Delete a cron schedule
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_cron_delete",
+		Name:        "cq_cron_delete",
 		Description: "Delete a cron schedule by ID",
 		InputSchema: map[string]any{
 			"type": "object",

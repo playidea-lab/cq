@@ -32,7 +32,7 @@ func RegisterGitDiffHandler(reg *mcp.Registry, deps *GitDiffDeps) {
 	}
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_diff_summary",
+		Name:        "cq_diff_summary",
 		Description: "Summarize git diff — changed files with +/- line counts, status (M/A/D/R), and test-coverage warnings",
 		InputSchema: map[string]any{
 			"type": "object",

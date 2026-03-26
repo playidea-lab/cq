@@ -8,7 +8,7 @@ import "github.com/changmin/c4-core/internal/mcp"
 // All tools proxy to the Python sidecar's ResearchStore via JSON-RPC.
 func RegisterResearchProxyHandlers(reg *mcp.Registry, proxy Caller) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_start",
+		Name:        "cq_research_start",
 		Description: "Start a research project (paper + experiments iteration loop)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -23,7 +23,7 @@ func RegisterResearchProxyHandlers(reg *mcp.Registry, proxy Caller) {
 	}, proxyHandler(proxy, "ResearchStart"))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_status",
+		Name:        "cq_research_status",
 		Description: "Get research project status with iteration history",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -35,7 +35,7 @@ func RegisterResearchProxyHandlers(reg *mcp.Registry, proxy Caller) {
 	}, proxyHandler(proxy, "ResearchStatus"))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_record",
+		Name:        "cq_research_record",
 		Description: "Record review scores, gaps, or experiment results for the current iteration",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -52,7 +52,7 @@ func RegisterResearchProxyHandlers(reg *mcp.Registry, proxy Caller) {
 	}, proxyHandler(proxy, "ResearchRecord"))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_approve",
+		Name:        "cq_research_approve",
 		Description: "Approve iteration outcome: continue to next iteration, pause, or complete the project",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -65,7 +65,7 @@ func RegisterResearchProxyHandlers(reg *mcp.Registry, proxy Caller) {
 	}, proxyHandler(proxy, "ResearchApprove"))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_next",
+		Name:        "cq_research_next",
 		Description: "Suggest next action for a research project based on current state",
 		InputSchema: map[string]any{
 			"type": "object",

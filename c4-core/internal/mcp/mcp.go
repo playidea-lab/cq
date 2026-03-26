@@ -56,7 +56,8 @@ type BlockingHandlerFunc func(ctx context.Context, args json.RawMessage) (any, e
 type Registry struct {
 	mu          sync.RWMutex
 	tools       map[string]registeredTool
-	ordering    []string // preserve registration order
+	aliases     map[string]string // alias name → canonical name (e.g. "c4_status" → "cq_status")
+	ordering    []string          // preserve registration order
 	middlewares []Middleware
 	ctxMws      []ContextualMiddleware // context-aware middlewares applied with ctx+name
 
@@ -84,8 +85,19 @@ type registeredTool struct {
 // NewRegistry creates a new empty tool registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		tools: make(map[string]registeredTool),
+		tools:   make(map[string]registeredTool),
+		aliases: make(map[string]string),
 	}
+}
+
+// RegisterAlias registers an alias name that routes to the canonical tool name.
+// When a caller invokes the alias, the registry transparently dispatches to the
+// canonical tool. Aliases do not appear in ListTools() output.
+// Example: reg.RegisterAlias("c4_status", "cq_status")
+func (r *Registry) RegisterAlias(alias, canonical string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.aliases[alias] = canonical
 }
 
 // Use appends middlewares to the registry's middleware chain.
@@ -166,12 +178,17 @@ func (r *Registry) Call(name string, args json.RawMessage) (any, error) {
 // For regular handlers ctx is ignored; for blocking handlers ctx enables cancellation.
 // The handler is wrapped with the registered middleware chain before execution.
 // The tool name is injected into ctx via toolNameKey for observability middleware.
+// If name is a registered alias (e.g. "c4_status"), it is transparently remapped
+// to the canonical name (e.g. "cq_status") before dispatch.
 func (r *Registry) CallWithContext(ctx context.Context, name string, args json.RawMessage) (any, error) {
 	r.mu.RLock()
+	if canonical, isAlias := r.aliases[name]; isAlias {
+		name = canonical
+	}
 	tool, ok := r.tools[name]
 	onCall := r.OnCall
-	mws := r.middlewares   // snapshot under lock
-	ctxMws := r.ctxMws     // snapshot under lock
+	mws := r.middlewares // snapshot under lock
+	ctxMws := r.ctxMws  // snapshot under lock
 	r.mu.RUnlock()
 
 	if !ok {

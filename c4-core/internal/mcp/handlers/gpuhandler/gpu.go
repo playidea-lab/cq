@@ -45,7 +45,7 @@ func RegisterGPUNativeHandlers(reg *mcp.Registry, gpuStore *daemon.Store, schedu
 	gpuMon := daemon.NewGpuMonitor()
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_gpu_status",
+		Name:        "cq_gpu_status",
 		Description: "Get GPU device status and availability",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -54,7 +54,7 @@ func RegisterGPUNativeHandlers(reg *mcp.Registry, gpuStore *daemon.Store, schedu
 	}, gpuStatusHandler(gpuMon))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_job_submit",
+		Name:        "cq_job_submit",
 		Description: "Submit a job to the GPU scheduler",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -78,7 +78,7 @@ func RegisterGPUNativeHandlers(reg *mcp.Registry, gpuStore *daemon.Store, schedu
 	}, jobSubmitHandler(gpuStore))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_job_list",
+		Name:        "cq_job_list",
 		Description: "List jobs with optional status filter",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -95,7 +95,7 @@ func RegisterGPUNativeHandlers(reg *mcp.Registry, gpuStore *daemon.Store, schedu
 	}, jobListHandler(gpuStore))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_job_status",
+		Name:        "cq_job_status",
 		Description: "Get detailed status of a job including logs and metrics",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -112,7 +112,7 @@ func RegisterGPUNativeHandlers(reg *mcp.Registry, gpuStore *daemon.Store, schedu
 	}, jobStatusHandler(gpuStore, scheduler))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_job_cancel",
+		Name:        "cq_job_cancel",
 		Description: "Cancel a queued or running job",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -124,7 +124,7 @@ func RegisterGPUNativeHandlers(reg *mcp.Registry, gpuStore *daemon.Store, schedu
 	}, jobCancelHandler(gpuStore, scheduler))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_job_summary",
+		Name:        "cq_job_summary",
 		Description: "Get queue-level statistics (counts by status)",
 		InputSchema: map[string]any{
 			"type": "object",

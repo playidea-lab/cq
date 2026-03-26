@@ -527,7 +527,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 	// find_symbol + get_symbols_overview: Go-aware (auto-routes .go files to native parser)
 	// replace/insert/rename/refs: Python/JS/TS only
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_find_symbol",
+		Name:        "cq_find_symbol",
 		Description: "Find symbol definitions by name across the project. Supports Python/JS/TS and Go. Name must be exact match (e.g. 'MyClass' not 'My'). Path is required to avoid timeout.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -540,7 +540,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 	}, goAwareFindSymbol(proxy, rootDir))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_get_symbols_overview",
+		Name:        "cq_get_symbols_overview",
 		Description: "Get overview of all symbols in a file. Supports Python/JS/TS, Go, and Dart",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -552,7 +552,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 	}, goAwareSymbolsOverview(proxy, rootDir))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_replace_symbol_body",
+		Name:        "cq_replace_symbol_body",
 		Description: "Replace the body of a symbol (function, class, method). Python/JS/TS only",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -563,10 +563,10 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 			},
 			"required": []string{"file_path", "symbol_name", "new_body"},
 		},
-	}, languageGuardedProxy(proxy, "ReplaceSymbolBody", "c4_replace_symbol_body"))
+	}, languageGuardedProxy(proxy, "ReplaceSymbolBody", "cq_replace_symbol_body"))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_insert_before_symbol",
+		Name:        "cq_insert_before_symbol",
 		Description: "Insert content before a symbol definition. Python/JS/TS only",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -577,10 +577,10 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 			},
 			"required": []string{"file_path", "symbol_name", "content"},
 		},
-	}, languageGuardedProxy(proxy, "InsertBeforeSymbol", "c4_insert_before_symbol"))
+	}, languageGuardedProxy(proxy, "InsertBeforeSymbol", "cq_insert_before_symbol"))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_insert_after_symbol",
+		Name:        "cq_insert_after_symbol",
 		Description: "Insert content after a symbol definition. Python/JS/TS only",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -591,10 +591,10 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 			},
 			"required": []string{"file_path", "symbol_name", "content"},
 		},
-	}, languageGuardedProxy(proxy, "InsertAfterSymbol", "c4_insert_after_symbol"))
+	}, languageGuardedProxy(proxy, "InsertAfterSymbol", "cq_insert_after_symbol"))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_rename_symbol",
+		Name:        "cq_rename_symbol",
 		Description: "Rename a symbol across all references. Python/JS/TS only",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -605,11 +605,11 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 			},
 			"required": []string{"file_path", "old_name", "new_name"},
 		},
-	}, languageGuardedProxy(proxy, "RenameSymbol", "c4_rename_symbol"))
+	}, languageGuardedProxy(proxy, "RenameSymbol", "cq_rename_symbol"))
 
 	// LSP tool: find referencing symbols — delegated to Python
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_find_referencing_symbols",
+		Name:        "cq_find_referencing_symbols",
 		Description: "Find all references to a symbol across the project. Python/JS/TS only",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -619,14 +619,14 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 			},
 			"required": []string{"file_path", "symbol_name"},
 		},
-	}, languageGuardedProxy(proxy, "FindReferencingSymbols", "c4_find_referencing_symbols"))
+	}, languageGuardedProxy(proxy, "FindReferencingSymbols", "cq_find_referencing_symbols"))
 
 	// NOTE: Knowledge tools (7) moved to Go native — see knowledge_native.go
 	// NOTE: GPU tools (2) moved to Go native — see gpu_native.go
 
 	// Onboard tool — scans project structure via LSP/tree-sitter (30s timeout for large projects)
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_onboard",
+		Name:        "cq_onboard",
 		Description: "Scan project and generate pat-project-map.md (languages, symbols, dependencies)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -642,7 +642,7 @@ func RegisterProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy, rootDir string
 // Used when KnowledgeStore is unavailable (Go native not initialized).
 func registerKnowledgeProxy(reg *mcp.Registry, proxy *BridgeProxy, knowledgeCloud KnowledgeSyncer) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_search",
+		Name:        "cq_knowledge_search",
 		Description: "Search knowledge base documents with hybrid vector + FTS search",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -656,7 +656,7 @@ func registerKnowledgeProxy(reg *mcp.Registry, proxy *BridgeProxy, knowledgeClou
 	}, knowledgeSearchHandler(proxy, "KnowledgeSearch", knowledgeCloud))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_record",
+		Name:        "cq_knowledge_record",
 		Description: "Record a new knowledge document",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -671,7 +671,7 @@ func registerKnowledgeProxy(reg *mcp.Registry, proxy *BridgeProxy, knowledgeClou
 	}, knowledgeRecordHandler(proxy, "KnowledgeRecord", knowledgeCloud))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_get",
+		Name:        "cq_knowledge_get",
 		Description: "Get a knowledge document by ID",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -683,7 +683,7 @@ func registerKnowledgeProxy(reg *mcp.Registry, proxy *BridgeProxy, knowledgeClou
 	}, proxyHandler(proxy, "KnowledgeGet"))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_experiment_record",
+		Name:        "cq_experiment_record",
 		Description: "Record an experiment result",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -697,7 +697,7 @@ func registerKnowledgeProxy(reg *mcp.Registry, proxy *BridgeProxy, knowledgeClou
 	}, knowledgeRecordHandler(proxy, "KnowledgeRecord", knowledgeCloud))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_experiment_search",
+		Name:        "cq_experiment_search",
 		Description: "Search experiment records",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -710,7 +710,7 @@ func registerKnowledgeProxy(reg *mcp.Registry, proxy *BridgeProxy, knowledgeClou
 	}, knowledgeSearchHandler(proxy, "KnowledgeSearch", knowledgeCloud))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_pattern_suggest",
+		Name:        "cq_pattern_suggest",
 		Description: "Get pattern suggestions based on current context",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -722,7 +722,7 @@ func registerKnowledgeProxy(reg *mcp.Registry, proxy *BridgeProxy, knowledgeClou
 	}, knowledgeSearchHandler(proxy, "KnowledgeSearch", knowledgeCloud))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_knowledge_pull",
+		Name:        "cq_knowledge_pull",
 		Description: "Pull knowledge documents from cloud to local store",
 		InputSchema: map[string]any{
 			"type": "object",

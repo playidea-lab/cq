@@ -30,7 +30,7 @@ func RegisterNodesMapHandler(reg *mcp.Registry, store *SQLiteStore, deps *NodesM
 	}
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_nodes_map",
+		Name:        "cq_nodes_map",
 		Description: "Get connected node status — agents, workers, and edge devices with online/offline state and last heartbeat",
 		InputSchema: map[string]any{
 			"type": "object",

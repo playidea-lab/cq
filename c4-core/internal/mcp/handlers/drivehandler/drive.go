@@ -32,7 +32,7 @@ func publishDriveEvent(evType string, data map[string]any) {
 func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 	// c4_drive_upload — Upload a local file to Drive
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_drive_upload",
+		Name:        "cq_drive_upload",
 		Description: "Upload a local file to C4 Drive (Supabase Storage)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -77,7 +77,7 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 
 	// c4_drive_download — Download a file from Drive to local
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_drive_download",
+		Name:        "cq_drive_download",
 		Description: "Download a file from C4 Drive to local filesystem",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -110,7 +110,7 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 
 	// c4_drive_list — List files in a Drive folder
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_drive_list",
+		Name:        "cq_drive_list",
 		Description: "List files and folders in a C4 Drive directory",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -151,7 +151,7 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 
 	// c4_drive_delete — Delete a file or folder from Drive
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_drive_delete",
+		Name:        "cq_drive_delete",
 		Description: "Delete a file or folder from C4 Drive",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -182,7 +182,7 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 
 	// c4_drive_info — Get file metadata
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_drive_info",
+		Name:        "cq_drive_info",
 		Description: "Get metadata for a file or folder in C4 Drive",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -221,7 +221,7 @@ func RegisterDriveHandlers(reg *mcp.Registry, driveClient *drive.Client) {
 
 	// c4_drive_mkdir — Create a folder in Drive
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_drive_mkdir",
+		Name:        "cq_drive_mkdir",
 		Description: "Create a folder in C4 Drive",
 		InputSchema: map[string]any{
 			"type": "object",

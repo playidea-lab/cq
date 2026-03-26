@@ -30,7 +30,7 @@ func RegisterTaskGraphHandler(reg *mcp.Registry, store *SQLiteStore, deps *TaskG
 	}
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_task_graph",
+		Name:        "cq_task_graph",
 		Description: "Get task dependency graph — nodes (tasks) with edges (dependencies) and status colors",
 		InputSchema: map[string]any{
 			"type": "object",

@@ -36,7 +36,7 @@ func GetHubProjectID() string {
 func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	// c4_hub_submit — Submit a job to the Hub queue
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_submit",
+		Name:        "cq_hub_submit",
 		Description: "Submit a job to the PiQ Hub queue for remote GPU execution",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -86,7 +86,7 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_status — Get job status
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_status",
+		Name:        "cq_hub_status",
 		Description: "Get status of a Hub job",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -101,7 +101,7 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_list — List jobs
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_list",
+		Name:        "cq_hub_list",
 		Description: "List Hub jobs with optional status filter",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -120,7 +120,7 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_cancel — Cancel a job
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_cancel",
+		Name:        "cq_hub_cancel",
 		Description: "Cancel a queued or running Hub job",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -135,7 +135,7 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_metrics — Get metrics for a job
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_metrics",
+		Name:        "cq_hub_metrics",
 		Description: "Get training metrics for a Hub job",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -151,7 +151,7 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_log_metrics — Log metrics for a job
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_log_metrics",
+		Name:        "cq_hub_log_metrics",
 		Description: "Log training metrics for a running Hub job",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -168,7 +168,7 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_watch — Watch job logs (tail)
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_watch",
+		Name:        "cq_hub_watch",
 		Description: "Watch job logs. Returns the last N lines of output from a running or completed job",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -185,7 +185,7 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_summary — Get job summary with metrics
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_summary",
+		Name:        "cq_hub_summary",
 		Description: "Get comprehensive job summary including status, duration, metrics, and log tail",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -200,7 +200,7 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_retry — Retry a failed or cancelled job
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_retry",
+		Name:        "cq_hub_retry",
 		Description: "Retry a failed or cancelled job with the same configuration. Creates a new job",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -215,7 +215,7 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 
 	// c4_hub_estimate — Get time estimate for a job
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_estimate",
+		Name:        "cq_hub_estimate",
 		Description: "Get estimated duration and queue wait time for a job based on historical data",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -235,7 +235,7 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	// proactively on a fixed interval shorter than the lease TTL. On failure,
 	// retry up to 3 times with exponential backoff before aborting the job.
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_hub_lease_renew",
+		Name:        "cq_hub_lease_renew",
 		Description: "Renew a job lease to prevent the Hub from re-queuing the job. Call periodically while executing a long-running job (recommended: every 4 minutes for a 5-minute lease). Returns the new expiry timestamp.",
 		InputSchema: map[string]any{
 			"type": "object",

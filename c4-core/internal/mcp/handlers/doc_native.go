@@ -9,7 +9,7 @@ import (
 // RegisterDocProxyHandlers registers document parsing tools that require the Python sidecar.
 func RegisterDocProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_parse_document",
+		Name:        "cq_parse_document",
 		Description: "Parse multi-format document (HWP, DOCX, PDF, XLSX, PPTX) into IR blocks",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -21,7 +21,7 @@ func RegisterDocProxyHandlers(reg *mcp.Registry, proxy *BridgeProxy) {
 	}, proxyHandlerWithTimeout(proxy, "C2ParseDocument", 30*time.Second))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_extract_text",
+		Name:        "cq_extract_text",
 		Description: "Extract plain text from any supported document format",
 		InputSchema: map[string]any{
 			"type": "object",

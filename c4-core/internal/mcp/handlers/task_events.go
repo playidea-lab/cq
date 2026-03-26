@@ -12,7 +12,7 @@ import (
 // It reads .c4/events/task-*.json files, returns them, and deletes them.
 func RegisterTaskEventsHandler(reg *mcp.Registry, projectRoot string) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_task_events",
+		Name:        "cq_task_events",
 		Description: "Poll for task status change events. Returns events since last call and clears them.",
 		InputSchema: map[string]any{
 			"type":       "object",

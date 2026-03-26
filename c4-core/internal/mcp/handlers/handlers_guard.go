@@ -15,7 +15,7 @@ import (
 func RegisterGuardHandlers(reg *mcp.Registry, eng *guard.Engine) {
 	// c4_guard_check — check actor + tool permission
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_guard_check",
+		Name:        "cq_guard_check",
 		Description: "Check whether an actor is permitted to call a tool. Returns Allow, Deny, or AuditOnly.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -50,7 +50,7 @@ func RegisterGuardHandlers(reg *mcp.Registry, eng *guard.Engine) {
 
 	// c4_guard_audit — query audit log
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_guard_audit",
+		Name:        "cq_guard_audit",
 		Description: "Query the guard audit log. Returns recent access-control decisions.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -98,7 +98,7 @@ func RegisterGuardHandlers(reg *mcp.Registry, eng *guard.Engine) {
 
 	// c4_guard_policy_set — add or modify a policy rule
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_guard_policy_set",
+		Name:        "cq_guard_policy_set",
 		Description: "Add or update a guard policy rule for a tool. action: allow | deny | audit_only.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -156,7 +156,7 @@ func RegisterGuardHandlers(reg *mcp.Registry, eng *guard.Engine) {
 
 	// c4_guard_policy_list — list current DB-stored policies
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_guard_policy_list",
+		Name:        "cq_guard_policy_list",
 		Description: "List all guard policy rules currently stored in the database.",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -186,7 +186,7 @@ func RegisterGuardHandlers(reg *mcp.Registry, eng *guard.Engine) {
 
 	// c4_guard_role_assign — assign role to actor
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_guard_role_assign",
+		Name:        "cq_guard_role_assign",
 		Description: "Assign a role to an actor for RBAC enforcement.",
 		InputSchema: map[string]any{
 			"type": "object",

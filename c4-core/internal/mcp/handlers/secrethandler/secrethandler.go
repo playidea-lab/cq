@@ -19,7 +19,7 @@ const maxSecretKeyBytes = 256
 // store must not be nil.
 func Register(reg *mcp.Registry, store *secrets.Store) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_secret_set",
+		Name:        "cq_secret_set",
 		Description: "Store an encrypted secret in ~/.c4/secrets.db. Use for API keys and credentials instead of config.yaml.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -62,7 +62,7 @@ func Register(reg *mcp.Registry, store *secrets.Store) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_secret_get",
+		Name:        "cq_secret_get",
 		Description: "Retrieve a secret from ~/.c4/secrets.db. WARNING: the plaintext value is returned in the response and will appear in the LLM context window. Prefer using c4_secret_set and relying on automatic key resolution in config rather than calling this tool directly.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -98,7 +98,7 @@ func Register(reg *mcp.Registry, store *secrets.Store) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_secret_list",
+		Name:        "cq_secret_list",
 		Description: "List all secret key names stored in ~/.c4/secrets.db (values not shown).",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -113,7 +113,7 @@ func Register(reg *mcp.Registry, store *secrets.Store) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_secret_delete",
+		Name:        "cq_secret_delete",
 		Description: "Delete a secret from ~/.c4/secrets.db.",
 		InputSchema: map[string]any{
 			"type": "object",

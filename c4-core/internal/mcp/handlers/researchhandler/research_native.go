@@ -33,7 +33,7 @@ func SetResearchKnowledgeStore(ks *knowledge.Store) {
 // Replaces RegisterResearchProxyHandlers — no Python sidecar needed.
 func RegisterResearchNativeHandlers(reg *mcp.Registry, store *research.Store) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_start",
+		Name:        "cq_research_start",
 		Description: "Start a research project (paper + experiments iteration loop)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -48,7 +48,7 @@ func RegisterResearchNativeHandlers(reg *mcp.Registry, store *research.Store) {
 	}, researchStartHandler(store))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_status",
+		Name:        "cq_research_status",
 		Description: "Get research project status with iteration history",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -60,7 +60,7 @@ func RegisterResearchNativeHandlers(reg *mcp.Registry, store *research.Store) {
 	}, researchStatusHandler(store))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_record",
+		Name:        "cq_research_record",
 		Description: "Record review scores, gaps, or experiment results for the current iteration",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -77,7 +77,7 @@ func RegisterResearchNativeHandlers(reg *mcp.Registry, store *research.Store) {
 	}, researchRecordHandler(store))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_approve",
+		Name:        "cq_research_approve",
 		Description: "Approve iteration outcome: continue to next iteration, pause, or complete the project",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -90,7 +90,7 @@ func RegisterResearchNativeHandlers(reg *mcp.Registry, store *research.Store) {
 	}, researchApproveHandler(store))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_next",
+		Name:        "cq_research_next",
 		Description: "Suggest next action for a research project based on current state",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -102,7 +102,7 @@ func RegisterResearchNativeHandlers(reg *mcp.Registry, store *research.Store) {
 	}, researchNextHandler(store))
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_loop_stop",
+		Name:        "cq_research_loop_stop",
 		Description: "자율 연구 루프 중단 — 현재 실행 중인 루프를 graceful하게 정지",
 		InputSchema: map[string]any{
 			"type": "object",

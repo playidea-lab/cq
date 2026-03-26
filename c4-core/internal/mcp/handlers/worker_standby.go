@@ -52,7 +52,7 @@ func RegisterWorkerHandlers(reg *mcp.Registry, deps *WorkerDeps) {
 // registerWorkerStandby registers the blocking standby tool.
 func registerWorkerStandby(reg *mcp.Registry, deps *WorkerDeps) {
 	reg.RegisterBlocking(mcp.ToolSchema{
-		Name:        "c4_worker_standby",
+		Name:        "cq_worker_standby",
 		Description: "Register as a Hub worker and block until a job is available or shutdown is requested. Polls every 5 seconds with 30-second heartbeats. Returns job info when available.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -309,7 +309,7 @@ func handleWorkerStandby(mcpCtx context.Context, deps *WorkerDeps, raw json.RawM
 // registerWorkerComplete registers the job completion tool.
 func registerWorkerComplete(reg *mcp.Registry, deps *WorkerDeps) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_worker_complete",
+		Name:        "cq_worker_complete",
 		Description: "Report job completion with status and optional commit SHA. Updates Hub, Messenger channel, and EventBus.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -403,7 +403,7 @@ func handleWorkerComplete(deps *WorkerDeps, raw json.RawMessage) (any, error) {
 // registerWorkerShutdown registers the graceful shutdown tool.
 func registerWorkerShutdown(reg *mcp.Registry, deps *WorkerDeps) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_worker_shutdown",
+		Name:        "cq_worker_shutdown",
 		Description: "Request graceful shutdown of a worker. The worker will stop on its next poll cycle.",
 		InputSchema: map[string]any{
 			"type": "object",

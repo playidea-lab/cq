@@ -21,7 +21,7 @@ type HealthDeps struct {
 // RegisterHealthHandler registers the c4_health MCP tool.
 func RegisterHealthHandler(reg *mcp.Registry, deps *HealthDeps) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_health",
+		Name:        "cq_health",
 		Description: "Check subsystem health: sqlite, sidecar, knowledge",
 		InputSchema: map[string]any{
 			"type":       "object",

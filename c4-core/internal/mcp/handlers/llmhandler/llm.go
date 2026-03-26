@@ -29,7 +29,7 @@ func RegisterCostTrackerWidget(rs *apps.ResourceStore, html string) {
 // db may be nil (stats tool returns zeros when DB is unavailable).
 func RegisterLLMHandlers(reg *mcp.Registry, gateway *llm.Gateway, db *sql.DB) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_llm_call",
+		Name:        "cq_llm_call",
 		Description: "Send a chat request through the LLM gateway with automatic routing and cost tracking",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -63,7 +63,7 @@ func RegisterLLMHandlers(reg *mcp.Registry, gateway *llm.Gateway, db *sql.DB) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_llm_providers",
+		Name:        "cq_llm_providers",
 		Description: "List registered LLM providers and their available models",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -74,7 +74,7 @@ func RegisterLLMHandlers(reg *mcp.Registry, gateway *llm.Gateway, db *sql.DB) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_llm_costs",
+		Name:        "cq_llm_costs",
 		Description: "Get LLM usage cost report for this session — model breakdown, cache hit rate, and total spend",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -113,7 +113,7 @@ func RegisterLLMHandlers(reg *mcp.Registry, gateway *llm.Gateway, db *sql.DB) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_llm_usage_stats",
+		Name:        "cq_llm_usage_stats",
 		Description: "Get LLM usage cost and cache statistics for the last N hours from persistent storage",
 		InputSchema: map[string]any{
 			"type": "object",

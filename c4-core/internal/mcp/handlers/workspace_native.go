@@ -13,7 +13,7 @@ import (
 // RegisterWorkspaceNativeHandlers registers 3 c4_workspace_* tools as Go native handlers.
 func RegisterWorkspaceNativeHandlers(reg *mcp.Registry) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_workspace_create",
+		Name:        "cq_workspace_create",
 		Description: "Create a new c2 workspace with default sections for a project type",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -28,7 +28,7 @@ func RegisterWorkspaceNativeHandlers(reg *mcp.Registry) {
 	}, workspaceCreateHandler())
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_workspace_load",
+		Name:        "cq_workspace_load",
 		Description: "Load and parse a c2_workspace.md file from a project directory",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -40,7 +40,7 @@ func RegisterWorkspaceNativeHandlers(reg *mcp.Registry) {
 	}, workspaceLoadHandler())
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_workspace_save",
+		Name:        "cq_workspace_save",
 		Description: "Save workspace state as c2_workspace.md in the project directory",
 		InputSchema: map[string]any{
 			"type": "object",

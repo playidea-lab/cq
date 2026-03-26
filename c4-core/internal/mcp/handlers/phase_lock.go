@@ -18,7 +18,7 @@ func RegisterPhaseLockHandlers(reg *mcp.Registry, rootDir string) {
 
 	// c4_phase_lock_acquire
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_phase_lock_acquire",
+		Name:        "cq_phase_lock_acquire",
 		Description: "Acquire an advisory phase lock to prevent concurrent polish/finish operations. Returns {acquired: true} on success or {acquired: false, error: {code, message, details}} if lock is held.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -37,7 +37,7 @@ func RegisterPhaseLockHandlers(reg *mcp.Registry, rootDir string) {
 
 	// c4_phase_lock_release
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_phase_lock_release",
+		Name:        "cq_phase_lock_release",
 		Description: "Release a previously acquired advisory phase lock. Returns {released: true} on success.",
 		InputSchema: map[string]any{
 			"type": "object",

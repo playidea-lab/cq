@@ -28,7 +28,7 @@ func RegisterPersonaHandlers(reg *mcp.Registry, store *SQLiteStore) {
 	projectRoot := store.projectRoot
 	// c4_persona_stats
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_persona_stats",
+		Name:        "cq_persona_stats",
 		Description: "Get performance statistics for a persona (approved/rejected ratio, avg review score)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -69,7 +69,7 @@ func RegisterPersonaHandlers(reg *mcp.Registry, store *SQLiteStore) {
 
 	// c4_persona_evolve
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_persona_evolve",
+		Name:        "cq_persona_evolve",
 		Description: "Suggest persona evolution based on task outcomes (auto-applies to Soul)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -170,7 +170,7 @@ type TeamMember struct {
 func RegisterTeamHandlers(reg *mcp.Registry, projectRoot string) {
 	// c4_whoami
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_whoami",
+		Name:        "cq_whoami",
 		Description: "Get or set current user identity, roles, and active persona",
 		InputSchema: map[string]any{
 			"type": "object",

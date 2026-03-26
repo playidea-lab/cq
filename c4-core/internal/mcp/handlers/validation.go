@@ -43,7 +43,7 @@ func RegisterValidationHandlers(reg *mcp.Registry, rootDir string, rs ...*apps.R
 	}
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_run_validation",
+		Name:        "cq_run_validation",
 		Description: "Run validation commands (tests, linters, type checks)",
 		InputSchema: map[string]any{
 			"type": "object",

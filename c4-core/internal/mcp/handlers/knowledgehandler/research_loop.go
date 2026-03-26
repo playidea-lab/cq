@@ -13,7 +13,7 @@ import (
 // RegisterResearchLoopHandlers registers the c4_research_loop_start tool.
 func RegisterResearchLoopHandlers(reg *mcp.Registry, opts *KnowledgeNativeOpts) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_loop_start",
+		Name:        "cq_research_loop_start",
 		Description: "자율 연구 루프 시작 — hypothesis_id를 기점으로 실험→Debate→가설 등록 루프를 자동 실행",
 		InputSchema: map[string]any{
 			"type": "object",

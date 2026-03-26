@@ -21,7 +21,7 @@ func RegisterDatasetHandlers(reg *mcp.Registry, client *drive.DatasetClient, pro
 	}
 	// c4_drive_dataset_upload — Upload a local directory as a versioned dataset
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_drive_dataset_upload",
+		Name:        "cq_drive_dataset_upload",
 		Description: "Upload a local directory to C4 Drive as a versioned dataset (content-addressed storage)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -60,7 +60,7 @@ func RegisterDatasetHandlers(reg *mcp.Registry, client *drive.DatasetClient, pro
 
 	// c4_drive_dataset_list — List dataset versions
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_drive_dataset_list",
+		Name:        "cq_drive_dataset_list",
 		Description: "List versions of a dataset (or all datasets) in C4 Drive",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -84,7 +84,7 @@ func RegisterDatasetHandlers(reg *mcp.Registry, client *drive.DatasetClient, pro
 
 	// c4_drive_dataset_pull — Download a dataset version to local directory
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_drive_dataset_pull",
+		Name:        "cq_drive_dataset_pull",
 		Description: "Pull a dataset version from C4 Drive to a local directory (incremental download)",
 		InputSchema: map[string]any{
 			"type": "object",

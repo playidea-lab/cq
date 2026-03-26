@@ -85,7 +85,7 @@ type HeartbeatStore interface {
 func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 	// c4_get_task
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_get_task",
+		Name:        "cq_get_task",
 		Description: "Request next task assignment for a worker. Optionally specify task_id to request a specific task.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -107,7 +107,7 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 
 	// c4_submit
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_submit",
+		Name:        "cq_submit",
 		Description: "Report task completion with validation results",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -150,7 +150,7 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 
 	// c4_add_todo
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_add_todo",
+		Name:        "cq_add_todo",
 		Description: "Add a new task to the queue with optional dependencies",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -183,7 +183,7 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 
 	// c4_request_changes
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_request_changes",
+		Name:        "cq_request_changes",
 		Description: "Reject a review task and create next version (T-001-0 → T-001-1 + R-001-1)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -200,7 +200,7 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 
 	// c4_mark_blocked
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_mark_blocked",
+		Name:        "cq_mark_blocked",
 		Description: "Mark a task as blocked after max retry attempts",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -219,7 +219,7 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 
 	// c4_task_list
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_task_list",
+		Name:        "cq_task_list",
 		Description: "List tasks with optional status/domain/worker filtering",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -237,7 +237,7 @@ func RegisterTaskHandlers(reg *mcp.Registry, store Store) {
 
 	// c4_worker_heartbeat
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_worker_heartbeat",
+		Name:        "cq_worker_heartbeat",
 		Description: "Send a heartbeat for a worker to prevent stale task reassignment. Call every heartbeat_interval_sec seconds while doing long operations (file editing, builds).",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -746,7 +746,7 @@ type AdminStore interface {
 func RegisterTaskAdminHandlers(reg *mcp.Registry, s AdminStore) {
 	// c4_stale_tasks — list in_progress tasks that haven't been updated recently.
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_stale_tasks",
+		Name:        "cq_stale_tasks",
 		Description: "List in_progress tasks that haven't been updated recently (possible stuck workers). Default threshold is 30 minutes.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -778,7 +778,7 @@ func RegisterTaskAdminHandlers(reg *mcp.Registry, s AdminStore) {
 
 	// c4_reset_task — reset a single stuck in_progress task back to pending.
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_reset_task",
+		Name:        "cq_reset_task",
 		Description: "Reset a stuck in_progress task back to pending so a new worker can pick it up. Only works on in_progress tasks.",
 		InputSchema: map[string]any{
 			"type": "object",

@@ -16,7 +16,7 @@ import (
 func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client, cfgMgr *config.Manager) {
 	// c4_event_publish — Publish an event to the EventBus
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_event_publish",
+		Name:        "cq_event_publish",
 		Description: "Publish an event to the C3 EventBus for event-driven pipelines",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -59,7 +59,7 @@ func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client, cfgMgr
 
 	// c4_event_list — List recent events
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_event_list",
+		Name:        "cq_event_list",
 		Description: "List recent events from the C3 EventBus",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -109,7 +109,7 @@ func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client, cfgMgr
 
 	// c4_rule_add — Add an event routing rule
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_rule_add",
+		Name:        "cq_rule_add",
 		Description: "Add an event routing rule to the C3 EventBus",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -169,7 +169,7 @@ func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client, cfgMgr
 
 	// c4_rule_list — List all rules
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_rule_list",
+		Name:        "cq_rule_list",
 		Description: "List all event routing rules in the C3 EventBus",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -203,7 +203,7 @@ func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client, cfgMgr
 
 	// c4_rule_remove — Remove a rule
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_rule_remove",
+		Name:        "cq_rule_remove",
 		Description: "Remove an event routing rule from the C3 EventBus",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -235,7 +235,7 @@ func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client, cfgMgr
 
 	// c4_rule_toggle — Enable or disable a rule
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_rule_toggle",
+		Name:        "cq_rule_toggle",
 		Description: "Enable or disable an event routing rule in the C3 EventBus",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -274,7 +274,7 @@ func RegisterEventBusHandlers(reg *mcp.Registry, client *eventbus.Client, cfgMgr
 
 	// c4_notification_channels — List configured notification channels
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_notification_channels",
+		Name:        "cq_notification_channels",
 		Description: "List configured notification channels from config (notifications.channels). URL is masked for security.",
 		InputSchema: map[string]any{
 			"type":       "object",

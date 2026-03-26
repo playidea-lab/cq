@@ -16,7 +16,7 @@ import (
 // RegisterCDPHandlers registers c4_cdp_run and c4_cdp_list tools.
 func RegisterCDPHandlers(reg *mcp.Registry, runner *cdp.Runner) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_cdp_run",
+		Name:        "cq_cdp_run",
 		Description: "Execute JavaScript in a Chromium app via CDP. Connect to any app opened with --remote-debugging-port. Runs entire script in one call for token efficiency.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -34,7 +34,7 @@ func RegisterCDPHandlers(reg *mcp.Registry, runner *cdp.Runner) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_cdp_list",
+		Name:        "cq_cdp_list",
 		Description: "List open tabs/targets in a Chromium browser connected via CDP",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -47,7 +47,7 @@ func RegisterCDPHandlers(reg *mcp.Registry, runner *cdp.Runner) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name: "c4_cdp_action",
+		Name: "cq_cdp_action",
 		Description: "Interact with DOM elements via stable ref IDs (resolution-independent). " +
 			"Workflow: scan_elements → discover refs → click/type/get_text by ref. " +
 			"More reliable than raw JS for SPAs since refs persist across DOM updates.",
@@ -68,7 +68,7 @@ func RegisterCDPHandlers(reg *mcp.Registry, runner *cdp.Runner) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_webmcp_discover",
+		Name:        "cq_webmcp_discover",
 		Description: "Discover WebMCP tools exposed by a web page via navigator.modelContext API (Chrome 146+). CDP auto-detected.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -85,7 +85,7 @@ func RegisterCDPHandlers(reg *mcp.Registry, runner *cdp.Runner) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_webmcp_call",
+		Name:        "cq_webmcp_call",
 		Description: "Call a WebMCP tool on a web page via navigator.modelContext API (Chrome 146+). CDP auto-detected.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -103,7 +103,7 @@ func RegisterCDPHandlers(reg *mcp.Registry, runner *cdp.Runner) {
 	})
 
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_webmcp_context",
+		Name:        "cq_webmcp_context",
 		Description: "Get, set, or clear page context via navigator.modelContext (provideContext/clearContext). CDP auto-detected.",
 		InputSchema: map[string]any{
 			"type": "object",

@@ -23,7 +23,7 @@ type IntelligenceStatsDeps struct {
 // RegisterIntelligenceStatsHandler registers the c4_intelligence_stats MCP tool.
 func RegisterIntelligenceStatsHandler(reg *mcp.Registry, deps *IntelligenceStatsDeps) {
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_intelligence_stats",
+		Name:        "cq_intelligence_stats",
 		Description: "Show knowledge + ontology + circulation monitoring stats. Returns doc counts, ontology node distributions, and knowledge flow metrics.",
 		InputSchema: map[string]any{
 			"type":       "object",

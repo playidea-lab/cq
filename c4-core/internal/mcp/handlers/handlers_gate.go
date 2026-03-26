@@ -14,7 +14,7 @@ import (
 func RegisterGateHandlers(reg *mcp.Registry, wm *gate.WebhookManager, sched *gate.Scheduler, slack *gate.SlackConnector, github *gate.GitHubConnector) {
 	// c4_gate_webhook_register — register a webhook endpoint
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_gate_webhook_register",
+		Name:        "cq_gate_webhook_register",
 		Description: "Register an outbound webhook endpoint that receives C4 events",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -57,7 +57,7 @@ func RegisterGateHandlers(reg *mcp.Registry, wm *gate.WebhookManager, sched *gat
 
 	// c4_gate_webhook_list — list registered endpoints
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_gate_webhook_list",
+		Name:        "cq_gate_webhook_list",
 		Description: "List all registered outbound webhook endpoints",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -82,7 +82,7 @@ func RegisterGateHandlers(reg *mcp.Registry, wm *gate.WebhookManager, sched *gat
 
 	// c4_gate_webhook_test — send a test event to an endpoint
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_gate_webhook_test",
+		Name:        "cq_gate_webhook_test",
 		Description: "Send a test event to a registered webhook endpoint",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -124,7 +124,7 @@ func RegisterGateHandlers(reg *mcp.Registry, wm *gate.WebhookManager, sched *gat
 
 	// c4_gate_schedule_add — add a cron schedule
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_gate_schedule_add",
+		Name:        "cq_gate_schedule_add",
 		Description: "Add a recurring cron schedule (supports @every <duration>, e.g. @every 1m)",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -175,7 +175,7 @@ func RegisterGateHandlers(reg *mcp.Registry, wm *gate.WebhookManager, sched *gat
 
 	// c4_gate_schedule_list — list active schedules
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_gate_schedule_list",
+		Name:        "cq_gate_schedule_list",
 		Description: "List all active cron schedules",
 		InputSchema: map[string]any{
 			"type":       "object",
@@ -201,7 +201,7 @@ func RegisterGateHandlers(reg *mcp.Registry, wm *gate.WebhookManager, sched *gat
 
 	// c4_gate_connector_status — check Slack/GitHub connector status
 	reg.Register(mcp.ToolSchema{
-		Name:        "c4_gate_connector_status",
+		Name:        "cq_gate_connector_status",
 		Description: "Check the status of Slack and GitHub connectors",
 		InputSchema: map[string]any{
 			"type":       "object",

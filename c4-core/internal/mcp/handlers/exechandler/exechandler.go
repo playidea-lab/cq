@@ -25,7 +25,7 @@ const (
 // Register registers the c4_execute tool on the registry.
 func Register(reg *mcp.Registry, rootDir string) {
 	reg.Register(mcp.ToolSchema{
-		Name: "c4_execute",
+		Name: "cq_execute",
 		Description: "Run a shell command and return compressed output. " +
 			"Use instead of Bash for commands with large output (tests, logs, git history, builds). " +
 			"Automatically extracts relevant lines (errors, failures, warnings) and omits noise. " +
