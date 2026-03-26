@@ -397,6 +397,25 @@ func (dc *DatasetClient) uploadCAS(ctx context.Context, localPath, hash string) 
 		return false, fmt.Errorf("stat: %w", err)
 	}
 
+	// For large files, try TUS resumable upload first; fall back to standard POST on failure.
+	if fi.Size() >= tusThreshold && tusUploadImpl != nil {
+		f.Close()
+		if tusErr := tusUploadImpl(ctx, c.supabaseURL, c.bucketName, storagePath, localPath, c.setHeaders); tusErr == nil {
+			return false, nil
+		}
+		// TUS failed — re-open for standard upload. Assign to existing f so the
+		// outer defer f.Close() still fires on the right handle.
+		f, err = os.Open(localPath)
+		if err != nil {
+			return false, fmt.Errorf("reopen after tus failure: %w", err)
+		}
+		fi, err = f.Stat()
+		if err != nil {
+			f.Close()
+			return false, fmt.Errorf("stat after tus failure: %w", err)
+		}
+	}
+
 	uploadReq, err := http.NewRequestWithContext(ctx, "POST", objectURL, f)
 	if err != nil {
 		return false, fmt.Errorf("upload request: %w", err)
@@ -423,6 +442,7 @@ func (dc *DatasetClient) uploadCAS(ctx context.Context, localPath, hash string) 
 }
 
 // downloadCAS downloads a CAS object to localPath, creating parent dirs as needed.
+// When resumeDownloadImpl is available (c0_drive build), it uses Range-based resumable download.
 func (dc *DatasetClient) downloadCAS(ctx context.Context, hash, localPath string) error {
 	c := dc.client
 	storagePath, err := dc.casStoragePath(hash)
@@ -431,6 +451,12 @@ func (dc *DatasetClient) downloadCAS(ctx context.Context, hash, localPath string
 	}
 	objectURL := c.supabaseURL + "/storage/v1/object/" + c.bucketName + "/" + storagePath
 
+	// Use Range-based resumable download when available.
+	if resumeDownloadImpl != nil {
+		return resumeDownloadImpl(ctx, objectURL, localPath, c.setHeaders)
+	}
+
+	// Fallback: standard GET download.
 	req, err := http.NewRequestWithContext(ctx, "GET", objectURL, nil)
 	if err != nil {
 		return fmt.Errorf("create download request: %w", err)

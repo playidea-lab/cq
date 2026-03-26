@@ -5,6 +5,7 @@
 package drive
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -46,6 +47,17 @@ const DefaultBucketName = "c4-drive"
 
 const driveMaxRetries = 3
 
+// tusThreshold is the file size above which TUS resumable upload is used.
+const tusThreshold = 10 << 20 // 10MB
+
+// tusUploadImpl is set by the c0_drive build to wire in TUS resumable upload.
+// nil when the c0_drive tag is absent.
+var tusUploadImpl func(ctx context.Context, supabaseURL, bucketName, storagePath, localPath string, setHeaders func(*http.Request)) error
+
+// resumeDownloadImpl is set by the c0_drive build to wire in Range-based resumable download.
+// nil when the c0_drive tag is absent.
+var resumeDownloadImpl func(ctx context.Context, downloadURL, destPath string, setHeaders func(*http.Request)) error
+
 // Client provides access to C4 Drive (Supabase Storage + PostgREST metadata).
 type Client struct {
 	supabaseURL string // e.g. https://xxx.supabase.co
@@ -69,7 +81,7 @@ func NewClient(supabaseURL, apiKey string, tp tokenProvider, projectID string, b
 		tp:          tp,
 		projectID:   projectID,
 		bucketName:  bn,
-		httpClient:  &http.Client{Timeout: 60 * time.Second},
+		httpClient:  &http.Client{},
 	}
 }
 
@@ -104,36 +116,57 @@ func (c *Client) Upload(localPath, drivePath string, metadata json.RawMessage) (
 	hashHex := hex.EncodeToString(h.Sum(nil))
 	storagePath := c.projectID + "/" + hashHex[:8] + "/" + path.Base(filepath.ToSlash(localPath))
 
-	// Upload to Supabase Storage
-	uploadURL := c.supabaseURL + "/storage/v1/object/" + c.bucketName + "/" + storagePath
-	req, err := http.NewRequest("POST", uploadURL, f)
-	if err != nil {
-		return nil, fmt.Errorf("create upload request: %w", err)
-	}
-	req.ContentLength = fi.Size()
-	// Enable retry by seeking file back to start
-	req.GetBody = func() (io.ReadCloser, error) {
-		if _, err := f.Seek(0, io.SeekStart); err != nil {
-			return nil, err
+	// For large files, try TUS resumable upload first and fall back to standard POST on failure.
+	if fi.Size() >= tusThreshold && tusUploadImpl != nil {
+		f.Close() // tusUploadImpl opens the file itself; close before handing off
+		tusErr := tusUploadImpl(context.Background(), c.supabaseURL, c.bucketName, storagePath, localPath, c.setHeaders)
+		if tusErr != nil {
+			// TUS failed (e.g. self-hosted Supabase without TUS support) — fall through to standard upload.
+			newF, openErr := os.Open(localPath)
+			if openErr != nil {
+				return nil, fmt.Errorf("reopen file after tus failure: %w", openErr)
+			}
+			defer newF.Close()
+			f = newF
+			goto standardUpload
 		}
-		return io.NopCloser(f), nil
-	}
-	req.Header.Set("Content-Type", "application/octet-stream")
-	c.setHeaders(req)
-	// Supabase Storage uses x-upsert for overwrite
-	req.Header.Set("x-upsert", "true")
-
-	resp, err := c.doWithRetry(req)
-	if err != nil {
-		return nil, fmt.Errorf("upload request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("upload failed (HTTP %d): %s", resp.StatusCode, string(body))
+		goto metadataInsert
 	}
 
+standardUpload:
+	// Upload to Supabase Storage (standard POST)
+	{
+		uploadURL := c.supabaseURL + "/storage/v1/object/" + c.bucketName + "/" + storagePath
+		req, err := http.NewRequest("POST", uploadURL, f)
+		if err != nil {
+			return nil, fmt.Errorf("create upload request: %w", err)
+		}
+		req.ContentLength = fi.Size()
+		// Enable retry by seeking file back to start
+		req.GetBody = func() (io.ReadCloser, error) {
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				return nil, err
+			}
+			return io.NopCloser(f), nil
+		}
+		req.Header.Set("Content-Type", "application/octet-stream")
+		c.setHeaders(req)
+		// Supabase Storage uses x-upsert for overwrite
+		req.Header.Set("x-upsert", "true")
+
+		resp, err := c.doWithRetry(req)
+		if err != nil {
+			return nil, fmt.Errorf("upload request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("upload failed (HTTP %d): %s", resp.StatusCode, string(body))
+		}
+	}
+
+metadataInsert:
 	// Normalize drive path
 	drivePath = normalizePath(drivePath)
 
@@ -219,8 +252,14 @@ func (c *Client) Download(drivePath, destPath string) error {
 		return fmt.Errorf("%s is a folder", drivePath)
 	}
 
-	// Download from Supabase Storage
 	downloadURL := c.supabaseURL + "/storage/v1/object/" + c.bucketName + "/" + info.StoragePath
+
+	// Use Range-based resumable download when available.
+	if resumeDownloadImpl != nil {
+		return resumeDownloadImpl(context.Background(), downloadURL, destPath, c.setHeaders)
+	}
+
+	// Fallback: standard GET download.
 	req, err := http.NewRequest("GET", downloadURL, nil)
 	if err != nil {
 		return fmt.Errorf("create download request: %w", err)
@@ -493,7 +532,11 @@ func (c *Client) doWithRetry(req *http.Request) (*http.Response, error) {
 			}
 			c.setHeaders(req) // refresh token on retry
 		}
-		resp, err := c.httpClient.Do(req)
+		// Per-request timeout: keeps small requests bounded without capping
+		// large file transfers at the client level.
+		ctx, cancel := context.WithTimeout(req.Context(), 30*time.Second)
+		resp, err := c.httpClient.Do(req.WithContext(ctx))
+		cancel()
 		if err != nil {
 			lastErr = err
 			continue
