@@ -834,12 +834,13 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey string, cloudTP *clou
 	}
 
 	var job struct {
-		ID           string   `json:"id"`
-		Name         string   `json:"name"`
-		Command      string   `json:"command"`
-		Workdir      string   `json:"workdir"`
-		Datasets     []string `json:"datasets"`
-		ExperimentID string   `json:"experiment_id"`
+		ID              string          `json:"id"`
+		Name            string          `json:"name"`
+		Command         string          `json:"command"`
+		Workdir         string          `json:"workdir"`
+		Datasets        []string        `json:"datasets"`
+		ExperimentID    string          `json:"experiment_id"`
+		OutputArtifacts json.RawMessage `json:"output_artifacts"`
 	}
 	json.Unmarshal(result.Job, &job)
 
@@ -908,6 +909,39 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey string, cloudTP *clou
 			fmt.Fprintf(os.Stderr, "cq: job %s failed: %v\n", job.ID, cmdErr)
 		} else {
 			fmt.Printf("cq: job %s completed\n", job.ID)
+
+			// Upload output artifacts (best-effort — failure does not change job status).
+			if len(job.OutputArtifacts) > 0 {
+				var artifacts []hub.ArtifactRef
+				if parseErr := json.Unmarshal(job.OutputArtifacts, &artifacts); parseErr != nil {
+					fmt.Fprintf(os.Stderr, "cq: job %s: parse output_artifacts: %v\n", job.ID, parseErr)
+				} else {
+					hubClient := hub.NewClient(hub.HubConfig{
+						SupabaseURL: supabaseURL,
+						SupabaseKey: anonKey,
+					})
+					hubClient.SetTokenFunc(cloudTP.Token)
+					for _, art := range artifacts {
+						localPath := art.LocalPath
+						if localPath == "" {
+							localPath = art.Path
+						}
+						if !filepath.IsAbs(localPath) {
+							localPath = filepath.Join(job.Workdir, localPath)
+						}
+						if _, statErr := os.Stat(localPath); statErr != nil {
+							fmt.Fprintf(os.Stderr, "cq: job %s: artifact %s not found: %v\n", job.ID, art.Path, statErr)
+							continue
+						}
+						fmt.Printf("cq: job %s: uploading artifact %s\n", job.ID, art.Path)
+						if _, uerr := hubClient.UploadArtifact(job.ID, art.Path, localPath); uerr != nil {
+							fmt.Fprintf(os.Stderr, "cq: job %s: upload artifact %s failed: %v\n", job.ID, art.Path, uerr)
+						} else {
+							fmt.Printf("cq: job %s: artifact %s uploaded\n", job.ID, art.Path)
+						}
+					}
+				}
+			}
 		}
 
 		// Store job log lines in Supabase (best-effort, max 500 lines).
