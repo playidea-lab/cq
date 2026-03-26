@@ -1,7 +1,28 @@
-name = "mcp-wellknown-proxy"
-main = "worker.js"
-compatibility_date = "2024-01-01"
+name = "cq-mcp-worker"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
 
+# Serve all mcp.pilab.kr traffic (not just /.well-known/*)
+# Replaces: { pattern = "mcp.pilab.kr/.well-known/*", zone_name = "pilab.kr" }
 routes = [
-  { pattern = "mcp.pilab.kr/.well-known/*", zone_name = "pilab.kr" }
+  { pattern = "mcp.pilab.kr/*", zone_name = "pilab.kr" }
 ]
+
+# KV namespace for OAuth state storage
+# Create with: wrangler kv:namespace create OAUTH_KV
+# Then paste the resulting id below
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# Environment variables (non-secret)
+[vars]
+SUPABASE_URL = "https://fhuomvsswxiwbfqjsgit.supabase.co"
+
+# Secrets (set via `wrangler secret put <NAME>`):
+#   GITHUB_CLIENT_ID
+#   GITHUB_CLIENT_SECRET
+#   SUPABASE_SERVICE_ROLE_KEY
+#   MCP_API_KEY          (optional, for backward-compat legacy auth)
+#   OPENAI_API_KEY       (optional, for embeddings)
