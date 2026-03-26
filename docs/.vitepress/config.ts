@@ -20,7 +20,8 @@ export default defineConfig({
           { text: 'Examples', link: '/examples/' },
           { text: 'Reference', link: '/reference/commands' },
           { text: 'For Agents', link: '/for-agents/' },
-          { text: 'GitHub', link: 'https://github.com/PlayIdea-Lab/cq' }
+          { text: 'GitHub', link: 'https://github.com/PlayIdea-Lab/cq' },
+          { text: 'Q&A', link: 'https://github.com/PlayIdea-Lab/cq/discussions' }
         ],
         sidebar: {
           '/guide/': [
@@ -29,8 +30,8 @@ export default defineConfig({
               items: [
                 { text: 'What is CQ?', link: '/guide/' },
                 { text: 'Installation', link: '/guide/install' },
+                { text: 'Tutorial (5 min)', link: '/guide/tutorial' },
                 { text: 'Quick Start', link: '/guide/quickstart' },
-                { text: 'Tiers', link: '/guide/tiers' },
                 { text: 'Remote Worker Setup', link: '/guide/worker-setup' },
                 { text: 'Remote MCP Access', link: '/guide/remote-mcp' },
                 { text: 'Researcher Workflow', link: '/guide/researcher-workflow' },
@@ -108,8 +109,8 @@ export default defineConfig({
               items: [
                 { text: 'CQ란?', link: '/ko/guide/' },
                 { text: '설치', link: '/ko/guide/install' },
+                { text: '튜토리얼 (5분)', link: '/ko/guide/tutorial' },
                 { text: '빠른 시작', link: '/ko/guide/quickstart' },
-                { text: '티어', link: '/ko/guide/tiers' },
                 { text: '원격 워커 설정', link: '/ko/guide/worker-setup' },
                 { text: '원격 MCP 접근', link: '/ko/guide/remote-mcp' },
                 { text: '연구자 워크플로우', link: '/ko/guide/researcher-workflow' },
