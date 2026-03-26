@@ -278,9 +278,7 @@ func (s *server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	for {
 		_, data, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("worker %s read error: %v", workerID, err)
-			}
+			log.Printf("worker %s read error (type=%T): %v", workerID, err, err)
 			return
 		}
 		conn.SetReadDeadline(time.Now().Add(pongWait))
