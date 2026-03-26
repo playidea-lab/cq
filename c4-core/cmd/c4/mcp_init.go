@@ -25,6 +25,7 @@ import (
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/mcp/handlers/gpuhandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/knowledgehandler"
+	"github.com/changmin/c4-core/internal/mcp/handlers/relayhandler"
 	"github.com/changmin/c4-core/internal/mcp/handlers/llmhandler"
 	"github.com/changmin/c4-core/internal/ontology"
 	"github.com/changmin/c4-core/internal/relay"
@@ -708,6 +709,17 @@ func newMCPServer() (*mcpServer, error) {
 			registerShutdownHook(func(_ *initContext) {
 				rc.Close()
 				relayCancel()
+			})
+
+			// Register cq_workers and cq_relay_call MCP tools for remote worker access.
+			anonKey := ""
+			if ctx.cfgMgr != nil {
+				anonKey = ctx.cfgMgr.GetConfig().Cloud.AnonKey
+			}
+			relayhandler.Register(reg, &relayhandler.Deps{
+				RelayURL:  relayCfg.URL,
+				AnonKey:   anonKey,
+				TokenFunc: tokenFunc,
 			})
 		}
 	}

@@ -251,6 +251,73 @@ func TestRelayClientPingKeepAlive(t *testing.T) {
 	}
 }
 
+// TestRelayClientServerPingPong verifies that when the server sends a Ping,
+// the client responds with a Pong. This is critical for gorilla-based relay
+// servers that close the connection if no Pong is received within pongWait (60s).
+func TestRelayClientServerPingPong(t *testing.T) {
+	pongReceived := make(chan struct{}, 1)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn := serveWS(t, w, r)
+		if conn == nil {
+			return
+		}
+		defer conn.Close()
+
+		// Give the client a moment to start its readLoop.
+		time.Sleep(50 * time.Millisecond)
+
+		// Send a Ping to the client.
+		ping := ws.NewPingFrame([]byte("keepalive"))
+		if err := ws.WriteFrame(conn, ping); err != nil {
+			t.Errorf("server write ping: %v", err)
+			return
+		}
+
+		// Read frames until we get a Pong response.
+		for {
+			frame, err := ws.ReadFrame(conn)
+			if err != nil {
+				t.Errorf("server read: %v", err)
+				return
+			}
+			if frame.Header.Masked {
+				ws.Cipher(frame.Payload, frame.Header.Mask, 0)
+			}
+			if frame.Header.OpCode == ws.OpPong {
+				if string(frame.Payload) != "keepalive" {
+					t.Errorf("pong payload: got %q, want %q", frame.Payload, "keepalive")
+				}
+				select {
+				case pongReceived <- struct{}{}:
+				default:
+				}
+				return
+			}
+			// Skip other frames (client pings, etc.)
+		}
+	}))
+	defer srv.Close()
+
+	wsURL := "ws://" + srv.Listener.Addr().String()
+	client := NewRelayClient(wsURL, "worker-pong", func() string { return "tok" }, nil)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := client.Connect(ctx); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+
+	select {
+	case <-pongReceived:
+		// Client correctly responded with Pong.
+	case <-ctx.Done():
+		t.Fatal("client did not respond with Pong to server Ping within timeout")
+	}
+}
+
 // TestRelayClientReadDeadline verifies that the client detects a dead connection
 // via the 90s read deadline. We simulate by having the server go silent after upgrade.
 func TestRelayClientReadDeadline(t *testing.T) {
