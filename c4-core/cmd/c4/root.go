@@ -32,6 +32,7 @@ var (
 	projectDir string
 	yesAll     bool // --yes / -y: skip all interactive confirmations
 	noServe    bool // --no-serve: skip auto-starting cq serve
+	serveMode  bool // set by `cq serve` — enables relay client and other serve-only features
 )
 
 var rootCmd = &cobra.Command{

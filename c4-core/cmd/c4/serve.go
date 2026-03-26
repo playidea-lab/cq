@@ -110,6 +110,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("home dir: %w", err)
 	}
 
+	// Enable relay client and other serve-only features.
+	serveMode = true
+
 	// Shared MCP server — used by tool-socket (UDS) and mcp-http (HTTP) components.
 	srv, err := newMCPServer()
 	if err != nil {

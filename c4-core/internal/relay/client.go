@@ -141,13 +141,13 @@ func (c *RelayClient) dial(ctx context.Context) (net.Conn, error) {
 	return conn, nil
 }
 
-// readLoop reads frames from conn, responds to server Pings with Pongs,
-// dispatches data messages to the handler, and writes responses back.
-// It exits when conn is closed or an error occurs.
+// readLoop reads messages from conn, dispatches them to the handler, and writes
+// responses back. It exits when conn is closed or an error occurs.
 //
-// Uses ws.ReadFrame instead of wsutil.ReadServerData so that control frames
-// (Ping/Pong/Close) are handled explicitly. The relay server (gorilla/websocket)
-// sends Pings every 30s and closes the connection if no Pong arrives within 60s.
+// Uses wsutil.ReadServerData which correctly handles the WebSocket state machine
+// (fragmentation, masking, control frames). Server Pings are kept alive by
+// pingLoop sending unsolicited Pong frames — the relay server's PongHandler
+// resets ReadDeadline on any Pong received.
 func (c *RelayClient) readLoop(ctx context.Context, conn net.Conn) {
 	defer func() {
 		conn.Close()
@@ -168,7 +168,7 @@ func (c *RelayClient) readLoop(ctx context.Context, conn net.Conn) {
 		// the connection is dead (NAT rebind, silent TCP drop, etc.).
 		conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 
-		frame, err := ws.ReadFrame(conn)
+		data, op, err := wsutil.ReadServerData(conn)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -177,27 +177,14 @@ func (c *RelayClient) readLoop(ctx context.Context, conn net.Conn) {
 			return
 		}
 
-		if frame.Header.Masked {
-			ws.Cipher(frame.Payload, frame.Header.Mask, 0)
+		if op == ws.OpClose {
+			return
+		}
+		if op != ws.OpText {
+			continue
 		}
 
-		switch frame.Header.OpCode {
-		case ws.OpClose:
-			return
-		case ws.OpPing:
-			// Respond with Pong to keep the connection alive.
-			// The gorilla relay server expects Pong within pongWait (60s).
-			c.mu.Lock()
-			err := wsutil.WriteClientMessage(conn, ws.OpPong, frame.Payload)
-			c.mu.Unlock()
-			if err != nil {
-				return
-			}
-		case ws.OpPong:
-			// Response to our ping from pingLoop — no action needed.
-		case ws.OpText:
-			go c.handleMessage(ctx, conn, frame.Payload)
-		}
+		go c.handleMessage(ctx, conn, data)
 	}
 }
 
@@ -314,10 +301,17 @@ func (c *RelayClient) reconnectLoop(ctx context.Context) {
 	}
 }
 
-// pingLoop sends WebSocket pings to keep the connection alive.
-// Intermediate proxies (Fly.io, NAT) may close idle connections without keepalive.
+// pingLoop sends WebSocket pings AND unsolicited pongs to keep the connection alive.
+//
+// Why both Ping and Pong?
+// - Ping: keeps intermediate proxies (Fly.io, NAT) from closing idle connections.
+// - Pong: the relay server (gorilla/websocket) has a PongHandler that resets its
+//   ReadDeadline on any Pong. Since wsutil.ReadServerData does not automatically
+//   respond to server Pings with Pongs, we send unsolicited Pongs to prevent the
+//   server from closing the connection after pongWait (60s).
+//
 // On WSL2, the interval is halved (15s) because the Hyper-V NAT has aggressive
-// conntrack timeouts that can drop connections even with 30s intervals.
+// conntrack timeouts.
 func (c *RelayClient) pingLoop(ctx context.Context) {
 	interval := 30 * time.Second
 	if isWSL2() {
@@ -342,11 +336,13 @@ func (c *RelayClient) pingLoop(ctx context.Context) {
 				continue
 			}
 
+			// Send both Ping (for proxies) and Pong (for gorilla server's PongHandler).
 			c.mu.Lock()
-			err := wsutil.WriteClientMessage(conn, ws.OpPing, nil)
+			_ = wsutil.WriteClientMessage(conn, ws.OpPing, nil)
+			err := wsutil.WriteClientMessage(conn, ws.OpPong, nil)
 			c.mu.Unlock()
 			if err != nil {
-				// Ping failed — connection is dead. readLoop will detect and trigger reconnect.
+				// Write failed — connection is dead. readLoop will detect and trigger reconnect.
 				continue
 			}
 		}

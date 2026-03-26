@@ -587,8 +587,10 @@ func newMCPServer() (*mcpServer, error) {
 	startEventSink(ctx)
 
 	// Wire relay client if relay.enabled and relay.url are configured.
-	// The relay client forwards MCP tools/call requests from the relay server to the local registry.
-	if ctx.cfgMgr != nil {
+	// Only connect in serve mode — cq mcp instances must not compete for the same worker_id.
+	// Multiple processes connecting with the same hostname causes connection cycling
+	// because the relay server closes the previous connection on each new connect.
+	if serveMode && ctx.cfgMgr != nil {
 		relayCfg := ctx.cfgMgr.GetConfig().Relay
 		if relayCfg.Enabled && relayCfg.URL != "" {
 			workerID, _ := os.Hostname()
@@ -711,10 +713,21 @@ func newMCPServer() (*mcpServer, error) {
 				relayCancel()
 			})
 
-			// Register cq_workers and cq_relay_call MCP tools for remote worker access.
+		}
+	}
+
+	// Register cq_workers and cq_relay_call MCP tools for remote worker access.
+	// These are HTTP-based (not WSS) so they work in both serve and mcp modes.
+	if ctx.cfgMgr != nil {
+		relayCfg := ctx.cfgMgr.GetConfig().Relay
+		if relayCfg.Enabled && relayCfg.URL != "" {
 			anonKey := ""
 			if ctx.cfgMgr != nil {
 				anonKey = ctx.cfgMgr.GetConfig().Cloud.AnonKey
+			}
+			var tokenFunc func() string
+			if ctx.cloudTP != nil {
+				tokenFunc = ctx.cloudTP.Token
 			}
 			relayhandler.Register(reg, &relayhandler.Deps{
 				RelayURL:  relayCfg.URL,
