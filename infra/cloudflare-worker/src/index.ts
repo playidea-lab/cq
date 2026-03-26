@@ -80,7 +80,7 @@ const TOOLS = [
   {
     name: "c4_knowledge_record",
     description:
-      "Save knowledge to the CQ shared knowledge base — an external memory accessible from any LLM (ChatGPT, Claude, Codex, Cursor). Call this when the user asks to save, remember, or preserve something, OR when a conversation reaches a meaningful conclusion worth keeping. The knowledge becomes searchable by any LLM via c4_knowledge_search. Write the content as if a different person or LLM will read it cold in a future session — lead with conclusions, not process.",
+      "Save knowledge to the user's external brain (CQ) — accessible from any LLM (ChatGPT, Claude, Codex, Gemini). You MUST call this proactively — do NOT wait for the user to ask. Call when: (1) A decision is made (technology choice, design approach, tradeoff), (2) A bug root cause is identified, (3) The user expresses a preference or constraint, (4) A factual discovery is made (API behavior, library quirk, performance finding), (5) A useful pattern or solution emerges. Write content as if a different LLM will read it cold in a future session — lead with conclusions, not process. The user's future self will thank you.",
     inputSchema: {
       type: "object",
       required: ["title", "content"],
@@ -106,6 +106,39 @@ const TOOLS = [
           items: { type: "string" },
           description:
             "2-5 lowercase labels for retrieval. Include domain (auth, database), type (decision, debug), and identifiers.",
+        },
+      },
+    },
+  },
+  {
+    name: "c4_session_summary",
+    description:
+      "Save a summary of this entire conversation to the user's external brain (CQ). You MUST call this exactly once before the conversation ends — when the user says goodbye, thanks you, or when the conversation naturally wraps up. Summarize: (1) What was the goal, (2) Key decisions and outcomes, (3) Unresolved questions or next steps. This is the user's safety net — even if you forgot to call c4_knowledge_record during the conversation, this captures the session. Do NOT skip this.",
+    inputSchema: {
+      type: "object",
+      required: ["title", "summary"],
+      properties: {
+        title: {
+          type: "string",
+          description:
+            "Session title. Format: '{Main Topic} — {Key Outcome}'. Example: 'Docker multi-stage build — reduced image from 1.2GB to 180MB'.",
+        },
+        summary: {
+          type: "string",
+          description:
+            "Markdown session summary. Structure: ## Goal (1 sentence), ## Key Decisions (bullet list), ## Discoveries (things learned), ## Unresolved (open questions or next steps). Be concise but self-contained.",
+        },
+        source: {
+          type: "string",
+          enum: ["chatgpt", "claude-web", "claude-code", "codex", "gemini", "cursor", "other"],
+          description:
+            "Which AI platform this conversation happened on. Use the platform you are running on.",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "2-5 lowercase labels. Include the main domain and 'session-summary' tag.",
         },
       },
     },
@@ -251,7 +284,6 @@ async function resolveSupabaseUserId(
   env: Env,
   githubId: number
 ): Promise<string | null> {
-  // Supabase stores GitHub identity in auth.identities; access via admin API
   const base = env.SUPABASE_URL.replace(/\/$/, "");
   const url = `${base}/auth/v1/admin/users?page=1&per_page=1000`;
   try {
@@ -265,14 +297,26 @@ async function resolveSupabaseUserId(
     const body = (await res.json()) as {
       users?: Array<{
         id: string;
+        app_metadata?: { provider?: string };
+        user_metadata?: { sub?: string; provider_id?: string };
         identities?: Array<{ provider: string; identity_data?: { sub?: string } }>;
       }>;
     };
+    const ghIdStr = String(githubId);
     for (const user of body.users ?? []) {
+      // Check user_metadata first (Supabase stores GitHub info here)
+      if (
+        user.app_metadata?.provider === "github" &&
+        (String(user.user_metadata?.sub) === ghIdStr ||
+         String(user.user_metadata?.provider_id) === ghIdStr)
+      ) {
+        return user.id;
+      }
+      // Fallback: check identities array
       for (const identity of user.identities ?? []) {
         if (
           identity.provider === "github" &&
-          String(identity.identity_data?.sub) === String(githubId)
+          String(identity.identity_data?.sub) === ghIdStr
         ) {
           return user.id;
         }
@@ -374,6 +418,41 @@ async function handleKnowledgeSearch(
   return JSON.stringify({ results, count: results.length, search_type: "ilike" });
 }
 
+// Resolve or create a project_id for the user.
+// Looks up existing projects by owner_id; if none, creates a default "remote-mcp" project.
+async function resolveProjectId(
+  env: Env,
+  userId: string | null
+): Promise<string> {
+  // Find user's most recent project
+  if (userId) {
+    const { data } = await supabaseGet(env, "c4_projects", {
+      select: "id",
+      owner_id: `eq.${userId}`,
+      order: "created_at.desc",
+      limit: "1",
+    });
+    if (Array.isArray(data) && data.length > 0) {
+      return (data[0] as { id: string }).id;
+    }
+  }
+
+  // No projects found — create a default "remote-mcp" project
+  if (!userId) {
+    throw new Error("Cannot create project without a valid user ID");
+  }
+  const projectId = crypto.randomUUID();
+  const { error } = await supabasePost(env, "c4_projects", {
+    id: projectId,
+    name: "remote-mcp",
+    owner_id: userId,
+  });
+  if (error) {
+    throw new Error(`Failed to create project: ${error}`);
+  }
+  return projectId;
+}
+
 async function handleKnowledgeRecord(
   env: Env,
   props: UserProps,
@@ -386,6 +465,12 @@ async function handleKnowledgeRecord(
 
   // Resolve Supabase user UUID to use as created_by
   const userId = await resolveSupabaseUserId(env, props.github_id);
+  let projectId: string;
+  try {
+    projectId = await resolveProjectId(env, userId);
+  } catch (e) {
+    return JSON.stringify({ error: (e as Error).message });
+  }
 
   const docId = `${docType.slice(0, 3)}-${crypto.randomUUID().slice(0, 8)}`;
   const embeddingText = `${title} ${content}`.slice(0, 8000);
@@ -393,8 +478,7 @@ async function handleKnowledgeRecord(
 
   const row: Record<string, unknown> = {
     doc_id: docId,
-    // Use a stable placeholder project_id; user_id (created_by) is the primary identity
-    project_id: "00000000-0000-0000-0000-000000000000",
+    project_id: projectId,
     title: title.slice(0, 200),
     body: content,
     doc_type: docType,
@@ -415,6 +499,29 @@ async function handleKnowledgeRecord(
     success: true,
     id: savedId,
     message: `Saved: ${title.slice(0, 50)}`,
+  });
+}
+
+async function handleSessionSummary(
+  env: Env,
+  props: UserProps,
+  args: Record<string, unknown>
+): Promise<string> {
+  const title = args.title as string;
+  const summary = args.summary as string;
+  const source = (args.source as string) || "other";
+  const tags = (args.tags as string[]) || [];
+
+  // Ensure session-summary tag and source tag are included
+  const allTags = [...new Set([...tags, "session-summary", source])];
+
+  // Delegate to knowledge record with session-specific metadata
+  return handleKnowledgeRecord(env, props, {
+    title: `[${source}] ${title}`,
+    content:
+      `> Session summary from ${source} — ${new Date().toISOString().slice(0, 10)}\n\n${summary}`,
+    doc_type: "insight",
+    tags: allTags,
   });
 }
 
@@ -469,7 +576,19 @@ async function handleMcpRpc(
       return jsonRpcResponse(id, {
         protocolVersion: "2024-11-05",
         capabilities: { tools: {} },
-        serverInfo: { name: "cq-mcp", version: "2.0.0" },
+        serverInfo: { name: "cq-mcp", version: "3.0.0" },
+        instructions:
+          "You are connected to the user's external brain (CQ). " +
+          "This gives you persistent memory across all AI platforms (ChatGPT, Claude, Gemini, Codex). " +
+          "IMPORTANT behaviors:\n" +
+          "1. At the START of a conversation, call c4_knowledge_search with the user's topic to check for prior context. " +
+          "This prevents redundant work and contradictory decisions.\n" +
+          "2. DURING the conversation, call c4_knowledge_record proactively whenever a decision, discovery, or preference emerges. " +
+          "Do not wait for the user to ask — act as their external memory.\n" +
+          "3. BEFORE the conversation ends, call c4_session_summary exactly once to capture the full session. " +
+          "This is the safety net — do not skip it.\n" +
+          "The user's knowledge base is shared across all their AI tools. " +
+          "What you save here will be available in their next ChatGPT, Claude, Codex, or Gemini session.",
       });
 
     case "notifications/initialized":
@@ -491,6 +610,9 @@ async function handleMcpRpc(
           break;
         case "c4_knowledge_record":
           result = await handleKnowledgeRecord(env, props, toolArgs);
+          break;
+        case "c4_session_summary":
+          result = await handleSessionSummary(env, props, toolArgs);
           break;
         case "c4_status":
           result = await handleStatus(env);
@@ -596,7 +718,7 @@ const defaultHandler = {
 
     // Health check
     if (url.pathname === "/health") {
-      return new Response(JSON.stringify({ status: "ok", version: "2.0.0" }), {
+      return new Response(JSON.stringify({ status: "ok", version: "3.0.0" }), {
         headers: { "Content-Type": "application/json" },
       });
     }
