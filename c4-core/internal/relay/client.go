@@ -345,6 +345,12 @@ func (c *RelayClient) pingLoop(ctx context.Context) {
 				// Write failed — connection is dead. readLoop will detect and trigger reconnect.
 				continue
 			}
+
+			// Reset readLoop's ReadDeadline. wsutil.ReadServerData consumes control
+			// frames internally without returning, so the 90s deadline would expire
+			// even on healthy connections that only exchange Ping/Pong. A successful
+			// write proves the TCP connection is alive — extend the read deadline.
+			conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 		}
 	}
 }
