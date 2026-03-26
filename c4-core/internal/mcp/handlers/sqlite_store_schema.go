@@ -109,6 +109,17 @@ func (s *SQLiteStore) initSchema() error {
 			reason       TEXT,
 			completed_at TEXT DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS sessions (
+			session_id    TEXT PRIMARY KEY,
+			tool          TEXT NOT NULL,
+			project       TEXT,
+			jsonl_path    TEXT,
+			turn_count    INTEGER DEFAULT 0,
+			started_at    TIMESTAMP,
+			ended_at      TIMESTAMP,
+			summarized_at TIMESTAMP,
+			summary_doc_id TEXT
+		)`,
 	}
 
 	// Best-effort migrations for existing tables
