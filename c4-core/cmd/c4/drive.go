@@ -3,10 +3,13 @@ package main
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/changmin/c4-core/internal/cloud"
+	"github.com/changmin/c4-core/internal/cqdata"
 	"github.com/changmin/c4-core/internal/drive"
 	"github.com/spf13/cobra"
 )
@@ -53,6 +56,13 @@ var datasetPullCmd = &cobra.Command{
 	RunE:  runDatasetPull,
 }
 
+var datasetSyncCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Sync datasets from .cqdata (pull changed datasets)",
+	Long:  `Reads .cqdata and pulls any datasets whose version differs from local.`,
+	RunE:  runDatasetSync,
+}
+
 func init() {
 	datasetUploadCmd.Flags().String("as", "", "Dataset name (required)")
 	datasetUploadCmd.MarkFlagRequired("as") //nolint:errcheck
@@ -62,9 +72,13 @@ func init() {
 	datasetPullCmd.Flags().String("dest", ".", "Destination directory")
 	datasetPullCmd.Flags().String("version", "", "Version hash to pull (default: latest)")
 
+	datasetSyncCmd.Flags().Bool("dry-run", false, "Print what would be synced without downloading")
+	datasetSyncCmd.Flags().String("dest", ".", "Base directory for downloads")
+
 	datasetCmd.AddCommand(datasetUploadCmd)
 	datasetCmd.AddCommand(datasetListCmd)
 	datasetCmd.AddCommand(datasetPullCmd)
+	datasetCmd.AddCommand(datasetSyncCmd)
 	driveCmd.AddCommand(datasetCmd)
 	rootCmd.AddCommand(driveCmd)
 }
@@ -227,6 +241,72 @@ func runDatasetPull(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("'%s@%s' -> %s/ (%d downloaded, %d skipped)\n",
 		result.Name, result.VersionHash, result.Dest, result.FilesDownloaded, result.FilesSkipped)
+	return nil
+}
+
+func runDatasetSync(cmd *cobra.Command, args []string) error {
+	dryRun, _ := cmd.Flags().GetBool("dry-run")
+	destBase, _ := cmd.Flags().GetString("dest")
+
+	cd, err := cqdata.Load(projectDir)
+	if err != nil {
+		return fmt.Errorf("load .cqdata: %w", err)
+	}
+	if len(cd.Datasets) == 0 {
+		fmt.Println("no .cqdata found, nothing to sync")
+		return nil
+	}
+
+	if dryRun {
+		fmt.Println("dry-run: datasets to sync from .cqdata:")
+		// Sort for deterministic output.
+		keys := make([]string, 0, len(cd.Datasets))
+		for k := range cd.Datasets {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			e := cd.Datasets[k]
+			short := e.Version
+			if len(short) > cqdataShortLen {
+				short = short[:cqdataShortLen]
+			}
+			fmt.Printf("  %s @ %s\n", e.Name, short)
+		}
+		return nil
+	}
+
+	dc, err := newDatasetClient()
+	if err != nil {
+		return err
+	}
+
+	// Sort dataset keys for deterministic iteration order.
+	keys := make([]string, 0, len(cd.Datasets))
+	for k := range cd.Datasets {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	totalDatasets := 0
+	totalDownloaded := 0
+	for _, k := range keys {
+		e := cd.Datasets[k]
+		dest := filepath.Join(destBase, e.Name)
+		result, pullErr := dc.Pull(cmd.Context(), e.Name, dest, e.Version)
+		if pullErr != nil {
+			return fmt.Errorf("sync %s: %w", e.Name, pullErr)
+		}
+		totalDatasets++
+		totalDownloaded += result.FilesDownloaded
+		if result.FilesDownloaded == 0 {
+			fmt.Printf("  %s: up to date\n", e.Name)
+		} else {
+			fmt.Printf("  synced %s: %d downloaded, %d skipped\n",
+				e.Name, result.FilesDownloaded, result.FilesSkipped)
+		}
+	}
+	fmt.Printf("sync complete: %d datasets (%d files downloaded)\n", totalDatasets, totalDownloaded)
 	return nil
 }
 

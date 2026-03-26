@@ -68,6 +68,60 @@ func ensureGitignore(dir string) {
 	}
 }
 
+// postMergeHookContent is the content written to .git/hooks/post-merge.
+// Runs cq dataset sync in the background after every git pull so the working
+// tree stays in sync with .cqdata without blocking the pull operation.
+const postMergeHookContent = `#!/bin/sh
+# CQ: auto-sync datasets after git pull
+# Runs cq dataset sync to pull changed datasets from .cqdata
+if command -v cq >/dev/null 2>&1 && [ -f .cqdata ]; then
+    cq dataset sync 2>/dev/null &
+fi
+`
+
+// installPostMergeHook installs or appends the CQ post-merge hook to gitDir.
+// gitDir is the .git directory of the project (e.g. /path/to/project/.git).
+//
+// Idempotent: if the hook already contains "cq dataset sync" it is skipped.
+// If the hook file does not exist it is created with mode 0755.
+// If the hook file exists but does not contain the CQ fragment, the fragment
+// is appended after a blank-line separator.
+func installPostMergeHook(gitDir string) error {
+	hookPath := filepath.Join(gitDir, "hooks", "post-merge")
+
+	data, err := os.ReadFile(hookPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("reading post-merge hook: %w", err)
+	}
+
+	existing := string(data)
+
+	// Already installed — nothing to do.
+	if strings.Contains(existing, "cq dataset sync") {
+		return nil
+	}
+
+	if existing == "" {
+		// Create new hook file.
+		if err := os.WriteFile(hookPath, []byte(postMergeHookContent), 0755); err != nil {
+			return fmt.Errorf("writing post-merge hook: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "cq: post-merge hook installed → "+hookPath)
+		return nil
+	}
+
+	// Append to existing hook.
+	if !strings.HasSuffix(existing, "\n") {
+		existing += "\n"
+	}
+	combined := existing + "\n" + postMergeHookContent
+	if err := os.WriteFile(hookPath, []byte(combined), 0755); err != nil {
+		return fmt.Errorf("appending to post-merge hook: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "cq: post-merge hook updated → "+hookPath)
+	return nil
+}
+
 // ensureCQData creates an empty .cqdata template in dir if one does not exist.
 func ensureCQData(dir string) error {
 	path := filepath.Join(dir, ".cqdata")

@@ -1583,3 +1583,78 @@ func TestMarkFirstRun_Idempotent(t *testing.T) {
 		t.Fatalf("second call: %v", err)
 	}
 }
+
+func TestInstallPostMergeHook_NewFile(t *testing.T) {
+	gitDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(gitDir, "hooks"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := installPostMergeHook(gitDir); err != nil {
+		t.Fatalf("installPostMergeHook: %v", err)
+	}
+
+	hookPath := filepath.Join(gitDir, "hooks", "post-merge")
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("hook file not created: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "cq dataset sync") {
+		t.Error("hook missing 'cq dataset sync'")
+	}
+	info, _ := os.Stat(hookPath)
+	if info.Mode()&0111 == 0 {
+		t.Error("hook file not executable")
+	}
+}
+
+func TestInstallPostMergeHook_Idempotent(t *testing.T) {
+	gitDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(gitDir, "hooks"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Install twice — content must not be duplicated.
+	for i := 0; i < 2; i++ {
+		if err := installPostMergeHook(gitDir); err != nil {
+			t.Fatalf("run %d: %v", i+1, err)
+		}
+	}
+
+	hookPath := filepath.Join(gitDir, "hooks", "post-merge")
+	data, _ := os.ReadFile(hookPath)
+	// postMergeHookContent contains "cq dataset sync" twice (once in a comment,
+	// once in the actual command). After two installs only one copy of the block
+	// should exist, so the count must stay at 2 (not 4).
+	count := strings.Count(string(data), "cq dataset sync")
+	if count != 2 {
+		t.Errorf("expected 2 occurrences of 'cq dataset sync' (one in comment, one command), got %d", count)
+	}
+}
+
+func TestInstallPostMergeHook_AppendToExisting(t *testing.T) {
+	gitDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(gitDir, "hooks"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	hookPath := filepath.Join(gitDir, "hooks", "post-merge")
+	existing := "#!/bin/sh\necho 'existing hook'\n"
+	if err := os.WriteFile(hookPath, []byte(existing), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := installPostMergeHook(gitDir); err != nil {
+		t.Fatalf("installPostMergeHook: %v", err)
+	}
+
+	data, _ := os.ReadFile(hookPath)
+	content := string(data)
+	if !strings.Contains(content, "existing hook") {
+		t.Error("existing hook content was lost")
+	}
+	if !strings.Contains(content, "cq dataset sync") {
+		t.Error("cq dataset sync not appended")
+	}
+}

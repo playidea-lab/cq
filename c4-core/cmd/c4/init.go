@@ -164,6 +164,12 @@ func confirmProjectHooks(projectDir string) bool {
 		return true
 	}
 
+	// When launched from `cq claude` (non-verbose), stderr is /dev/null.
+	// The prompt would be invisible but stdin still blocks. Auto-approve.
+	if os.Stderr != nil && os.Stderr.Name() == os.DevNull {
+		return true
+	}
+
 	hookPath := filepath.Join(projectDir, ".claude", "hooks", "c4-gate.sh")
 	settingsPath := filepath.Join(projectDir, ".claude", "settings.json")
 
@@ -381,6 +387,11 @@ func initAndLaunch(tool string) error {
 	}
 	if err := ensureCQData(dir); err != nil {
 		logWarn(fmt.Sprintf(".cqdata setup failed: %v", err))
+	}
+
+	// 6e. Install post-merge git hook for automatic dataset sync (non-fatal)
+	if err := installPostMergeHook(filepath.Join(dir, ".git")); err != nil {
+		logWarn(fmt.Sprintf("post-merge hook setup failed: %v", err))
 	}
 
 	// 6d. Ensure CQ files are in .gitignore (non-fatal)
