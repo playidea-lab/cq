@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -368,5 +369,15 @@ func TestRelayClientReadDeadline(t *testing.T) {
 		t.Logf("reconnected after read deadline (connections=%d)", connCount.Load())
 	case <-ctx.Done():
 		t.Fatalf("client did not reconnect after read deadline timeout (connections=%d)", connCount.Load())
+	}
+}
+
+func TestIsWSL2_OnNonLinux(t *testing.T) {
+	// On macOS/Windows, isWSL2 should always return false.
+	if runtime.GOOS == "linux" {
+		t.Skip("test only meaningful on non-Linux")
+	}
+	if isWSL2() {
+		t.Error("isWSL2 should return false on non-Linux")
 	}
 }

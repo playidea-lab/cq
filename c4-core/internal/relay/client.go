@@ -8,12 +8,20 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 )
+
+// tcpKeepAliveInterval is the TCP-level keepalive period.
+// WSL2's NAT drops idle conntrack entries after ~2-5 minutes.
+// 30s TCP keepalive ensures the NAT sees activity before timeout.
+const tcpKeepAliveInterval = 30 * time.Second
 
 // MCPHandler processes a JSON-RPC MCP request and returns a JSON-RPC response.
 type MCPHandler func(ctx context.Context, request json.RawMessage) (json.RawMessage, error)
@@ -121,6 +129,15 @@ func (c *RelayClient) dial(ctx context.Context) (net.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("relay: dial %s: %w", c.relayURL, err)
 	}
+
+	// Enable TCP-level keepalive to survive NAT conntrack timeouts (WSL2, cloud NAT, etc.).
+	// Application-level WebSocket pings alone are insufficient when the NAT silently drops
+	// the TCP connection — the ping never reaches the peer.
+	if tc, ok := conn.(*net.TCPConn); ok {
+		tc.SetKeepAlive(true)
+		tc.SetKeepAlivePeriod(tcpKeepAliveInterval)
+	}
+
 	return conn, nil
 }
 
@@ -297,10 +314,16 @@ func (c *RelayClient) reconnectLoop(ctx context.Context) {
 	}
 }
 
-// pingLoop sends WebSocket pings every 30s to keep the connection alive.
+// pingLoop sends WebSocket pings to keep the connection alive.
 // Intermediate proxies (Fly.io, NAT) may close idle connections without keepalive.
+// On WSL2, the interval is halved (15s) because the Hyper-V NAT has aggressive
+// conntrack timeouts that can drop connections even with 30s intervals.
 func (c *RelayClient) pingLoop(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+	interval := 30 * time.Second
+	if isWSL2() {
+		interval = 15 * time.Second
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
@@ -335,4 +358,17 @@ func min(a, b time.Duration) time.Duration {
 		return a
 	}
 	return b
+}
+
+// isWSL2 detects if the process is running inside WSL2 by checking
+// /proc/version for "microsoft" (case-insensitive) on Linux.
+func isWSL2() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	data, err := os.ReadFile("/proc/version")
+	if err != nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(string(data)), "microsoft")
 }
