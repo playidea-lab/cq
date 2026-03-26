@@ -7,68 +7,88 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const MCP_API_KEY = Deno.env.get("MCP_API_KEY") ?? "";
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 
 function getSupabase() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+}
+
+// Generate 768-dim embedding via OpenAI text-embedding-3-small
+async function embed(text: string): Promise<number[] | null> {
+  if (!OPENAI_API_KEY) return null;
+  try {
+    const res = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        input: text.slice(0, 8000),
+        model: "text-embedding-3-small",
+        dimensions: 768,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.data?.[0]?.embedding ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // --- Tool definitions ---
 
 const TOOLS = [
   {
-    name: "cq_snapshot",
-    description: "Persist a structured snapshot of the current conversation to the CQ knowledge base — an external memory shared across all LLMs. Call this when the user explicitly asks to save, remember, bookmark, or preserve something, OR when a conversation reaches a meaningful conclusion (architecture decision, bug root-cause found, plan finalized) and the user wants it captured. The snapshot becomes retrievable by any LLM via cq_recall, enabling cross-session and cross-LLM continuity. Focus on capturing the WHY and WHAT-WAS-DECIDED, not a transcript.",
+    name: "c4_knowledge_record",
+    description: "Save knowledge to the CQ shared knowledge base — an external memory accessible from any LLM (ChatGPT, Claude, Codex, Cursor). Call this when the user asks to save, remember, or preserve something, OR when a conversation reaches a meaningful conclusion worth keeping. The knowledge becomes searchable by any LLM via c4_knowledge_search. Write the content as if a different person or LLM will read it cold in a future session — lead with conclusions, not process.",
     inputSchema: {
       type: "object",
-      required: ["summary"],
+      required: ["title", "content"],
       properties: {
-        summary: {
+        title: {
           type: "string",
-          description: "A 1-3 sentence distillation of the conversation's outcome. Lead with the conclusion or decision, not the process. Write as if a different LLM will read this cold in a future session. Bad: 'We talked about auth.' Good: 'Decided to replace session-cookie auth with short-lived JWTs (15 min) + refresh tokens stored in HttpOnly cookies, driven by compliance requirement from legal.'",
+          description: "Short descriptive title. Lead with the topic. Bad: 'Today's discussion'. Good: 'Auth migration: JWT + HttpOnly refresh tokens (legal compliance)'.",
         },
-        decisions: {
-          type: "array",
-          items: { type: "string" },
-          description: "Concrete decisions or conclusions reached. Each entry should be self-contained and actionable. Include the rationale when non-obvious. Example: 'Use Postgres advisory locks instead of Redis for distributed locking — fewer moving parts, acceptable at current scale.'",
-        },
-        open_questions: {
-          type: "array",
-          items: { type: "string" },
-          description: "Unresolved questions, blocked items, or explicitly deferred decisions. These tell the next session where to pick up. Example: 'Need to benchmark advisory lock contention above 50 concurrent workers before committing.'",
-        },
-        source_llm: {
+        content: {
           type: "string",
-          description: "Identifier of the LLM producing this snapshot. Use your model name (e.g., 'claude-sonnet-4-20250514', 'gpt-4o'). This enables provenance tracking across LLMs.",
+          description: "Markdown content. Structure with ## headings. Include: what was decided, why, what's unresolved. Write self-contained — reader has no prior context.",
+        },
+        doc_type: {
+          type: "string",
+          enum: ["insight", "pattern", "experiment", "hypothesis"],
+          description: "Type of knowledge. insight (default): decisions, conclusions, learnings. pattern: reusable solution. experiment: test results. hypothesis: untested idea.",
         },
         tags: {
           type: "array",
           items: { type: "string" },
-          description: "Short lowercase labels for retrieval. Include: the domain area (e.g., 'auth', 'database', 'ci'), the type of knowledge (e.g., 'decision', 'debug', 'design'), and any project-specific identifiers. 2-5 tags is ideal.",
+          description: "2-5 lowercase labels for retrieval. Include domain (auth, database), type (decision, debug), and identifiers.",
         },
       },
     },
   },
   {
-    name: "cq_recall",
-    description: "Search the CQ knowledge base for previously saved snapshots and context from past conversations — including those from other LLMs. Call this when the user asks to recall, continue, resume, or reference prior work ('what did we decide about X', 'pick up where we left off', 'what's the context on Y'). Also call proactively when the user starts a task that likely has prior context (e.g., 'let's finish the auth migration') — checking for existing knowledge prevents redundant work and contradictory decisions.",
+    name: "c4_knowledge_search",
+    description: "Search the CQ knowledge base for previously saved knowledge from any LLM or session. Call when the user asks to recall, continue, or reference prior work ('what did we decide about X', 'pick up where we left off'). Also call proactively when starting a task that likely has prior context — checking prevents redundant work and contradictory decisions.",
     inputSchema: {
       type: "object",
       required: ["query"],
       properties: {
         query: {
           type: "string",
-          description: "A natural-language search query describing the knowledge you need. Be specific about the domain and intent. Bad: 'auth'. Good: 'authentication migration decision — JWT vs session cookies'. Include synonyms or related terms if the exact phrasing is uncertain.",
+          description: "Natural-language search query. Be specific about domain and intent. Bad: 'auth'. Good: 'authentication migration decision — JWT vs session cookies'.",
         },
         limit: {
           type: "number",
-          description: "Maximum number of snapshots to return. Use 1-3 for targeted lookups ('what did we decide about X'), 5-10 for broader context gathering ('everything related to the payment system'). Default: 5.",
+          description: "Max results. 1-3 for targeted lookups, 5-10 for broader context. Default: 5.",
         },
       },
     },
   },
   {
-    name: "cq_status",
-    description: "Get a real-time overview of the CQ project: task counts by state, active workers, and overall progress. Call this when the user asks about project status, progress, what's in flight, or what's left to do. Also useful at the start of a session to orient yourself before taking on new work.",
+    name: "c4_status",
+    description: "Get a real-time overview of the CQ project: task counts by state, active workers, and progress. Call when the user asks about project status or what's in flight. Also useful at the start of a session to orient before taking on new work.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -78,43 +98,39 @@ const TOOLS = [
 
 // --- Tool implementations ---
 
-async function handleSnapshot(args: Record<string, unknown>): Promise<string> {
+async function handleKnowledgeRecord(args: Record<string, unknown>): Promise<string> {
   const supabase = getSupabase();
-  const summary = args.summary as string;
-  const decisions = (args.decisions as string[]) || [];
-  const openQuestions = (args.open_questions as string[]) || [];
-  const sourceLlm = (args.source_llm as string) || "unknown";
+  const title = args.title as string;
+  const content = args.content as string;
+  const docType = (args.doc_type as string) || "insight";
   const tags = (args.tags as string[]) || [];
 
-  const content = [
-    `## Snapshot: ${summary}`,
-    "",
-    `**Source**: ${sourceLlm}`,
-    `**Date**: ${new Date().toISOString()}`,
-    "",
-    decisions.length > 0 ? `### Decisions\n${decisions.map(d => `- ${d}`).join("\n")}` : "",
-    openQuestions.length > 0 ? `### Open Questions\n${openQuestions.map(q => `- ${q}`).join("\n")}` : "",
-    tags.length > 0 ? `\n**Tags**: ${tags.join(", ")}` : "",
-  ].filter(Boolean).join("\n");
+  const docId = `${docType.slice(0, 3)}-${crypto.randomUUID().slice(0, 8)}`;
+  const embeddingText = `${title} ${content}`.slice(0, 8000);
+  const embedding = await embed(embeddingText);
 
-  const docId = `snap-${crypto.randomUUID().slice(0, 8)}`;
+  const row: Record<string, unknown> = {
+    doc_id: docId,
+    project_id: Deno.env.get("C4_PROJECT_ID") ?? "00000000-0000-0000-0000-000000000000",
+    title: title.slice(0, 200),
+    body: content,
+    doc_type: docType,
+    domain: "",
+    tags: JSON.stringify(tags),
+    created_by: "remote-mcp",
+  };
+  if (embedding) {
+    row.embedding = JSON.stringify(embedding);
+  }
+
   const { data, error } = await supabase
     .from("c4_documents")
-    .insert({
-      doc_id: docId,
-      project_id: Deno.env.get("C4_PROJECT_ID") ?? "00000000-0000-0000-0000-000000000000",
-      title: `Snapshot: ${summary.slice(0, 80)}`,
-      body: content,
-      doc_type: "insight",
-      domain: "snapshot",
-      tags: JSON.stringify(["snapshot", sourceLlm, ...tags]),
-      created_by: sourceLlm,
-    })
+    .insert(row)
     .select("doc_id")
     .single();
 
   if (error) return JSON.stringify({ error: error.message });
-  return JSON.stringify({ success: true, id: data.doc_id, message: `Snapshot saved: ${summary.slice(0, 50)}` });
+  return JSON.stringify({ success: true, id: data.doc_id, message: `Saved: ${title.slice(0, 50)}` });
 }
 
 async function handleRecall(args: Record<string, unknown>): Promise<string> {
@@ -124,32 +140,59 @@ async function handleRecall(args: Record<string, unknown>): Promise<string> {
 
   const projectId = Deno.env.get("C4_PROJECT_ID") ?? "00000000-0000-0000-0000-000000000000";
 
-  // Full-text search on documents, filtered to snapshots
+  // Try vector search first (semantic similarity)
+  const queryEmbedding = await embed(query);
+  if (queryEmbedding) {
+    const { data: vecResults, error: vecErr } = await supabase.rpc(
+      "c4_knowledge_search_semantic",
+      {
+        query_embedding: JSON.stringify(queryEmbedding),
+        match_count: limit,
+        similarity_threshold: 0.3,
+        filter_project_id: projectId,
+      },
+    );
+
+    if (!vecErr && vecResults && vecResults.length > 0) {
+      // Fetch full body for top results
+      const docIds = vecResults.map((r: { doc_id: string }) => r.doc_id);
+      const { data: fullDocs } = await supabase
+        .from("c4_documents")
+        .select("doc_id, title, body, tags, domain, created_at")
+        .in("doc_id", docIds);
+
+      return JSON.stringify({
+        results: fullDocs || vecResults,
+        count: (fullDocs || vecResults).length,
+        search_type: "vector",
+      });
+    }
+  }
+
+  // Fallback: FTS
   const { data, error } = await supabase
     .from("c4_documents")
-    .select("doc_id, title, body, tags, created_at")
+    .select("doc_id, title, body, tags, domain, created_at")
     .eq("project_id", projectId)
-    .eq("domain", "snapshot")
     .textSearch("tsv", query.split(" ").join(" & "))
     .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (error) {
-    // Fallback: simple ilike search
-    const { data: fallback, error: fbErr } = await supabase
-      .from("c4_documents")
-      .select("doc_id, title, body, tags, created_at")
-      .eq("project_id", projectId)
-      .eq("domain", "snapshot")
-      .ilike("body", `%${query}%`)
-      .order("created_at", { ascending: false })
-      .limit(limit);
-
-    if (fbErr) return JSON.stringify({ error: fbErr.message });
-    return JSON.stringify({ results: fallback || [], count: fallback?.length || 0 });
+  if (!error && data && data.length > 0) {
+    return JSON.stringify({ results: data, count: data.length, search_type: "fts" });
   }
 
-  return JSON.stringify({ results: data || [], count: data?.length || 0 });
+  // Fallback: ilike
+  const { data: fallback, error: fbErr } = await supabase
+    .from("c4_documents")
+    .select("doc_id, title, body, tags, domain, created_at")
+    .eq("project_id", projectId)
+    .ilike("body", `%${query}%`)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (fbErr) return JSON.stringify({ error: fbErr.message });
+  return JSON.stringify({ results: fallback || [], count: fallback?.length || 0, search_type: "ilike" });
 }
 
 async function handleStatus(): Promise<string> {
@@ -225,13 +268,13 @@ async function handleJsonRpc(req: JsonRpcRequest) {
 
       let result: string;
       switch (toolName) {
-        case "cq_snapshot":
-          result = await handleSnapshot(toolArgs);
+        case "c4_knowledge_record":
+          result = await handleKnowledgeRecord(toolArgs);
           break;
-        case "cq_recall":
+        case "c4_knowledge_search":
           result = await handleRecall(toolArgs);
           break;
-        case "cq_status":
+        case "c4_status":
           result = await handleStatus();
           break;
         default:
