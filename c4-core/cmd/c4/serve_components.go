@@ -20,6 +20,7 @@ import (
 	"github.com/changmin/c4-core/internal/serve/hypothesissuggester"
 	"github.com/changmin/c4-core/internal/serve/knowledgesync"
 	"github.com/changmin/c4-core/internal/serve/mcphttp"
+	"github.com/changmin/c4-core/internal/serve/sessionsummarizer"
 	"github.com/changmin/c4-core/internal/serve/suggestpoller"
 )
 
@@ -271,4 +272,20 @@ func registerMCPHTTPComponent(mgr *serve.Manager, cfg config.ServeMCPHTTPConfig,
 		secretStore = srv.secretStore
 	}
 	mcphttp.RegisterComponent(mgr, cfg, handler, secretStore)
+}
+
+// registerSessionSummarizerServeComponent registers the SessionSummarizer component
+// when a database and knowledge store are available.
+// Errors are logged only — never crashes serve.
+func registerSessionSummarizerServeComponent(mgr *serve.Manager, db *sql.DB, ks *knowledge.Store, gw *llm.Gateway) {
+	if db == nil {
+		return
+	}
+	comp := sessionsummarizer.New(sessionsummarizer.Config{
+		DB:             db,
+		KnowledgeStore: ks,
+		LLMGateway:     gw,
+	})
+	mgr.Register(comp)
+	fmt.Fprintf(os.Stderr, "cq serve: registered session-summarizer\n")
 }
