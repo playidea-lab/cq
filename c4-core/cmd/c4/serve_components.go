@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,6 +15,8 @@ import (
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/knowledge"
 	"github.com/changmin/c4-core/internal/llm"
+	"github.com/changmin/c4-core/internal/fileindex"
+	"github.com/changmin/c4-core/internal/mcp"
 	"github.com/changmin/c4-core/internal/mcp/handlers"
 	"github.com/changmin/c4-core/internal/serve"
 	"github.com/changmin/c4-core/internal/serve/hubpoller"
@@ -288,4 +291,43 @@ func registerSessionSummarizerServeComponent(mgr *serve.Manager, db *sql.DB, ks 
 	})
 	mgr.Register(comp)
 	fmt.Fprintf(os.Stderr, "cq serve: registered session-summarizer\n")
+}
+
+// registerFileIndexComponent opens (or creates) the file index DB, initialises tables
+// and the FTS5 search index, kicks off a background walk of dir, and registers the
+// cq_file_find MCP tool. Errors are non-fatal — the component is simply skipped.
+func registerFileIndexComponent(reg *mcp.Registry, dir string) {
+	dbPath := filepath.Join(dir, ".c4", "fileindex.db")
+	fileIndexDB, err := fileindex.OpenDB(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: file_index: open db failed: %v\n", err)
+		return
+	}
+	if err := fileindex.CreateTables(fileIndexDB); err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: file_index: create tables failed: %v\n", err)
+		fileIndexDB.Close()
+		return
+	}
+	if err := fileindex.CreateSearchIndex(fileIndexDB); err != nil {
+		fmt.Fprintf(os.Stderr, "cq serve: file_index: create search index failed: %v\n", err)
+		fileIndexDB.Close()
+		return
+	}
+
+	hostname, _ := os.Hostname()
+	go func() {
+		indexed, updated, err := fileindex.Index(fileIndexDB, dir, hostname)
+		if err != nil {
+			log.Printf("cq: file indexer error: %v", err)
+			return
+		}
+		if err := fileindex.RebuildSearchIndex(fileIndexDB); err != nil {
+			log.Printf("cq: file index rebuild error: %v", err)
+			return
+		}
+		log.Printf("cq: file index: %d files (%d updated)", indexed, updated)
+	}()
+
+	handlers.RegisterFileIndexHandlers(reg, fileIndexDB)
+	fmt.Fprintf(os.Stderr, "cq serve: registered file_index (cq_file_find)\n")
 }
