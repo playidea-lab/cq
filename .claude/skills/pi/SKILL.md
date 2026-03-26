@@ -1,10 +1,10 @@
 ---
 name: pi
 description: |
-  ★ Play Idea — 아이디어 발산·수렴 모드. c4-plan 이전 단계.
+  ★ Play Idea — 아이디어 발산·수렴 모드. plan 이전 단계.
   온라인 조사, 지식 베이스 활용, 무한 토론을 통해 막연한 아이디어를
   명확한 개념으로 결정(結晶)시킨다. 토론이 충분히 무르익으면
-  idea.md를 생성하고 /c4-plan을 직접 호출한다.
+  idea.md를 생성하고 /plan을 직접 호출한다.
   Triggers: "/pi", "play idea", "아이디어 탐색", "ideation",
   "기획 토론", "뭔가 만들고 싶은데", "이런 거 어때", "브레인스토밍".
 allowed-tools: Read, Glob, Grep, WebSearch, WebFetch, mcp__cq__*
@@ -30,8 +30,8 @@ allowed-tools: Read, Glob, Grep, WebSearch, WebFetch, mcp__cq__*
 ## 철학
 
 ```
-c4-interview  =  이미 무엇을 만들지 알 때, 요구사항을 파낸다
-c4-plan       =  무엇을 만들지 확정됐을 때, 구현 계획을 짠다
+interview  =  이미 무엇을 만들지 알 때, 요구사항을 파낸다
+plan       =  무엇을 만들지 확정됐을 때, 구현 계획을 짠다
 /pi           =  아직 뭘 만들지 모를 때, 아이디어를 결정(結晶)시킨다
 ```
 
@@ -120,7 +120,7 @@ AskUserQuestion(questions=[{
     "question": "다음 단계",
     "options": [
         {"label": "자동 구현", "description": "plan → run → finish 전체 자동"},
-        {"label": "계획만", "description": "c4-plan으로 태스크만 생성"}
+        {"label": "계획만", "description": "plan으로 태스크만 생성"}
     ]
 }])
 ```
@@ -137,16 +137,16 @@ AskUserQuestion(questions=[{
           "idea_slug": slug
       }, indent=2)
   )
-  Skill("c4-plan", args="--from-pi {slug} --auto-run")
+  Skill("plan", args="--from-pi {slug} --auto-run")
   ```
-- **계획만** → `Skill("c4-plan", args="--from-pi {slug}")`
+- **계획만** → `Skill("plan", args="--from-pi {slug}")`
 
 ---
 
 ## 안티패턴
 
 ```
-❌ "어떤 기술 스택을 쓸까요?"   → 구현은 c4-plan에서
+❌ "어떤 기술 스택을 쓸까요?"   → 구현은 plan에서
 ❌ "태스크로 분해하면..."        → 아직 아님
 ❌ 유저 말에 무조건 동의         → 반론이 아이디어를 단단하게 함
 ❌ 검색 없이 "잘 모르겠지만..."  → 모르면 찾는다

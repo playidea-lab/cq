@@ -566,6 +566,9 @@ func newMCPServer() (*mcpServer, error) {
 		handlers.RegisterExperimentHandlers(reg, expHandlers)
 	}
 
+	// Register backward-compatibility aliases: c4_xxx → cq_xxx
+	handlers.RegisterLegacyAliases(reg)
+
 	// --- Phase 4: Run post-store hooks (C1, Drive, Hub, CDP, EventBus) ---
 	// ctx.sqliteStore and ctx.proxy are now set; EventBus wiring can proceed.
 	for _, fn := range componentInitHooks {
