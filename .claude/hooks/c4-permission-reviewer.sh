@@ -82,27 +82,6 @@ _emit_allow() {
 
 _emit_deny() {
     local message="${1:-Denied}"
-
-    # Record denial as hook event for learn loop (Wire 4).
-    if [[ -n "${C4_ROOT}" ]] && command -v jq &>/dev/null; then
-        local ts
-        ts=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
-        local events_dir="${C4_ROOT}/.c4/events"
-        mkdir -p "$events_dir" 2>/dev/null
-        jq -n \
-            --arg ts "$ts" \
-            --arg reason "$message" \
-            --arg command "${COMMAND:-${FILE_PATH:-}}" \
-            --arg tool "${TOOL_NAME:-}" \
-            '{
-                type: "HOOK_DENIED",
-                timestamp: $ts,
-                tool: $tool,
-                command: $command,
-                reason: $reason
-            }' > "${events_dir}/hook-deny-${ts//[:T]/-}.json" 2>/dev/null
-    fi
-
     jq -n --arg msg "$message" '{
         hookSpecificOutput: {
             hookEventName: "PermissionRequest",
@@ -137,10 +116,6 @@ done
 # =============================================================================
 if [[ "$PERMISSION_MODE" == "model" ]]; then
     api_key="${ANTHROPIC_API_KEY:-}"
-    # Fallback: read from CQ secret store if env var not set
-    if [[ -z "$api_key" ]] && command -v cq &>/dev/null; then
-        api_key=$(cq secret get anthropic.api_key 2>/dev/null)
-    fi
     if [[ -z "$api_key" ]] || ! command -v jq &>/dev/null; then
         # No API key or jq — allow (fail open)
         exit 0
@@ -167,7 +142,7 @@ if [[ "$PERMISSION_MODE" == "model" ]]; then
 
     response=$(curl -s --max-time 8 \
         "https://api.anthropic.com/v1/messages" \
-        --config <(printf 'header = "x-api-key: %s"\n' "$api_key") \
+        -H "x-api-key: $api_key" \
         -H "anthropic-version: 2023-06-01" \
         -H "content-type: application/json" \
         -d "$payload" 2>/dev/null)

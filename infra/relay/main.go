@@ -217,10 +217,14 @@ func (s *server) addWorker(id string, w *workerConn) {
 	s.conns[id] = w
 }
 
-func (s *server) removeWorker(id string) {
+// removeWorkerConn removes a worker only if the registered connection matches.
+// This prevents a stale goroutine from removing a newer connection that replaced it.
+func (s *server) removeWorkerConn(id string, wc *workerConn) {
 	s.workers.Lock()
 	defer s.workers.Unlock()
-	delete(s.conns, id)
+	if current, ok := s.conns[id]; ok && current == wc {
+		delete(s.conns, id)
+	}
 }
 
 // handleConnect handles GET /connect?token=JWT&worker_id=xxx — WebSocket upgrade.
@@ -270,7 +274,7 @@ func (s *server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		conn.Close()
 		ticker.Stop()
-		s.removeWorker(workerID)
+		s.removeWorkerConn(workerID, wc)
 		log.Printf("worker disconnected: %s", workerID)
 	}()
 
