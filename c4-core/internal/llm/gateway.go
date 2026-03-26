@@ -306,6 +306,14 @@ func (g *Gateway) ProviderCount() int {
 	return len(g.providers)
 }
 
+// HasProvider returns true if a provider with the given name is registered and available.
+func (g *Gateway) HasProvider(name string) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	p, ok := g.providers[name]
+	return ok && p.IsAvailable()
+}
+
 // GetRouting returns a snapshot of the current routing table.
 func (g *Gateway) GetRouting() RoutingTable {
 	g.mu.RLock()

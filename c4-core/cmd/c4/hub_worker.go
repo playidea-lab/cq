@@ -640,6 +640,23 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 		fmt.Printf("cq: hub.enabled=true, cloud.url=%s\n", supabaseURL)
 	}
 
+	// Resolve project_id from env or config.
+	projectID := os.Getenv("C4_PROJECT_ID")
+	if projectID == "" {
+		home, _ := os.UserHomeDir()
+		cfgYAMLPath := filepath.Join(home, ".c4", "config.yaml")
+		if cfgData, readErr := os.ReadFile(cfgYAMLPath); readErr == nil {
+			var cfgMap map[string]any
+			if yaml.Unmarshal(cfgData, &cfgMap) == nil {
+				if cloudCfg, ok := cfgMap["cloud"].(map[string]any); ok {
+					if pid, ok := cloudCfg["project_id"].(string); ok {
+						projectID = pid
+					}
+				}
+			}
+		}
+	}
+
 	// Resolve direct URL for LISTEN/NOTIFY (port 5432).
 	directURL := os.Getenv("C4_CLOUD_DIRECT_URL")
 	if directURL == "" {
@@ -677,11 +694,11 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 	// Register worker via Supabase PostgREST.
 	registerURL := supabaseURL + "/rest/v1/rpc/register_worker"
 	regBody, _ := json.Marshal(map[string]any{
-		"p_worker_id":   workerName,
-		"p_hostname":    workerName,
+		"p_worker_id":    workerName,
+		"p_hostname":     workerName,
 		"p_capabilities": []string{},
-		"p_mcp_url":    "",
-		"p_project_id": "",
+		"p_mcp_url":      "",
+		"p_project_id":   projectID,
 	})
 	regReq, _ := http.NewRequestWithContext(ctx, "POST", registerURL, strings.NewReader(string(regBody)))
 	regReq.Header.Set("Content-Type", "application/json")
@@ -713,7 +730,7 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 					fmt.Printf("cq: NOTIFY received: job %s\n", n.Payload)
 				}
 				// Try to claim a job.
-				claimAndRun(ctx, supabaseURL, anonKey, cloudTP, workerName)
+				claimAndRun(ctx, supabaseURL, anonKey, cloudTP, workerName, projectID)
 				return nil
 			})
 			if err != nil && ctx.Err() == nil {
@@ -727,7 +744,7 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 	defer ticker.Stop()
 
 	// Initial poll.
-	claimAndRun(ctx, supabaseURL, anonKey, cloudTP, workerName)
+	claimAndRun(ctx, supabaseURL, anonKey, cloudTP, workerName, projectID)
 
 	for {
 		select {
@@ -735,7 +752,7 @@ func runWorkerStart(cmd *cobra.Command, args []string) error {
 			fmt.Println("cq: worker stopped")
 			return nil
 		case <-ticker.C:
-			claimAndRun(ctx, supabaseURL, anonKey, cloudTP, workerName)
+			claimAndRun(ctx, supabaseURL, anonKey, cloudTP, workerName, projectID)
 		}
 	}
 }
@@ -781,12 +798,12 @@ func resolveSupabaseConfig() (url, key string) {
 }
 
 // claimAndRun tries to claim a QUEUED job via Supabase RPC and execute it.
-func claimAndRun(ctx context.Context, supabaseURL, anonKey string, cloudTP *cloud.TokenProvider, workerID string) {
+func claimAndRun(ctx context.Context, supabaseURL, anonKey string, cloudTP *cloud.TokenProvider, workerID, projectID string) {
 	claimURL := supabaseURL + "/rest/v1/rpc/claim_job"
 	body, _ := json.Marshal(map[string]any{
-		"p_worker_id":   workerID,
+		"p_worker_id":    workerID,
 		"p_capabilities": []string{},
-		"p_project_id":  "",
+		"p_project_id":   projectID,
 	})
 	req, err := http.NewRequestWithContext(ctx, "POST", claimURL, strings.NewReader(string(body)))
 	if err != nil {
