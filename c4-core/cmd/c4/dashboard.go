@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"gopkg.in/yaml.v3"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,10 +19,16 @@ type changeConfigMsg struct{}
 
 // --- Dashboard TUI Model ---
 
+// dashboardRow represents a single info row in the dashboard.
+type dashboardRow struct {
+	label string
+	value string
+	badge string // optional: status badge key (for statusBadgeStyles)
+}
+
 type dashboardModel struct {
 	version     string
-	serviceMsg  string // "running (N/M components)" or "starting..."
-	projectMsg  string // project status line or ""
+	rows        []dashboardRow
 	whatsNew    string // "New in vX.Y.Z: ..." or ""
 	defaultTool string
 	action      string // "launch", "status", "config", or "" (quit)
@@ -41,10 +46,13 @@ func newDashboardModel() dashboardModel {
 		m.defaultTool = "claude"
 	}
 
-	// Service health
+	// Service health row
 	components, err := fetchServeHealth(servePort)
 	if err != nil {
-		m.serviceMsg = "starting..."
+		m.rows = append(m.rows, dashboardRow{
+			label: "Service",
+			value: "starting...",
+		})
 	} else {
 		okCount := 0
 		for _, h := range components {
@@ -52,14 +60,42 @@ func newDashboardModel() dashboardModel {
 				okCount++
 			}
 		}
-		m.serviceMsg = fmt.Sprintf("running (%d/%d components)", okCount, len(components))
+		badge := "active"
+		if okCount == len(components) {
+			badge = "running"
+		}
+		m.rows = append(m.rows, dashboardRow{
+			label: "Service",
+			value: fmt.Sprintf("%d/%d components", okCount, len(components)),
+			badge: badge,
+		})
 	}
 
-	// Project status (if inside a .c4/ project)
+	// Project status row (if inside a .c4/ project)
 	c4Dir := filepath.Join(projectDir, ".c4")
 	if info, err := os.Stat(c4Dir); err == nil && info.IsDir() {
-		m.projectMsg = buildProjectStatusLine()
+		name, phase := readProjectState()
+		badge := "active"
+		switch strings.ToLower(phase) {
+		case "execute":
+			badge = "in-progress"
+		case "plan", "design", "discovery":
+			badge = "planned"
+		case "complete":
+			badge = "done"
+		}
+		m.rows = append(m.rows, dashboardRow{
+			label: "Project",
+			value: name,
+			badge: badge,
+		})
 	}
+
+	// Default tool row
+	m.rows = append(m.rows, dashboardRow{
+		label: "Tool",
+		value: m.defaultTool,
+	})
 
 	// What's New check
 	lastSeen := readGlobalConfig("last_seen_version")
@@ -70,28 +106,26 @@ func newDashboardModel() dashboardModel {
 	return m
 }
 
-// buildProjectStatusLine reads .c4/state.yaml or tasks.db to produce a summary.
-func buildProjectStatusLine() string {
-	// Try reading project name from .c4/state.yaml
+// readProjectState reads project name and phase from .c4/state.yaml.
+func readProjectState() (name, phase string) {
 	statePath := filepath.Join(projectDir, ".c4", "state.yaml")
 	data, err := os.ReadFile(statePath)
 	if err != nil {
-		return filepath.Base(projectDir)
+		return filepath.Base(projectDir), "idle"
 	}
 	var state map[string]interface{}
 	if err := yaml.Unmarshal(data, &state); err != nil {
-		return filepath.Base(projectDir)
+		return filepath.Base(projectDir), "idle"
 	}
-
-	name, _ := state["project_id"].(string)
+	name, _ = state["project_id"].(string)
 	if name == "" {
 		name = filepath.Base(projectDir)
 	}
-	phase, _ := state["phase"].(string)
+	phase, _ = state["phase"].(string)
 	if phase == "" {
 		phase = "idle"
 	}
-	return fmt.Sprintf("%s [%s]", name, phase)
+	return
 }
 
 func (m dashboardModel) Init() tea.Cmd {
@@ -135,74 +169,60 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m dashboardModel) View() string {
-	var b strings.Builder
+	var sb strings.Builder
 
-	// Styles
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("62")).
-		Padding(0, 1)
+	// Title bar — same as cq sessions
+	sb.WriteString(styleTitle.Render(fmt.Sprintf(" CQ %s ", m.version)))
+	sb.WriteString("\n\n")
 
-	labelStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("244"))
+	// Info rows with aligned labels + optional status badges
+	const labelW = 10
+	for _, row := range m.rows {
+		label := fmt.Sprintf("  %-*s", labelW, row.label)
+		sb.WriteString(styleDate.Render(label))
 
-	valueStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("15"))
+		if row.badge != "" {
+			bStyle, ok := statusBadgeStyles[row.badge]
+			if !ok {
+				bStyle = statusBadgeStyles["active"]
+			}
+			// Pad badge text to fixed 11-char width (same as sessions)
+			badgeText := row.badge
+			padTotal := 11 - len(badgeText)
+			if padTotal > 0 {
+				padLeft := padTotal / 2
+				padRight := padTotal - padLeft
+				badgeText = strings.Repeat(" ", padLeft) + badgeText + strings.Repeat(" ", padRight)
+			}
+			sb.WriteString(bStyle.Render(badgeText))
+			sb.WriteString(" ")
+		}
 
-	hintKeyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("14")).
-		Bold(true)
-
-	hintDescStyle := lipgloss.NewStyle().
-		Faint(true)
-
-	newStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("3")).
-		Bold(true)
-
-	// Title
-	b.WriteString(titleStyle.Render(fmt.Sprintf(" CQ %s ", m.version)))
-	b.WriteString("\n\n")
-
-	// Service
-	b.WriteString(labelStyle.Render("  Service: "))
-	b.WriteString(valueStyle.Render(m.serviceMsg))
-	b.WriteString("\n")
-
-	// Project (if available)
-	if m.projectMsg != "" {
-		b.WriteString(labelStyle.Render("  Project: "))
-		b.WriteString(valueStyle.Render(m.projectMsg))
-		b.WriteString("\n")
+		sb.WriteString(styleTagName.Render(row.value))
+		sb.WriteString("\n")
 	}
-
-	// Default tool
-	b.WriteString(labelStyle.Render("  Tool:    "))
-	b.WriteString(valueStyle.Render(m.defaultTool))
-	b.WriteString("\n")
 
 	// What's New
 	if m.whatsNew != "" {
-		b.WriteString("\n")
-		b.WriteString(newStyle.Render("  "+m.whatsNew))
-		b.WriteString("\n")
+		sb.WriteString("\n")
+		hs := groupHeaderStyle("idea")
+		sb.WriteString(hs.Render("  " + m.whatsNew))
+		sb.WriteString("\n")
 	}
 
-	// Key hints
-	b.WriteString("\n")
-	b.WriteString("  ")
-	b.WriteString(hintKeyStyle.Render("[Enter]"))
-	b.WriteString(hintDescStyle.Render(fmt.Sprintf(" %s 시작  ", m.defaultTool)))
-	b.WriteString(hintKeyStyle.Render("[s]"))
-	b.WriteString(hintDescStyle.Render(" 상태 상세  "))
-	b.WriteString(hintKeyStyle.Render("[c]"))
-	b.WriteString(hintDescStyle.Render(" 설정 변경  "))
-	b.WriteString(hintKeyStyle.Render("[q]"))
-	b.WriteString(hintDescStyle.Render(" 종료"))
-	b.WriteString("\n")
+	// Help bar — same pattern as cq sessions
+	sb.WriteString("\n")
+	sb.WriteString(" ")
+	sb.WriteString(helpEntry("Enter", m.defaultTool+" 시작"))
+	sb.WriteString("  ")
+	sb.WriteString(helpEntry("s", "상태 상세"))
+	sb.WriteString("  ")
+	sb.WriteString(helpEntry("c", "설정 변경"))
+	sb.WriteString("  ")
+	sb.WriteString(helpEntry("q", "종료"))
+	sb.WriteString("\n")
 
-	return b.String()
+	return sb.String()
 }
 
 // --- Global config helpers (~/.c4/config.yaml) ---

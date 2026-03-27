@@ -106,7 +106,7 @@ func TestDashboard_WhatsNew(t *testing.T) {
 	mNew := dashboardModel{
 		version:     "1.40.0",
 		defaultTool: "claude",
-		serviceMsg:  "starting...",
+		rows:        []dashboardRow{{label: "Service", value: "starting..."}},
 		whatsNew:    fmt.Sprintf("✨ New in %s", "1.40.0"),
 	}
 	viewNew := mNew.View()
@@ -118,7 +118,7 @@ func TestDashboard_WhatsNew(t *testing.T) {
 	mSame := dashboardModel{
 		version:     "1.40.0",
 		defaultTool: "claude",
-		serviceMsg:  "starting...",
+		rows:        []dashboardRow{{label: "Service", value: "starting..."}},
 		whatsNew:    "",
 	}
 	viewSame := mSame.View()

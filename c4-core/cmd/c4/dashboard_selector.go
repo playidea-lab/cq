@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
-
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -123,74 +121,70 @@ func (m selectorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m selectorModel) View() string {
-	var b strings.Builder
+	var sb strings.Builder
 
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("15")).
-		Background(lipgloss.Color("62")).
-		Padding(0, 1)
-
-	selectedStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("236")).
-		Foreground(lipgloss.Color("15")).
-		Bold(true)
-
-	installedStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("2"))
-
-	notInstalledStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("1")).
-		Faint(true)
-
-	versionStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("244"))
-
-	hintKeyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("14")).
-		Bold(true)
-
-	hintDescStyle := lipgloss.NewStyle().
-		Faint(true)
-
-	b.WriteString(titleStyle.Render(" 기본 도구 선택 "))
-	b.WriteString("\n\n")
+	// Title bar — same as cq sessions
+	sb.WriteString(styleTitle.Render(" 기본 도구 선택 "))
+	sb.WriteString("  ")
+	sb.WriteString(styleCount.Render(fmt.Sprintf("%d tools", len(m.tools))))
+	sb.WriteString("\n\n")
 
 	for i, t := range m.tools {
-		cursor := "  "
-		if i == m.cursor {
-			cursor = "> "
+		isSelected := i == m.cursor
+
+		cursor := "   "
+		if isSelected {
+			cursor = " ▸ "
 		}
 
 		// Tool name (padded to 16 chars)
 		nameStr := fmt.Sprintf("%-16s", t.name)
-		if i == m.cursor {
-			nameStr = selectedStyle.Render(nameStr)
-		}
 
-		var statusStr string
+		// Status badge: installed → running style, not installed → done(dim) style
+		var badge string
 		if t.installed {
-			ver := t.version
-			if ver == "" {
-				ver = "installed"
-			}
-			statusStr = versionStyle.Render(ver) + " " + installedStyle.Render("✓")
+			bStyle := statusBadgeStyles["running"]
+			badge = bStyle.Render(" installed ")
 		} else {
-			statusStr = notInstalledStyle.Render("✗ 미설치")
+			bStyle := statusBadgeStyles["done"]
+			badge = bStyle.Render(" 미설치    ")
 		}
 
-		b.WriteString(fmt.Sprintf("%s%s %s\n", cursor, nameStr, statusStr))
+		// Version or empty
+		var verStr string
+		if t.installed && t.version != "" {
+			verStr = t.version
+		}
+
+		if isSelected {
+			sb.WriteString(styleSelected.Render(cursor))
+			sb.WriteString(styleSelected.Render(nameStr))
+			sb.WriteString(badge)
+			sb.WriteString(" ")
+			sb.WriteString(styleSelected.Render(verStr))
+		} else if !t.installed {
+			sb.WriteString(styleTagNameDim.Render(cursor))
+			sb.WriteString(styleTagNameDim.Render(nameStr))
+			sb.WriteString(badge)
+		} else {
+			sb.WriteString(cursor)
+			sb.WriteString(styleTagName.Render(nameStr))
+			sb.WriteString(badge)
+			sb.WriteString(" ")
+			sb.WriteString(styleDate.Render(verStr))
+		}
+		sb.WriteString("\n")
 	}
 
-	b.WriteString("\n")
-	b.WriteString("  ")
-	b.WriteString(hintKeyStyle.Render("[↑↓]"))
-	b.WriteString(hintDescStyle.Render(" 이동  "))
-	b.WriteString(hintKeyStyle.Render("[Enter]"))
-	b.WriteString(hintDescStyle.Render(" 선택  "))
-	b.WriteString(hintKeyStyle.Render("[Esc]"))
-	b.WriteString(hintDescStyle.Render(" 취소"))
-	b.WriteString("\n")
+	// Help bar — same pattern as cq sessions
+	sb.WriteString("\n")
+	sb.WriteString(" ")
+	sb.WriteString(helpEntry("↑↓", "이동"))
+	sb.WriteString("  ")
+	sb.WriteString(helpEntry("Enter", "선택"))
+	sb.WriteString("  ")
+	sb.WriteString(helpEntry("Esc", "취소"))
+	sb.WriteString("\n")
 
-	return b.String()
+	return sb.String()
 }
