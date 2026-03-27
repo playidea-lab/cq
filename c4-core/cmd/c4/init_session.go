@@ -281,6 +281,10 @@ func launchToolNamed(tool, projectDir, name string) error {
 			continue
 		}
 
+		// Capture session status and summary before exiting (best-effort).
+		if !isUUID(name) {
+			captureSession(name)
+		}
 		break
 	}
 
