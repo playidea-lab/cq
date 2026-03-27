@@ -740,31 +740,50 @@ func (m sessionTUIModel) View() string {
 		sb.WriteString(styleCount.Render(fmt.Sprintf("%d questions", len(m.historyItems))))
 		sb.WriteString("\n\n")
 
-		// Render items with scroll window
-		visible := 12 // fewer items since each can be multi-line
-		start := m.historyCursor - visible/2
-		if start < 0 {
-			start = 0
+		// Pre-compute wrapped lines per item
+		type renderedItem struct {
+			lines []string
 		}
-		end := start + visible
-		if end > len(m.historyItems) {
-			end = len(m.historyItems)
-			start = end - visible
-			if start < 0 {
-				start = 0
+		allItems := make([]renderedItem, len(m.historyItems))
+		for i, text := range m.historyItems {
+			allItems[i] = renderedItem{lines: wrapText(text, 68)}
+		}
+
+		// Line-budget based scrolling: find window around cursor that fits ~30 lines
+		const maxLines = 30
+		// Start from cursor, expand outward
+		start, end := m.historyCursor, m.historyCursor+1
+		usedLines := len(allItems[m.historyCursor].lines) + 1 // +1 for separator
+		// Expand upward and downward alternately
+		for {
+			expanded := false
+			if start > 0 {
+				candidate := len(allItems[start-1].lines) + 1
+				if usedLines+candidate <= maxLines {
+					start--
+					usedLines += candidate
+					expanded = true
+				}
+			}
+			if end < len(allItems) {
+				candidate := len(allItems[end].lines) + 1
+				if usedLines+candidate <= maxLines {
+					end++
+					usedLines += candidate
+					expanded = true
+				}
+			}
+			if !expanded {
+				break
 			}
 		}
 
 		for i := start; i < end; i++ {
 			num := fmt.Sprintf("%3d", i+1)
-			text := m.historyItems[i]
 			isSel := i == m.historyCursor
-
-			// Wrap text to lines (max width ~70)
-			lines := wrapText(text, 68)
+			lines := allItems[i].lines
 
 			if isSel {
-				// First line with cursor + number
 				first := lines[0]
 				sb.WriteString(styleSelected.Render(fmt.Sprintf(" ▸ %s  %s", num, first)))
 				padW := 74 - 7 - lsDispWidth(first)
@@ -772,7 +791,6 @@ func (m sessionTUIModel) View() string {
 					sb.WriteString(styleSelected.Render(strings.Repeat(" ", padW)))
 				}
 				sb.WriteString("\n")
-				// Continuation lines
 				for _, l := range lines[1:] {
 					sb.WriteString(styleSelected.Render(fmt.Sprintf("         %s", l)))
 					padW = 74 - 9 - lsDispWidth(l)
@@ -782,16 +800,13 @@ func (m sessionTUIModel) View() string {
 					sb.WriteString("\n")
 				}
 			} else {
-				// First line
 				sb.WriteString(styleDate.Render(fmt.Sprintf("   %s", num)))
 				sb.WriteString(fmt.Sprintf("  %s\n", lines[0]))
-				// Continuation lines
 				for _, l := range lines[1:] {
 					sb.WriteString(fmt.Sprintf("         %s\n", l))
 				}
 			}
 
-			// Separator between items
 			if i < end-1 {
 				sb.WriteString(styleFaint.Render("   ───"))
 				sb.WriteString("\n")
@@ -799,10 +814,8 @@ func (m sessionTUIModel) View() string {
 		}
 
 		sb.WriteString("\n")
-		if len(m.historyItems) > visible {
-			sb.WriteString(styleFaint.Render(fmt.Sprintf("   %d/%d", m.historyCursor+1, len(m.historyItems))))
-			sb.WriteString("\n")
-		}
+		sb.WriteString(styleFaint.Render(fmt.Sprintf("   %d/%d", m.historyCursor+1, len(m.historyItems))))
+		sb.WriteString("\n")
 
 		sb.WriteString(" ")
 		sb.WriteString(helpEntry("↑↓", "move"))
