@@ -20,6 +20,7 @@
 | Research | /c4-research, /c4-review |
 | Knowledge | c4_knowledge_record, c4_knowledge_search, c4_pattern_suggest |
 | Reflection | c4_reflect |
+| Remote | cq_workers, cq_relay_call |
 | Hub | c4_hub_submit, c4_hub_watch, c4_hub_summary |
 | Lighthouse | c4_lighthouse |
 | Cost | c4_llm_costs |

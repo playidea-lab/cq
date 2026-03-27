@@ -2,20 +2,31 @@
 
 > `/c4-help <키워드>` 검색 시 이 매트릭스를 참조하여 기능 안내.
 
+## Remote Workspace (v1.38.0+)
+
+| 수단 | 용도 | 도구/CLI |
+|------|------|---------|
+| **relay** (즉시 조작) | 원격 파일 읽기/쓰기, 상태 확인, 짧은 명령 | `cq_workers()`, `cq_relay_call(worker_id, tool, args)` |
+| **Hub** (잡 큐) | 학습, 빌드, 장시간 실험 (게시판 패턴) | `cq hub submit "command" --tag gpu` |
+| **Git** (코드) | 코드 버전 관리 + relay로 원격 pull | `git push` → `cq_relay_call("c4_execute", "git pull")` |
+| **Drive** (데이터) | 데이터셋/체크포인트 버전 관리 (DVC 패턴) | `c4_drive_dataset_upload/pull` |
+| **Transfer** (레거시) | NAT 뒤 P2P 직접 전송 (Drive 대체 권장) | `cq transfer <file> --to <worker-id>` |
+
 ## 데이터 전송
 
 | 상황 | 기능 | 도구/CLI |
 |------|------|---------|
 | 파일을 클라우드에 저장/공유 | Drive (C0) | `c4_drive_upload`, `c4_drive_download`, `c4_drive_list` |
-| NAT 뒤 워커로 대용량 파일 직접 전송 | P2P Transfer | `cq hub transfer <file> --to <worker-id>` |
+| 데이터셋 버전 관리 (CAS) | Drive Dataset | `c4_drive_dataset_upload/pull` (content hash) |
+| 소량 텍스트 파일 원격 전송 (<1MB) | relay_call | `cq_relay_call(worker, "c4_create_text_file", {path, content})` |
+| NAT 뒤 워커로 대용량 직접 전송 | Transfer (레거시) | `cq transfer <file> --to <worker-id>` |
 | 잡에 코드 스냅샷 첨부 | Hub Snapshot | `cq hub submit` (Drive CAS 자동) |
-| 데이터셋 버전 관리 (CAS) | Drive Dataset | `c4_drive_upload` + content hash |
 
 ## 실험/연구
 
 | 상황 | 기능 | 도구/CLI |
 |------|------|---------|
-| GPU 서버에서 모델 학습 | Hub GPU Worker | `c4_hub_submit` (requires_gpu=true) |
+| GPU 서버에서 모델 학습 | Hub Auto Worker | `cq hub submit --tag gpu` (cq serve가 자동 실행) |
 | 자율 연구 루프 (가설→실험→검증→반복) | Research Loop | `c4_research_loop_start` |
 | 연구 루프 방향 전환 | Research Steer | `c4_research_intervene` (steering/injection/abort) |
 | 실험 결과 기록 | Knowledge | `c4_experiment_record` |

@@ -9,6 +9,25 @@ allowed-tools: mcp__cq__*
 이 세션을 C5 Hub에 연결된 상주 워커로 전환합니다.
 워커는 잡이 올 때까지 대기하고, 잡을 실행한 후 다시 대기합니다.
 
+## Auto Worker (v1.38.0+ 권장)
+
+대부분의 경우 `/c4-standby` 대신 **`cq serve`의 auto-worker**를 사용하세요:
+
+```yaml
+# .c4/config.yaml
+hub:
+  auto_worker: true
+  worker_tags: ["gpu", "ml"]
+```
+
+`cq serve` 시작 시 자동으로 Hub worker가 등록되고, job을 순차 실행합니다.
+`/c4-standby`는 에이전트(Claude)가 직접 잡을 해석+실행해야 할 때만 사용합니다.
+
+| 방식 | 언제 | 잡 실행 |
+|------|------|---------|
+| `hub.auto_worker` | 단순 셸 명령 (python train.py 등) | subprocess |
+| `/c4-standby` | 에이전트 판단 필요 (코드 작성, 리뷰 등) | Claude 에이전트 |
+
 ## Usage
 
 ```

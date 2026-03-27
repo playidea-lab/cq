@@ -116,44 +116,72 @@ json.dump(metrics, open(f"{RESULT_DIR}/eval_results.json", "w"))
 
 ## Phase 3: 실험 실행
 
-### 3.1 로컬 실행 (현재 서버에 GPU 있을 때)
+### 3.0 역할 분담 (v1.38.0+)
 
-```bash
-# 직접 실행
-uv run python train.py --config configs/exp042.yaml
+| 수단 | 용도 | 비유 |
+|------|------|------|
+| **relay** (`cq_relay_call`) | 파일 읽기/쓰기, 상태 확인, 짧은 명령 (<30초) | SSH 세션 |
+| **Hub** (`cq hub submit`) | 학습, 빌드, 장시간 실험 큐잉 (게시판) | Job Queue |
+| **Git** | 코드 버전 관리 | git push/pull |
+| **Drive** | 데이터/체크포인트 버전 관리 (DVC 패턴) | S3/DVC |
 
-# 또는 GPU 잡으로 제출 (백그라운드)
-c4_job_submit(
-  command: "uv run python train.py --config configs/exp042.yaml",
-  gpu_count: 1,
-  timeout_sec: 3600
-)
-```
-
-### 3.2 원격 실행 (다른 서버의 GPU 사용)
-
-Hub을 통해 원격 서버에 잡을 제출한다.
+### 3.1 원격 서버 확인 (relay)
 
 ```
-c4_job_submit(
-  command: "cd /workspace && uv run python train.py --config configs/exp042.yaml",
-  gpu_count: 1,
-  working_dir: "/workspace",
-  timeout_sec: 7200
-)
+cq_workers()
+→ [{id: "pi-gpu", status: "connected"}, {id: "desktop", status: "connected"}]
+
+cq_relay_call(worker_id: "pi-gpu", tool: "c4_gpu_status", args: {})
+→ {gpus: [{name: "RTX 5080", free_vram_gb: 15.6}]}
 ```
 
-### 3.3 잡 상태 확인
+### 3.2 코드 배포 (Git + relay)
 
 ```
-c4_job_status(job_id: "<job_id>")
-→ {status: "RUNNING", progress: 65, metrics: {@loss: 0.0234, @val_loss: 0.0312}}
+# Mac에서 push
+git add . && git commit -m "feat: new loss" && git push
 
-c4_job_list()
-→ [{job_id, name, status, submitted_at, gpu_count}, ...]
+# GPU에서 pull (relay 경유)
+cq_relay_call(worker_id: "pi-gpu", tool: "c4_execute",
+  args: {command: "cd /home/pi/exp-repo && git pull"})
 ```
 
-실험이 오래 걸리면 세션을 닫아도 된다 — 다음 세션에서 `c4_job_status`로 확인.
+### 3.3 데이터 준비 (Drive → GPU)
+
+```
+cq_relay_call(worker_id: "pi-gpu", tool: "c4_execute",
+  args: {command: "cq drive dataset pull h36m-processed --dest /data/"})
+```
+
+### 3.4 실험 실행 — Hub 게시판 패턴 (권장)
+
+```
+cq hub submit "cd /home/pi/exp && python train.py --config exp001.yaml" --tag gpu
+cq hub submit "cd /home/pi/exp && python train.py --config exp002.yaml" --tag gpu
+cq hub submit "cd /home/pi/exp && python train.py --config exp003.yaml" --tag gpu
+```
+
+GPU 서버의 `cq serve`가 `hub.auto_worker: true`이면 자동으로 순차 실행.
+
+중간에 확인 (relay):
+```
+cq_relay_call(worker_id: "pi-gpu", tool: "c4_execute",
+  args: {command: "tail -5 /home/pi/exp/train.log"})
+```
+
+### 3.5 즉시 실행 (단발, <30초)
+
+```
+cq_relay_call(worker_id: "pi-gpu", tool: "c4_execute",
+  args: {command: "cd /home/pi/exp && python eval.py --checkpoint best.pt"})
+```
+
+### 3.6 잡 상태 확인
+
+```
+cq hub list
+→ exp001  SUCCEEDED, exp002  FAILED (OOM), exp003  RUNNING
+```
 
 ---
 
