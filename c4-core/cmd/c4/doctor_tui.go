@@ -632,8 +632,20 @@ func (m doctorTUIModel) viewList() string {
 	sb.WriteString(filterBadge.Render(filterLabel))
 	sb.WriteString("\n\n")
 
-	// Rows
+	// Rows — display-width-aware column alignment (matches session_tui.go pattern)
+	// Layout: cursor(3) + name(20) + " " + message(dynamic) + pad + badge(6) + margin(1)
 	const nameColW = 20
+	const badgeFieldW = 6 // "FAIL" = 4 chars + 2 padding = 6 visual width
+	// Fixed columns: cursor(3) + name(20) + sp(1) + sp(1) + badge(6) + margin(1)
+	fixedW := 3 + nameColW + 1 + 1 + badgeFieldW + 1
+	msgColW := m.width - fixedW
+	if msgColW < 20 {
+		msgColW = 20
+	}
+	if msgColW > 60 {
+		msgColW = 60
+	}
+
 	cursorIdx := -1
 	if len(nonHeaderIndices) > 0 {
 		c := m.cursor
@@ -677,61 +689,74 @@ func (m doctorTUIModel) viewList() string {
 		namePadded := lsPadToWidth(item.entry.Name, nameColW)
 
 		if item.loading {
-			// Loading row: spinner + "checking..."
+			// Loading row: spinner + "checking..." + right-aligned "⋯" badge area
 			spinner := spinnerFrames[m.spinnerFrame]
+			loadingText := spinner + " checking..."
+			leftUsed := 3 + nameColW + 1 + lsDispWidth(loadingText)
+			midPad := m.width - leftUsed - badgeFieldW - 1
+			if midPad < 1 {
+				midPad = 1
+			}
 			if isSelected {
-				sb.WriteString(styleSelected.Render(fmt.Sprintf("%s%s  %s checking...", cursor, namePadded, spinner)))
-				pad := m.width - 3 - nameColW - 2 - lsDispWidth(spinner) - 12
-				if pad > 0 {
-					sb.WriteString(styleSelected.Render(strings.Repeat(" ", pad)))
-				}
+				sb.WriteString(styleSelected.Render(cursor))
+				sb.WriteString(styleSelected.Render(namePadded))
+				sb.WriteString(styleSelected.Render(" "))
+				sb.WriteString(styleSelected.Render(loadingText))
+				sb.WriteString(styleSelected.Render(strings.Repeat(" ", midPad+badgeFieldW+1)))
 			} else {
 				sb.WriteString(cursor)
 				sb.WriteString(styleFaint.Render(namePadded))
-				sb.WriteString("  ")
-				sb.WriteString(styleFaint.Render(spinner + " checking..."))
+				sb.WriteString(" ")
+				sb.WriteString(styleFaint.Render(loadingText))
 			}
 			sb.WriteString("\n")
 			continue
 		}
 
-		// Completed check
-		msgColW := m.width - 3 - nameColW - 2 - 8 // cursor + name + gaps + badge
-		if msgColW < 20 {
-			msgColW = 20
+		// Completed check — right-align badge (sessions pattern)
+		// Severity badge: pad status text to fixed width for alignment
+		statusText := string(item.result.Status)
+		padTotal := badgeFieldW - 2 - len(statusText) // -2 for lipgloss Padding(0,1)
+		if padTotal > 0 {
+			padLeft := padTotal / 2
+			padRight := padTotal - padLeft
+			statusText = strings.Repeat(" ", padLeft) + statusText + strings.Repeat(" ", padRight)
 		}
-		if msgColW > 60 {
-			msgColW = 60
+		badge := ""
+		if bStyle, ok := severityBadgeStyles[item.result.Status]; ok {
+			badge = bStyle.Render(statusText)
 		}
+		badgeVisW := lipgloss.Width(badge)
 
 		msgDisplay := item.result.Message
 		if lsDispWidth(msgDisplay) > msgColW {
 			msgDisplay = lsTruncateToWidth(msgDisplay, msgColW-1) + "…"
 		}
-		msgPadded := lsPadToWidth(msgDisplay, msgColW)
 
-		badge := ""
-		if bStyle, ok := severityBadgeStyles[item.result.Status]; ok {
-			badge = bStyle.Render(string(item.result.Status))
+		// Calculate padding between message and badge to right-align badge
+		leftUsed := 3 + nameColW + 1 + lsDispWidth(msgDisplay)
+		midPad := m.width - leftUsed - badgeVisW - 1
+		if midPad < 1 {
+			midPad = 1
 		}
 
 		if isSelected {
 			sb.WriteString(styleSelected.Render(cursor))
 			sb.WriteString(styleSelected.Render(namePadded))
-			sb.WriteString(styleSelected.Render("  "))
-			sb.WriteString(styleSelected.Render(msgPadded))
 			sb.WriteString(styleSelected.Render(" "))
+			sb.WriteString(styleSelected.Render(msgDisplay))
+			sb.WriteString(styleSelected.Render(strings.Repeat(" ", midPad)))
 			sb.WriteString(badge)
-			used := 3 + nameColW + 2 + msgColW + 1 + lipgloss.Width(badge)
-			if pad := m.width - used; pad > 0 {
-				sb.WriteString(styleSelected.Render(strings.Repeat(" ", pad)))
+			trailing := m.width - leftUsed - midPad - badgeVisW
+			if trailing > 0 {
+				sb.WriteString(styleSelected.Render(strings.Repeat(" ", trailing)))
 			}
 		} else {
 			sb.WriteString(cursor)
 			sb.WriteString(styleTagName.Render(namePadded))
-			sb.WriteString("  ")
-			sb.WriteString(styleSummary.Render(msgPadded))
 			sb.WriteString(" ")
+			sb.WriteString(styleSummary.Render(msgDisplay))
+			sb.WriteString(strings.Repeat(" ", midPad))
 			sb.WriteString(badge)
 		}
 		sb.WriteString("\n")
