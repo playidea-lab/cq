@@ -507,9 +507,10 @@ func (c *Client) CancelJob(jobID string) error {
 // CompleteJob reports job completion via Supabase RPC.
 func (c *Client) CompleteJob(jobID, status string, exitCode int) error {
 	body := map[string]any{
-		"p_job_id":   jobID,
-		"p_status":   status,
+		"p_job_id":    jobID,
+		"p_status":    status,
 		"p_exit_code": exitCode,
+		"p_worker_id": c.workerID,
 	}
 	if err := c.supabaseRPC("complete_job", body, nil); err != nil {
 		return fmt.Errorf("complete job: %w", err)
