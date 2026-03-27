@@ -654,12 +654,12 @@ func (m doctorTUIModel) viewList() string {
 	sb.WriteString("\n\n")
 
 	// Rows — display-width-aware column alignment (matches session_tui.go pattern)
-	// Layout: cursor(3) + name(20) + sp(1) + message(dynamic) + pad + badge(6) + sp(1) + date(8)
+	// Layout: cursor(3) + name(20) + sp(1) + badge(6) + sp(1) + message(dynamic) + pad + date(8)
 	const nameColW = 20
 	const badgeFieldW = 6 // "FAIL" = 4 chars + 2 padding = 6 visual width
 	const dateColW = 8    // "now", "5s ago", "3m ago", "2h ago"
-	// Fixed columns: cursor(3) + name(20) + sp(1) + sp(1) + badge(6) + sp(1) + date(8) + margin(1)
-	fixedW := 3 + nameColW + 1 + 1 + badgeFieldW + 1 + dateColW + 1
+	// Fixed columns: cursor(3) + name(20) + sp(1) + badge(6) + sp(1) + sp(1) + date(8) + margin(1)
+	fixedW := 3 + nameColW + 1 + badgeFieldW + 1 + 1 + dateColW + 1
 	msgColW := m.width - fixedW
 	if msgColW < 16 {
 		msgColW = 16
@@ -710,16 +710,40 @@ func (m doctorTUIModel) viewList() string {
 
 		namePadded := lsPadToWidth(item.entry.Name, nameColW)
 
+		// Severity badge: pad status text to fixed visual width
+		statusText := string(item.result.Status)
 		if item.loading {
-			// Loading row: spinner + "checking..."
+			statusText = ""
+		}
+		padTotal := badgeFieldW - 2 - len(statusText) // -2 for lipgloss Padding(0,1)
+		if padTotal > 0 {
+			padLeft := padTotal / 2
+			padRight := padTotal - padLeft
+			statusText = strings.Repeat(" ", padLeft) + statusText + strings.Repeat(" ", padRight)
+		}
+		badge := ""
+		badgeVisW := badgeFieldW
+		if item.loading {
+			// Empty badge space for loading rows
+			badge = strings.Repeat(" ", badgeFieldW)
+			badgeVisW = badgeFieldW
+		} else if bStyle, ok := severityBadgeStyles[item.result.Status]; ok {
+			badge = bStyle.Render(statusText)
+			badgeVisW = lipgloss.Width(badge)
+		}
+
+		if item.loading {
+			// Loading row: name | (empty badge) | spinner checking...
 			spinner := spinnerFrames[m.spinnerFrame]
 			loadingText := spinner + " checking..."
 			if isSelected {
 				sb.WriteString(styleSelected.Render(cursor))
 				sb.WriteString(styleSelected.Render(namePadded))
 				sb.WriteString(styleSelected.Render(" "))
+				sb.WriteString(styleSelected.Render(badge))
+				sb.WriteString(styleSelected.Render(" "))
 				sb.WriteString(styleSelected.Render(loadingText))
-				leftUsed := 3 + nameColW + 1 + lsDispWidth(loadingText)
+				leftUsed := 3 + nameColW + 1 + badgeVisW + 1 + lsDispWidth(loadingText)
 				pad := m.width - leftUsed
 				if pad > 0 {
 					sb.WriteString(styleSelected.Render(strings.Repeat(" ", pad)))
@@ -728,27 +752,15 @@ func (m doctorTUIModel) viewList() string {
 				sb.WriteString(cursor)
 				sb.WriteString(styleFaint.Render(namePadded))
 				sb.WriteString(" ")
+				sb.WriteString(badge)
+				sb.WriteString(" ")
 				sb.WriteString(styleFaint.Render(loadingText))
 			}
 			sb.WriteString("\n")
 			continue
 		}
 
-		// Completed check: name | message | pad | badge | date
-		// Severity badge: pad status text to fixed visual width for column alignment
-		statusText := string(item.result.Status)
-		padTotal := badgeFieldW - 2 - len(statusText) // -2 for lipgloss Padding(0,1)
-		if padTotal > 0 {
-			padLeft := padTotal / 2
-			padRight := padTotal - padLeft
-			statusText = strings.Repeat(" ", padLeft) + statusText + strings.Repeat(" ", padRight)
-		}
-		badge := ""
-		if bStyle, ok := severityBadgeStyles[item.result.Status]; ok {
-			badge = bStyle.Render(statusText)
-		}
-		badgeVisW := lipgloss.Width(badge)
-
+		// Completed check: name | badge | message | pad | date
 		// Date: right-aligned, fixed column
 		dateStr := relativeTime(item.completedAt)
 		datePadded := lsPadToWidth(dateStr, dateColW)
@@ -759,11 +771,10 @@ func (m doctorTUIModel) viewList() string {
 			msgDisplay = lsTruncateToWidth(msgDisplay, msgColW-1) + "…"
 		}
 
-		// Calculate padding between message and badge+date to right-align
-		// Layout: cursor(3) + name + " " + message + midPad + badge + " " + date
-		leftUsed := 3 + nameColW + 1 + lsDispWidth(msgDisplay)
-		rightUsed := badgeVisW + 1 + dateColW
-		midPad := m.width - leftUsed - rightUsed - 1
+		// Calculate padding between message and date to right-align date
+		// Layout: cursor(3) + name + " " + badge + " " + message + midPad + date
+		leftUsed := 3 + nameColW + 1 + badgeVisW + 1 + lsDispWidth(msgDisplay)
+		midPad := m.width - leftUsed - dateColW - 1
 		if midPad < 1 {
 			midPad = 1
 		}
@@ -772,12 +783,12 @@ func (m doctorTUIModel) viewList() string {
 			sb.WriteString(styleSelected.Render(cursor))
 			sb.WriteString(styleSelected.Render(namePadded))
 			sb.WriteString(styleSelected.Render(" "))
-			sb.WriteString(styleSelected.Render(msgDisplay))
-			sb.WriteString(styleSelected.Render(strings.Repeat(" ", midPad)))
 			sb.WriteString(badge)
 			sb.WriteString(styleSelected.Render(" "))
+			sb.WriteString(styleSelected.Render(msgDisplay))
+			sb.WriteString(styleSelected.Render(strings.Repeat(" ", midPad)))
 			sb.WriteString(styleSelected.Render(datePadded))
-			trailing := m.width - leftUsed - midPad - badgeVisW - 1 - dateColW
+			trailing := m.width - leftUsed - midPad - dateColW
 			if trailing > 0 {
 				sb.WriteString(styleSelected.Render(strings.Repeat(" ", trailing)))
 			}
@@ -785,10 +796,10 @@ func (m doctorTUIModel) viewList() string {
 			sb.WriteString(cursor)
 			sb.WriteString(styleTagName.Render(namePadded))
 			sb.WriteString(" ")
-			sb.WriteString(styleSummary.Render(msgDisplay))
-			sb.WriteString(strings.Repeat(" ", midPad))
 			sb.WriteString(badge)
 			sb.WriteString(" ")
+			sb.WriteString(styleSummary.Render(msgDisplay))
+			sb.WriteString(strings.Repeat(" ", midPad))
 			sb.WriteString(styleDate.Render(datePadded))
 		}
 		sb.WriteString("\n")
