@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -57,8 +59,14 @@ type sessionTUIModel struct {
 	detailCursor int
 
 	// New session mode
-	newMode    bool
-	newInput   string
+	newMode  bool
+	newInput string
+
+	// History mode: user questions from JSONL
+	historyMode   bool
+	historyItems  []string // user questions (first line each)
+	historyCursor int
+	historyScroll int
 }
 
 // detailPaths returns the file paths for the currently selected session.
@@ -243,9 +251,85 @@ func (m sessionTUIModel) Init() tea.Cmd {
 	return nil
 }
 
-// isSearching returns true when search query is active — keys go to query instead of shortcuts.
 func (m *sessionTUIModel) isSearching() bool {
 	return m.query != ""
+}
+
+// loadHistory reads user questions from the JSONL transcript of the given session.
+func loadHistory(uuid string) []string {
+	projDir, err := claudeProjectDir(projectDir)
+	if err != nil {
+		return nil
+	}
+	path := filepath.Join(projDir, uuid+".jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	var questions []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 1<<20), 1<<20)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		// Quick check before full parse
+		if !strings.Contains(line, `"user"`) {
+			continue
+		}
+		var entry struct {
+			Type    string `json:"type"`
+			Message *struct {
+				Role    string `json:"role"`
+				Content any    `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		if entry.Type != "user" || entry.Message == nil || entry.Message.Role != "user" {
+			continue
+		}
+		text := extractUserText(entry.Message.Content)
+		if text == "" {
+			continue
+		}
+		// Skip system/hook/command noise
+		if strings.HasPrefix(text, "<command-") || strings.HasPrefix(text, "Base directory") {
+			continue
+		}
+		// Take first line, trim
+		firstLine := strings.SplitN(text, "\n", 2)[0]
+		if len(firstLine) > 80 {
+			firstLine = firstLine[:80] + "…"
+		}
+		if firstLine != "" {
+			questions = append(questions, firstLine)
+		}
+	}
+	return questions
+}
+
+// extractUserText extracts plain text from a JSONL message content field.
+func extractUserText(content any) string {
+	switch v := content.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case []any:
+		var parts []string
+		for _, block := range v {
+			if m, ok := block.(map[string]any); ok {
+				if t, ok := m["text"].(string); ok && t != "" {
+					parts = append(parts, strings.TrimSpace(t))
+				}
+			}
+		}
+		return strings.Join(parts, " ")
+	}
+	return ""
 }
 
 // openFileCmd opens a file path using the OS default handler.
@@ -266,6 +350,29 @@ func openFileCmd(path string) tea.Cmd {
 func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// History mode: scrollable list of user questions
+		if m.historyMode {
+			switch msg.Type {
+			case tea.KeyEsc, tea.KeyLeft:
+				m.historyMode = false
+				return m, nil
+			case tea.KeyUp:
+				if m.historyCursor > 0 {
+					m.historyCursor--
+				}
+			case tea.KeyDown:
+				if m.historyCursor < len(m.historyItems)-1 {
+					m.historyCursor++
+				}
+			case tea.KeyRunes:
+				if msg.String() == "`" {
+					m.historyMode = false
+					return m, nil
+				}
+			}
+			return m, nil
+		}
+
 		// New session input mode
 		if m.newMode {
 			switch msg.Type {
@@ -422,7 +529,23 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyRunes:
 			ch := msg.String()
-			// All printable characters go to search query — no exceptions.
+			if ch == "`" {
+				// Backtick: open history for selected session
+				idx := m.cursorRowIndex()
+				if idx >= 0 {
+					tag := m.rows[idx].tag
+					entry := m.sessions[tag]
+					items := loadHistory(entry.UUID)
+					if len(items) > 0 {
+						m.historyMode = true
+						m.historyItems = items
+						m.historyCursor = len(items) - 1 // start at bottom (most recent)
+						m.historyScroll = 0
+					}
+				}
+				return m, nil
+			}
+			// All other printable characters go to search query.
 			m.query += ch
 			m.rebuildRows()
 		}
@@ -579,6 +702,52 @@ func (m sessionTUIModel) View() string {
 		sb.WriteString(helpEntry("Enter", "create & start"))
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("Esc", "cancel"))
+		sb.WriteString("\n")
+		return sb.String()
+	}
+
+	// History mode
+	if m.historyMode {
+		sb.WriteString(styleTitle.Render(" Session History "))
+		sb.WriteString("\n\n")
+
+		visible := 20
+		// Scroll window around cursor
+		start := m.historyCursor - visible/2
+		if start < 0 {
+			start = 0
+		}
+		end := start + visible
+		if end > len(m.historyItems) {
+			end = len(m.historyItems)
+			start = end - visible
+			if start < 0 {
+				start = 0
+			}
+		}
+
+		for i := start; i < end; i++ {
+			num := fmt.Sprintf("%3d", i+1)
+			line := m.historyItems[i]
+			if i == m.historyCursor {
+				sb.WriteString(styleSelected.Render(fmt.Sprintf(" ▸ %s  %s ", num, line)))
+			} else {
+				sb.WriteString(styleDate.Render(fmt.Sprintf("   %s", num)))
+				sb.WriteString(fmt.Sprintf("  %s", line))
+			}
+			sb.WriteString("\n")
+		}
+
+		if len(m.historyItems) > visible {
+			sb.WriteString(styleFaint.Render(fmt.Sprintf("\n   %d/%d", m.historyCursor+1, len(m.historyItems))))
+		}
+
+		sb.WriteString("\n ")
+		sb.WriteString(helpEntry("↑↓", "move"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("`", "back"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("Esc", "back"))
 		sb.WriteString("\n")
 		return sb.String()
 	}
@@ -790,6 +959,8 @@ func (m sessionTUIModel) View() string {
 		sb.WriteString(helpEntry("↑↓", "move"))
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("→", "files"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("`", "history"))
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("Enter", "start"))
 		sb.WriteString("  ")
