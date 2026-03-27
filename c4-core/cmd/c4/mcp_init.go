@@ -802,68 +802,69 @@ func newMCPServer() (*mcpServer, error) {
 // Set CQ_TOOL_TIER=full to expose everything.
 var coreMCPTools = []string{
 	// Project management
-	"c4_status",
-	"c4_add_todo",
-	"c4_task_list",
-	"c4_start",
-	"c4_claim",
-	"c4_report",
-	"c4_mark_blocked",
-	"c4_stale_tasks",
+	"cq_status",
+	"cq_add_todo",
+	"cq_task_list",
+	"cq_start",
+	"cq_claim",
+	"cq_report",
+	"cq_mark_blocked",
+	"cq_stale_tasks",
 
 	// Worker protocol
-	"c4_get_task",
-	"c4_submit",
-	"c4_request_changes",
-	"c4_run_validation",
-	"c4_worker_heartbeat",
+	"cq_get_task",
+	"cq_submit",
+	"cq_request_changes",
+	"cq_run_validation",
+	"cq_worker_heartbeat",
 
 	// File operations
-	"c4_find_file",
-	"c4_search_for_pattern",
-	"c4_read_file",
-	"c4_replace_content",
-	"c4_create_text_file",
+	"cq_find_file",
+	"cq_search_for_pattern",
+	"cq_read_file",
+	"cq_replace_content",
+	"cq_create_text_file",
+	"cq_list_dir",
 
 	// Knowledge
-	"c4_knowledge_search",
-	"c4_knowledge_record",
+	"cq_knowledge_search",
+	"cq_knowledge_record",
 
 	// Execution & system
-	"c4_execute",
-	"c4_health",
-	"c4_config_get",
-	"c4_notify",
-	"c4_diff_summary",
-	"c4_gpu_status",
+	"cq_execute",
+	"cq_health",
+	"cq_config_get",
+	"cq_notify",
+	"cq_diff_summary",
+	"cq_gpu_status",
 
 	// Remote workspace
 	"cq_workers",
 	"cq_relay_call",
 
-	// Hub (remote workers)
-	"c4_hub_submit",
-	"c4_hub_workers",
-	"c4_hub_status",
-	"c4_hub_list",
-	"c4_job_submit",
-	"c4_job_status",
+	// Hub
+	"cq_hub_submit",
+	"cq_hub_workers",
+	"cq_hub_status",
+	"cq_hub_list",
+	"cq_job_submit",
+	"cq_job_status",
 
 	// LLM
-	"c4_llm_call",
+	"cq_llm_call",
 
 	// Specs & design (planning)
-	"c4_save_spec",
-	"c4_save_design",
-	"c4_get_spec",
-	"c4_get_design",
-	"c4_list_specs",
-	"c4_list_designs",
-	"c4_discovery_complete",
-	"c4_design_complete",
+	"cq_save_spec",
+	"cq_save_design",
+	"cq_get_spec",
+	"cq_get_design",
+	"cq_list_specs",
+	"cq_list_designs",
+	"cq_discovery_complete",
+	"cq_design_complete",
 
 	// Lighthouse
-	"c4_lighthouse",
+	"cq_lighthouse",
 }
 
 // providerDefaultEnvVar returns the default environment variable name for a provider's API key.
