@@ -730,11 +730,16 @@ func newMCPServer() (*mcpServer, error) {
 		if ctx.cloudTP != nil {
 			tokenFunc = ctx.cloudTP.Token
 		}
-		relayhandler.Register(reg, &relayhandler.Deps{
+		deps := &relayhandler.Deps{
 			RelayURL:  relayURL,
 			AnonKey:   anonKey,
 			TokenFunc: tokenFunc,
-		})
+		}
+		// Wire hub lister for unified cq_workers() view.
+		if ctx.hubClient != nil {
+			deps.HubLister = newHubListerAdapter(ctx.hubClient)
+		}
+		relayhandler.Register(reg, deps)
 	}
 
 	// Start Agent inside MCP server (lazy, no cq serve required).

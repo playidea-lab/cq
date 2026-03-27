@@ -21,11 +21,26 @@ const (
 	maxResponseLen = 1 << 20 // 1 MiB
 )
 
+// HubListerResult holds a single hub worker's info for the unified view.
+type HubListerResult struct {
+	ID       string
+	Hostname string
+	Status   string
+	Tags     []string
+	GPUModel string
+}
+
+// HubWorkerLister lists hub-registered workers. Implemented via adapter in mcp_init.go.
+type HubWorkerLister interface {
+	ListWorkersBasic() ([]HubListerResult, int, error) // workers, pending job count, error
+}
+
 // Deps holds dependencies for relay handler tools.
 type Deps struct {
-	RelayURL  string       // e.g. "wss://cq-relay.fly.dev" (converted to https for HTTP calls)
-	AnonKey   string       // Supabase anon key for apikey header
-	TokenFunc func() string // returns fresh JWT
+	RelayURL  string            // e.g. "wss://cq-relay.fly.dev" (converted to https for HTTP calls)
+	AnonKey   string            // Supabase anon key for apikey header
+	TokenFunc func() string     // returns fresh JWT
+	HubLister HubWorkerLister   // optional: merges hub worker status into cq_workers response
 }
 
 // httpBase converts a WebSocket relay URL to an HTTPS base URL.
@@ -124,20 +139,64 @@ func handleWorkers(deps *Deps) (any, error) {
 		return nil, fmt.Errorf("parse health response: %w", err)
 	}
 
-	workers := make([]map[string]any, 0, len(health.WorkerNames))
+	// Build worker map from relay (connected workers).
+	workerMap := make(map[string]map[string]any, len(health.WorkerNames))
 	for _, name := range health.WorkerNames {
-		workers = append(workers, map[string]any{
-			"id":     name,
-			"status": "connected",
-		})
+		workerMap[name] = map[string]any{
+			"id":    name,
+			"relay": "connected",
+			"jobs":  nil, // unknown until hub info merged
+		}
 	}
 
-	return map[string]any{
+	// Merge hub worker info if available.
+	var pendingJobs int
+	if deps.HubLister != nil {
+		hubWorkers, pending, err := deps.HubLister.ListWorkersBasic()
+		if err == nil {
+			pendingJobs = pending
+			for _, hw := range hubWorkers {
+				key := hw.Hostname
+				if key == "" {
+					key = hw.ID
+				}
+				if w, ok := workerMap[key]; ok {
+					// Worker is both relay-connected and hub-registered.
+					w["jobs"] = hw.Status
+					if len(hw.Tags) > 0 {
+						w["tags"] = hw.Tags
+					}
+					if hw.GPUModel != "" {
+						w["gpu"] = hw.GPUModel
+					}
+				} else {
+					// Hub-registered but not relay-connected (offline relay).
+					workerMap[key] = map[string]any{
+						"id":    key,
+						"relay": "disconnected",
+						"jobs":  hw.Status,
+						"tags":  hw.Tags,
+					}
+				}
+			}
+		}
+	}
+
+	workers := make([]map[string]any, 0, len(workerMap))
+	for _, w := range workerMap {
+		workers = append(workers, w)
+	}
+
+	result := map[string]any{
 		"relay":   deps.httpBase(),
 		"status":  health.Status,
 		"workers": workers,
-		"count":   health.Workers,
-	}, nil
+		"count":   len(workers),
+	}
+	if pendingJobs > 0 {
+		result["pending_jobs"] = pendingJobs
+	}
+	return result, nil
 }
 
 func handleRelayCall(deps *Deps, raw json.RawMessage) (any, error) {

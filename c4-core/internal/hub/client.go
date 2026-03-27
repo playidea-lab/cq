@@ -633,6 +633,43 @@ func (c *Client) ListWorkers(activeOnly ...bool) ([]Worker, error) {
 	return workers, nil
 }
 
+// BasicWorker is a simplified worker representation for unified views.
+type BasicWorker struct {
+	ID       string   `json:"id"`
+	Hostname string   `json:"hostname"`
+	Status   string   `json:"status"`
+	Tags     []string `json:"tags"`
+	GPUModel string   `json:"gpu_model,omitempty"`
+}
+
+// ListWorkersBasic returns a simplified worker list + pending job count.
+func (c *Client) ListWorkersBasic() ([]BasicWorker, int, error) {
+	workers, err := c.ListWorkers()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result := make([]BasicWorker, 0, len(workers))
+	for _, w := range workers {
+		result = append(result, BasicWorker{
+			ID:       w.ID,
+			Hostname: w.Hostname,
+			Status:   w.Status,
+			Tags:     w.Capabilities,
+			GPUModel: w.GPUModel,
+		})
+	}
+
+	// Count pending jobs.
+	var pendingJobs int
+	var jobs []Job
+	if err := c.supabaseGet("/rest/v1/hub_jobs?status=eq.QUEUED&select=id", &jobs); err == nil {
+		pendingJobs = len(jobs)
+	}
+
+	return result, pendingJobs, nil
+}
+
 // PruneWorkers removes workers whose last_heartbeat is older than 5 minutes.
 // If dryRun is true, counts would-be pruned workers without deleting them.
 func (c *Client) PruneWorkers(dryRun bool) (int, error) {
