@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -47,9 +48,33 @@ type sessionTUIModel struct {
 	statusFilter string // "all" means no filter
 	cursor       int
 
-	selectedTag  string
+	selectedTag   string
 	confirmDelete bool   // waiting for delete confirmation
 	deleteTarget  string // tag to delete
+
+	// Detail mode: navigate file paths of selected session
+	detailMode   bool
+	detailCursor int
+}
+
+// detailPaths returns the file paths for the currently selected session.
+func (m *sessionTUIModel) detailPaths() []string {
+	idx := m.cursorRowIndex()
+	if idx < 0 {
+		return nil
+	}
+	row := m.rows[idx]
+	var paths []string
+	if row.ideaPath != "" {
+		paths = append(paths, row.ideaPath)
+	}
+	if row.specPath != "" {
+		paths = append(paths, row.specPath)
+	}
+	if row.designPath != "" {
+		paths = append(paths, row.designPath)
+	}
+	return paths
 }
 
 func newSessionTUIModel() sessionTUIModel {
@@ -219,6 +244,21 @@ func (m *sessionTUIModel) isSearching() bool {
 	return m.query != ""
 }
 
+// openFileCmd opens a file path using the OS default handler.
+func openFileCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		absPath := filepath.Join(projectDir, path)
+		// Try 'code' first (VS Code), then 'open' (macOS default)
+		for _, cmd := range []string{"code", "open"} {
+			if p, err := exec.LookPath(cmd); err == nil {
+				_ = exec.Command(p, absPath).Start()
+				return nil
+			}
+		}
+		return nil
+	}
+}
+
 func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -239,6 +279,49 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Detail mode: navigating file paths
+		if m.detailMode {
+			paths := m.detailPaths()
+			switch msg.Type {
+			case tea.KeyLeft, tea.KeyEsc:
+				m.detailMode = false
+				m.detailCursor = 0
+				return m, nil
+			case tea.KeyUp:
+				if m.detailCursor > 0 {
+					m.detailCursor--
+				}
+				return m, nil
+			case tea.KeyDown:
+				if m.detailCursor < len(paths)-1 {
+					m.detailCursor++
+				}
+				return m, nil
+			case tea.KeyEnter:
+				if m.detailCursor < len(paths) {
+					return m, openFileCmd(paths[m.detailCursor])
+				}
+				return m, nil
+			case tea.KeyRunes:
+				switch msg.String() {
+				case "k":
+					if m.detailCursor > 0 {
+						m.detailCursor--
+					}
+				case "j":
+					if m.detailCursor < len(paths)-1 {
+						m.detailCursor++
+					}
+				case "q", "h":
+					m.detailMode = false
+					m.detailCursor = 0
+				}
+				return m, nil
+			}
+			return m, nil
+		}
+
+		// Normal mode
 		switch msg.Type {
 		case tea.KeyEnter:
 			idx := m.cursorRowIndex()
@@ -261,6 +344,13 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyDown:
 			m.moveCursor(1)
 
+		case tea.KeyRight:
+			paths := m.detailPaths()
+			if len(paths) > 0 {
+				m.detailMode = true
+				m.detailCursor = 0
+			}
+
 		case tea.KeyTab:
 			m.cycleFilter()
 
@@ -274,11 +364,9 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyRunes:
 			ch := msg.String()
 			if m.isSearching() {
-				// In search mode: all chars go to query
 				m.query += ch
 				m.rebuildRows()
 			} else {
-				// Navigation mode: shortcuts active
 				switch ch {
 				case "q":
 					return m, tea.Quit
@@ -286,6 +374,13 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.moveCursor(1)
 				case "k":
 					m.moveCursor(-1)
+				case "l":
+					// Right alias — enter detail mode
+					paths := m.detailPaths()
+					if len(paths) > 0 {
+						m.detailMode = true
+						m.detailCursor = 0
+					}
 				case "d":
 					idx := m.cursorRowIndex()
 					if idx >= 0 {
@@ -293,10 +388,8 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.deleteTarget = m.rows[idx].tag
 					}
 				case "/":
-					// Enter search mode (query starts empty, next char will make isSearching true)
-					// Do nothing — user will type next char which enters search
+					// noop — next char enters search
 				default:
-					// Start searching
 					m.query += ch
 					m.rebuildRows()
 				}
@@ -478,18 +571,33 @@ func (m sessionTUIModel) View() string {
 
 		// Show file paths for selected row
 		if isSelected {
-			if row.ideaPath != "" {
-				sb.WriteString(styleFilePath.Render(fmt.Sprintf("    ├─ 💡 %s", row.ideaPath)))
+			paths := m.detailPaths()
+			pathIdx := 0
+			renderPath := func(icon, path string, isLast bool) {
+				branch := "├─"
+				if isLast {
+					branch = "└─"
+				}
+				line := fmt.Sprintf("    %s %s %s", branch, icon, path)
+				if m.detailMode && pathIdx == m.detailCursor {
+					sb.WriteString(styleSelected.Render(line))
+				} else {
+					sb.WriteString(styleFilePath.Render(line))
+				}
 				sb.WriteString("\n")
+				pathIdx++
+			}
+			_ = paths // used for detail cursor indexing
+			if row.ideaPath != "" {
+				isLast := row.specPath == "" && row.designPath == ""
+				renderPath("💡", row.ideaPath, isLast)
 			}
 			if row.specPath != "" {
-				sb.WriteString(styleFilePath.Render(fmt.Sprintf("    ├─ 📄 %s", row.specPath)))
-				sb.WriteString("\n")
+				isLast := row.designPath == ""
+				renderPath("📄", row.specPath, isLast)
 			}
 			if row.designPath != "" {
-				last := "└─"
-				sb.WriteString(styleFilePath.Render(fmt.Sprintf("    %s 🏗  %s", last, row.designPath)))
-				sb.WriteString("\n")
+				renderPath("🏗 ", row.designPath, true)
 			}
 		}
 	}
@@ -501,7 +609,12 @@ func (m sessionTUIModel) View() string {
 
 	// Help bar
 	sb.WriteString("\n")
-	help := "[↑↓/jk] 이동  [Enter] 시작  [d] 삭제  [Tab] 필터  [Esc] 검색취소  [q] 종료"
+	var help string
+	if m.detailMode {
+		help = "[↑↓] 이동  [Enter] 열기  [←/h] 돌아가기"
+	} else {
+		help = "[↑↓] 이동  [→/l] 파일보기  [Enter] 시작  [d] 삭제  [Tab] 필터  [Esc] 검색취소  [q] 종료"
+	}
 	sb.WriteString(styleHelpBar.Render(help))
 	sb.WriteString("\n")
 
