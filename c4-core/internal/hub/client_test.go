@@ -185,6 +185,68 @@ func TestNewClient_PrimaryEnvOverridesLegacy(t *testing.T) {
 }
 
 // =========================================================================
+// NewClientWithCloudFallback
+// =========================================================================
+
+func TestNewClientWithCloudFallback_UsesCloudURLWhenEmpty(t *testing.T) {
+	c := NewClientWithCloudFallback(
+		HubConfig{APIKey: "k"},
+		CloudFallback{URL: "https://xyz.supabase.co", AnonKey: "anon-key"},
+	)
+	if c.supabaseURL != "https://xyz.supabase.co" {
+		t.Errorf("supabaseURL = %q, want https://xyz.supabase.co", c.supabaseURL)
+	}
+	if c.supabaseKey != "anon-key" {
+		t.Errorf("supabaseKey = %q, want anon-key", c.supabaseKey)
+	}
+}
+
+func TestNewClientWithCloudFallback_HubURLTakesPrecedence(t *testing.T) {
+	c := NewClientWithCloudFallback(
+		HubConfig{
+			APIKey:      "k",
+			SupabaseURL: "https://hub.supabase.co",
+			SupabaseKey: "hub-anon-key",
+		},
+		CloudFallback{URL: "https://cloud.supabase.co", AnonKey: "cloud-anon-key"},
+	)
+	if c.supabaseURL != "https://hub.supabase.co" {
+		t.Errorf("supabaseURL = %q, want https://hub.supabase.co (hub config takes precedence)", c.supabaseURL)
+	}
+	if c.supabaseKey != "hub-anon-key" {
+		t.Errorf("supabaseKey = %q, want hub-anon-key (hub config takes precedence)", c.supabaseKey)
+	}
+}
+
+func TestNewClientWithCloudFallback_PartialFallback(t *testing.T) {
+	// hub has URL but no explicit SupabaseKey — cloud AnonKey should fill in
+	c := NewClientWithCloudFallback(
+		HubConfig{
+			APIKey:      "k",
+			SupabaseURL: "https://hub.supabase.co",
+		},
+		CloudFallback{URL: "https://cloud.supabase.co", AnonKey: "cloud-anon-key"},
+	)
+	if c.supabaseURL != "https://hub.supabase.co" {
+		t.Errorf("supabaseURL = %q, want https://hub.supabase.co", c.supabaseURL)
+	}
+	// cfg.SupabaseKey is "", so cloud.AnonKey takes precedence over NewClient's apiKey fallback
+	if c.supabaseKey != "cloud-anon-key" {
+		t.Errorf("supabaseKey = %q, want cloud-anon-key", c.supabaseKey)
+	}
+}
+
+func TestNewClientWithCloudFallback_TrailingSlashTrimmed(t *testing.T) {
+	c := NewClientWithCloudFallback(
+		HubConfig{APIKey: "k"},
+		CloudFallback{URL: "https://xyz.supabase.co/", AnonKey: "anon"},
+	)
+	if c.supabaseURL != "https://xyz.supabase.co" {
+		t.Errorf("supabaseURL trailing slash not trimmed: %q", c.supabaseURL)
+	}
+}
+
+// =========================================================================
 // setHeaders
 // =========================================================================
 

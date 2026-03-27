@@ -80,6 +80,25 @@ func NewClient(cfg HubConfig) *Client {
 	}
 }
 
+// CloudFallback provides cloud config values when hub-specific config is missing.
+type CloudFallback struct {
+	URL     string
+	AnonKey string
+}
+
+// NewClientWithCloudFallback creates a Hub client, falling back to cloud config
+// for Supabase URL/key when hub-specific values are empty.
+func NewClientWithCloudFallback(cfg HubConfig, cloud CloudFallback) *Client {
+	c := NewClient(cfg)
+	if cfg.SupabaseURL == "" && cloud.URL != "" {
+		c.supabaseURL = strings.TrimRight(cloud.URL, "/")
+	}
+	if cfg.SupabaseKey == "" && cloud.AnonKey != "" {
+		c.supabaseKey = cloud.AnonKey
+	}
+	return c
+}
+
 // IsAvailable returns true when the client has a URL configured (either legacy or Supabase).
 // API key is optional for local daemon mode.
 func (c *Client) IsAvailable() bool {
