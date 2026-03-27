@@ -884,13 +884,11 @@ func (m sessionTUIModel) View() string {
 	// Rows — display-width-aware column alignment
 	// Fixed: cursor(3) + markers(4) + tag(18) + gap(1) + badge(~14) + gap(1) + summary(dynamic) + gap(1) + date(12)
 	const tagColW = 18
-	fixedW := 3 + 4 + tagColW + 1 + 14 + 1 + 1 + 12 // ~54
+	// Fixed columns: cursor(3) + markers(4) + tag(18) + sp(1) + badge(13) + sp(1) + sp(1) + date(12) + margin(1)
+	fixedW := 3 + 4 + tagColW + 1 + 13 + 1 + 1 + 12 + 1
 	sumColW := m.width - fixedW
-	if sumColW < 20 {
-		sumColW = 20
-	}
-	if sumColW > 80 {
-		sumColW = 80
+	if sumColW < 10 {
+		sumColW = 10
 	}
 	cursorRowIdx := m.cursorRowIndex()
 	nonHeaderCount := 0
