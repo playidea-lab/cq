@@ -382,6 +382,17 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyTab:
 			m.cycleFilter()
 
+		case tea.KeyCtrlN:
+			m.newMode = true
+			m.newInput = ""
+
+		case tea.KeyCtrlD:
+			idx := m.cursorRowIndex()
+			if idx >= 0 {
+				m.confirmDelete = true
+				m.deleteTarget = m.rows[idx].tag
+			}
+
 		case tea.KeyBackspace:
 			if len(m.query) > 0 {
 				runes := []rune(m.query)
@@ -391,23 +402,7 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyRunes:
 			ch := msg.String()
-			// All printable characters go to search query.
-			// Shortcuts (d/n) only work when query is empty.
-			if m.query == "" {
-				switch ch {
-				case "n":
-					m.newMode = true
-					m.newInput = ""
-					return m, nil
-				case "d":
-					idx := m.cursorRowIndex()
-					if idx >= 0 {
-						m.confirmDelete = true
-						m.deleteTarget = m.rows[idx].tag
-					}
-					return m, nil
-				}
-			}
+			// All printable characters go to search query — no exceptions.
 			m.query += ch
 			m.rebuildRows()
 		}
@@ -754,13 +749,13 @@ func (m sessionTUIModel) View() string {
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("Enter", "start"))
 		sb.WriteString("  ")
-		sb.WriteString(helpEntry("d", "delete"))
+		sb.WriteString(helpEntry("^D", "delete"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("^N", "new"))
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("Tab", "filter"))
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("Esc", "quit/clear"))
-		sb.WriteString("  ")
-		sb.WriteString(helpEntry("n", "new"))
 	}
 	sb.WriteString("\n")
 
