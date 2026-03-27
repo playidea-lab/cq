@@ -284,17 +284,25 @@ c4_experiment_search(query: "h36m MPJPE baseline")
 
 | 하고 싶은 일 | 도구 |
 |------------|------|
-| 데이터셋 가져오기 | `c4_drive_dataset_pull(name, dest)` |
-| 데이터셋 올리기 | `c4_drive_dataset_upload(path, name)` |
-| 파일 하나 받기 | `c4_drive_download(drive_path, local_path)` |
-| 파일 하나 올리기 | `c4_drive_upload(local_path, drive_path)` |
-| GPU 잡 제출 | `c4_job_submit(command, gpu_count)` |
-| 잡 상태 확인 | `c4_job_status(job_id)` |
-| 실험 기록 + 파일 업로드 | `c4_experiment_record(title, content, artifacts=[...])` |
-| 패턴/인사이트 기록 | `c4_knowledge_record(doc_type, title, content)` |
-| 과거 실험 검색 | `c4_experiment_search(query)` |
-| 과거 패턴 검색 | `c4_knowledge_search(query)` |
-| 데이터셋 목록 | `c4_drive_dataset_list()` |
+| **원격 접근** | |
+| 연결된 워커 목록 | `cq_workers()` |
+| 원격 파일 읽기/실행 | `cq_relay_call(worker_id, tool, args)` |
+| **실험 실행** | |
+| GPU 아무 머신에서 실행 | `cq hub submit "command" --tag gpu` |
+| 특정 머신에서 실행 | `cq hub submit "command" --target pi-System-Product-Name` |
+| 즉시 실행 (단발, <30초) | `cq_relay_call(worker_id, "cq_execute", {command})` |
+| 잡 상태 확인 | `cq hub list` |
+| **데이터 관리** | |
+| 데이터셋 가져오기 | `cq_drive_dataset_pull(name, dest)` |
+| 데이터셋 올리기 | `cq_drive_dataset_upload(path, name)` |
+| 파일 하나 받기 | `cq_drive_download(drive_path, local_path)` |
+| 파일 하나 올리기 | `cq_drive_upload(local_path, drive_path)` |
+| **기록** | |
+| 실험 기록 + 파일 업로드 | `cq_experiment_record(title, content, artifacts=[...])` |
+| 패턴/인사이트 기록 | `cq_knowledge_record(doc_type, title, content)` |
+| 과거 실험 검색 | `cq_experiment_search(query)` |
+| 과거 패턴 검색 | `cq_knowledge_search(query)` |
+| 데이터셋 목록 | `cq_drive_dataset_list()` |
 | Drive 파일 목록 | `c4_drive_list(path)` |
 
 ---
