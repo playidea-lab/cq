@@ -161,9 +161,16 @@ func buildRows(sessions map[string]namedSessionEntry, idx map[string]string, que
 			if t, err := time.Parse(time.RFC3339, entry.Updated); err == nil {
 				dateStr = t.Format("Jan 02 15:04")
 			}
+			// Summary with fallback: summary → memo → idea slug → (empty)
 			summary := entry.Summary
-			if len(summary) > 60 {
-				summary = summary[:60] + "…"
+			if summary == "" {
+				summary = entry.Memo
+			}
+			if summary == "" && entry.Idea != "" {
+				summary = "💡 " + entry.Idea
+			}
+			if len(summary) > 50 {
+				summary = summary[:50] + "…"
 			}
 			rows = append(rows, tuiRow{
 				isHeader:  false,
@@ -361,7 +368,12 @@ func (m sessionTUIModel) View() string {
 			sb.WriteString("\n")
 		} else {
 			isSelected := i == cursorRowIdx
-			line := fmt.Sprintf("  %-20s  %-60s  %s", row.tag, row.summary, row.date)
+			// Show: cursor tag status summary date
+			statusLabel := row.rowStatus
+			if statusLabel == "" {
+				statusLabel = "active"
+			}
+			line := fmt.Sprintf("  %-20s  %-12s  %-50s  %s", row.tag, statusLabel, row.summary, row.date)
 
 			var style lipgloss.Style
 			if row.rowStatus == "done" {
