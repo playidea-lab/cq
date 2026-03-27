@@ -16,6 +16,8 @@ import (
 
 type launchToolMsg struct{ tool string }
 type changeConfigMsg struct{}
+type openSessionsMsg struct{}
+type openDoctorMsg struct{}
 
 // --- Dashboard TUI Model ---
 
@@ -158,6 +160,12 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case changeConfigMsg:
 		m.action = "config"
 		return m, tea.Quit
+	case openSessionsMsg:
+		m.action = "sessions"
+		return m, tea.Quit
+	case openDoctorMsg:
+		m.action = "doctor"
+		return m, tea.Quit
 	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -174,6 +182,10 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showDetail = !m.showDetail
 			case "c":
 				return m, func() tea.Msg { return changeConfigMsg{} }
+			case "t":
+				return m, func() tea.Msg { return openSessionsMsg{} }
+			case "d":
+				return m, func() tea.Msg { return openDoctorMsg{} }
 			}
 		}
 	case tea.WindowSizeMsg:
@@ -252,9 +264,13 @@ func (m dashboardModel) View() string {
 	sb.WriteString(" ")
 	sb.WriteString(helpEntry("Enter", m.defaultTool+" 시작"))
 	sb.WriteString("  ")
-	sb.WriteString(helpEntry("s", "상태 상세"))
+	sb.WriteString(helpEntry("s", "상태"))
 	sb.WriteString("  ")
-	sb.WriteString(helpEntry("c", "설정 변경"))
+	sb.WriteString(helpEntry("t", "sessions"))
+	sb.WriteString("  ")
+	sb.WriteString(helpEntry("d", "doctor"))
+	sb.WriteString("  ")
+	sb.WriteString(helpEntry("c", "설정"))
 	sb.WriteString("  ")
 	sb.WriteString(helpEntry("q", "종료"))
 	sb.WriteString("\n")
