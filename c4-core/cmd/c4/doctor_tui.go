@@ -62,8 +62,7 @@ type doctorTUIModel struct {
 	confirmTarget int
 
 	// Detail view
-	detailMode   bool
-	detailScroll int
+	detailMode bool
 }
 
 func newDoctorTUIModel() doctorTUIModel {
@@ -91,8 +90,9 @@ func runCheckCmd(index int, entry doctorCheckEntry) tea.Cmd {
 	}
 }
 
-// runFixCmd runs tryFix on a check item, then re-runs the check to get fresh status.
-func runFixCmd(index int, item *checkItem) tea.Cmd {
+// runFixCmd runs tryFix on a check item copy, then re-runs the check to get fresh status.
+// Takes a value copy to avoid data races with the Bubble Tea model.
+func runFixCmd(index int, item checkItem) tea.Cmd {
 	return func() tea.Msg {
 		tryFix(&item.result)
 		newResult := item.entry.Fn()
@@ -162,7 +162,7 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.confirmFix = false
 				if idx >= 0 && idx < len(m.checks) {
 					m.checks[idx].loading = true
-					return m, tea.Batch(runFixCmd(idx, &m.checks[idx]), tickCmd())
+					return m, tea.Batch(runFixCmd(idx, m.checks[idx]), tickCmd())
 				}
 			default:
 				m.confirmFix = false
@@ -175,16 +175,16 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.Type {
 			case tea.KeyLeft, tea.KeyEsc:
 				m.detailMode = false
-				m.detailScroll = 0
+
 				return m, nil
 			case tea.KeyEnter:
 				// Fix from detail view
 				idx := m.cursorCheckIndex()
 				if idx >= 0 && idx < len(m.checks) {
-					item := &m.checks[idx]
+					item := m.checks[idx]
 					if !item.loading && item.result.Fix != "" {
 						if item.entry.FixSafe {
-							item.loading = true
+							m.checks[idx].loading = true
 							return m, tea.Batch(runFixCmd(idx, item), tickCmd())
 						}
 						m.confirmFix = true
@@ -196,7 +196,7 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch msg.String() {
 				case "h":
 					m.detailMode = false
-					m.detailScroll = 0
+	
 				case "r":
 					// Recheck only this check
 					idx := m.cursorCheckIndex()
@@ -206,7 +206,7 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				case "q":
 					m.detailMode = false
-					m.detailScroll = 0
+	
 				}
 			}
 			return m, nil
@@ -222,15 +222,15 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			idx := m.cursorCheckIndex()
 			if idx >= 0 && !m.checks[idx].loading {
 				m.detailMode = true
-				m.detailScroll = 0
+
 			}
 		case tea.KeyEnter:
 			idx := m.cursorCheckIndex()
 			if idx >= 0 && idx < len(m.checks) {
-				item := &m.checks[idx]
+				item := m.checks[idx]
 				if !item.loading && item.result.Fix != "" {
 					if item.entry.FixSafe {
-						item.loading = true
+						m.checks[idx].loading = true
 						return m, tea.Batch(runFixCmd(idx, item), tickCmd())
 					}
 					m.confirmFix = true
@@ -289,7 +289,7 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					idx := m.cursorCheckIndex()
 					if idx >= 0 && !m.checks[idx].loading {
 						m.detailMode = true
-						m.detailScroll = 0
+		
 					}
 					return m, nil
 				}
@@ -373,7 +373,7 @@ func (m *doctorTUIModel) buildVisibleRows() []doctorRow {
 
 	// Loading group at the end
 	if len(loadingIndices) > 0 && m.statusFilter == "all" {
-		rows = append(rows, doctorRow{isHeader: true, status: "Loading", count: len(loadingIndices)})
+		rows = append(rows, doctorRow{isHeader: true, status: checkLoading, count: len(loadingIndices)})
 		for _, idx := range loadingIndices {
 			rows = append(rows, doctorRow{index: idx})
 		}
@@ -434,6 +434,8 @@ func doctorSeverityHeaderStyle(status checkStatus) lipgloss.Style {
 		col = lipgloss.Color("4")
 	case checkOK:
 		col = lipgloss.Color("2")
+	case checkLoading:
+		col = lipgloss.Color("6")
 	}
 	return lipgloss.NewStyle().Bold(true).Foreground(col)
 }
@@ -462,6 +464,13 @@ func (m doctorTUIModel) viewConfirmFix() string {
 		name = m.checks[idx].entry.Name
 	}
 	sb.WriteString("\n")
+	maxFixW := m.width - 40
+	if maxFixW < 20 {
+		maxFixW = 20
+	}
+	if lsDispWidth(fixDesc) > maxFixW {
+		fixDesc = lsTruncateToWidth(fixDesc, maxFixW-1) + "…"
+	}
 	sb.WriteString(styleConfirm.Render(fmt.Sprintf("  ⚠ Run fix for '%s': %s? (y/N) ", name, fixDesc)))
 	sb.WriteString("\n")
 

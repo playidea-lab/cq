@@ -25,10 +25,11 @@ import (
 type checkStatus string
 
 const (
-	checkOK   checkStatus = "OK"
-	checkInfo checkStatus = "INFO"
-	checkWarn checkStatus = "WARN"
-	checkFail checkStatus = "FAIL"
+	checkOK      checkStatus = "OK"
+	checkInfo    checkStatus = "INFO"
+	checkWarn    checkStatus = "WARN"
+	checkFail    checkStatus = "FAIL"
+	checkLoading checkStatus = "Loading"
 )
 
 // checkResult holds the outcome of one diagnostic check.
