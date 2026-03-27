@@ -353,7 +353,7 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// History mode: scrollable list of user questions
 		if m.historyMode {
 			switch msg.Type {
-			case tea.KeyEsc, tea.KeyLeft:
+			case tea.KeyEsc, tea.KeyLeft, tea.KeySpace:
 				m.historyMode = false
 				return m, nil
 			case tea.KeyUp:
@@ -363,11 +363,6 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyDown:
 				if m.historyCursor < len(m.historyItems)-1 {
 					m.historyCursor++
-				}
-			case tea.KeyRunes:
-				if msg.String() == " " {
-					m.historyMode = false
-					return m, nil
 				}
 			}
 			return m, nil
@@ -486,6 +481,25 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailCursor = 0
 			}
 
+		case tea.KeySpace:
+			if m.isSearching() {
+				m.query += " "
+				m.rebuildRows()
+			} else {
+				idx := m.cursorRowIndex()
+				if idx >= 0 {
+					tag := m.rows[idx].tag
+					entry := m.sessions[tag]
+					items := loadHistory(entry.UUID)
+					if len(items) > 0 {
+						m.historyMode = true
+						m.historyItems = items
+						m.historyCursor = len(items) - 1
+						m.historyScroll = 0
+					}
+				}
+			}
+
 		case tea.KeyTab:
 			m.cycleFilter()
 
@@ -529,23 +543,7 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyRunes:
 			ch := msg.String()
-			if ch == " " && !m.isSearching() {
-				// Space (when not searching): open history for selected session
-				idx := m.cursorRowIndex()
-				if idx >= 0 {
-					tag := m.rows[idx].tag
-					entry := m.sessions[tag]
-					items := loadHistory(entry.UUID)
-					if len(items) > 0 {
-						m.historyMode = true
-						m.historyItems = items
-						m.historyCursor = len(items) - 1 // start at bottom (most recent)
-						m.historyScroll = 0
-					}
-				}
-				return m, nil
-			}
-			// All other printable characters go to search query.
+			// All printable characters go to search query.
 			m.query += ch
 			m.rebuildRows()
 		}
