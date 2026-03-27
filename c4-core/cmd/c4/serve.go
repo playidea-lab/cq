@@ -153,7 +153,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	registerSSESubscriberServeComponent(mgr, cfg, ebComp, wakeCh)
 	registerStaleCheckerServeComponent(mgr, cfg, ebComp)
 	registerSessionSummarizerServeComponent(mgr, srv.initCtx.db, srv.knowledgeStore, srv.initCtx.llmGateway)
-	registerHubWorkerServeComponent(mgr, cfg, srv.initCtx.hubClient)
+	registerWorkerServeComponent(mgr, cfg, srv.initCtx.hubClient)
 	registerFileIndexComponent(srv.registry, projectDir)
 	registerToolSocketComponent(mgr, srv)
 	if cfg.Serve.MCPHTTP.Enabled {

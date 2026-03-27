@@ -152,6 +152,12 @@ type HubConfig struct {
 	WorkerTags []string `mapstructure:"worker_tags"  yaml:"worker_tags"` // capabilities for job matching (e.g. ["gpu", "ml"])
 }
 
+// WorkerConfig controls automatic Hub job execution via cq serve.
+type WorkerConfig struct {
+	Enabled bool     `mapstructure:"enabled" yaml:"enabled"` // auto-register as worker on cq serve start
+	Tags    []string `mapstructure:"tags"    yaml:"tags"`    // capabilities for job matching (e.g. ["gpu", "ml"])
+}
+
 // RelayConfig holds WebSocket relay connection settings.
 // When enabled, cq serve connects to the relay server and exposes MCP tools
 // to remote clients without requiring a direct network connection.
@@ -414,6 +420,7 @@ type C4Config struct {
 	Hub              HubConfig                `mapstructure:"hub"                  yaml:"hub"`
 	EventSink        EventSinkConfig          `mapstructure:"eventsink"            yaml:"eventsink"`
 	Relay            RelayConfig              `mapstructure:"relay"                yaml:"relay"`
+	Worker           WorkerConfig             `mapstructure:"worker"               yaml:"worker"`
 	PermissionReviewer PermissionReviewerConfig `mapstructure:"permission_reviewer"  yaml:"permission_reviewer"`
 	ReviewAsTask     bool                       `mapstructure:"review_as_task"       yaml:"review_as_task"`
 	CheckpointAsTask bool                       `mapstructure:"checkpoint_as_task"  yaml:"checkpoint_as_task"`

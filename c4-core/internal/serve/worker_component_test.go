@@ -27,22 +27,22 @@ func newHubWorkerTestClient(t *testing.T, mux *http.ServeMux) *hub.Client {
 	})
 }
 
-func TestHubWorkerComponent_Name(t *testing.T) {
-	w := NewHubWorker(nil, nil, "test-host")
-	if w.Name() != "hub_worker" {
-		t.Errorf("Name() = %q, want %q", w.Name(), "hub_worker")
+func TestWorkerComponent_Name(t *testing.T) {
+	w := NewWorker(nil, nil, "test-host")
+	if w.Name() != "worker" {
+		t.Errorf("Name() = %q, want %q", w.Name(), "worker")
 	}
 }
 
-func TestHubWorkerComponent_HealthBeforeStart(t *testing.T) {
-	w := NewHubWorker(nil, nil, "test-host")
+func TestWorkerComponent_HealthBeforeStart(t *testing.T) {
+	w := NewWorker(nil, nil, "test-host")
 	h := w.Health()
 	if h.Status != "error" {
 		t.Errorf("Health before start = %q, want %q", h.Status, "error")
 	}
 }
 
-func TestHubWorkerComponent_StartRegister(t *testing.T) {
+func TestWorkerComponent_StartRegister(t *testing.T) {
 	var registered atomic.Bool
 
 	mux := http.NewServeMux()
@@ -61,7 +61,7 @@ func TestHubWorkerComponent_StartRegister(t *testing.T) {
 	})
 
 	client := newHubWorkerTestClient(t, mux)
-	comp := NewHubWorker(client, []string{"gpu", "ml"}, "test-host")
+	comp := NewWorker(client, []string{"gpu", "ml"}, "test-host")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -81,7 +81,7 @@ func TestHubWorkerComponent_StartRegister(t *testing.T) {
 	}
 }
 
-func TestHubWorkerComponent_ExecuteJob(t *testing.T) {
+func TestWorkerComponent_ExecuteJob(t *testing.T) {
 	var (
 		registered atomic.Bool
 		completed  atomic.Bool
@@ -135,7 +135,7 @@ func TestHubWorkerComponent_ExecuteJob(t *testing.T) {
 	})
 
 	client := newHubWorkerTestClient(t, mux)
-	comp := NewHubWorker(client, []string{"test"}, "test-host")
+	comp := NewWorker(client, []string{"test"}, "test-host")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -164,8 +164,8 @@ func TestHubWorkerComponent_ExecuteJob(t *testing.T) {
 	}
 }
 
-func TestHubWorkerComponent_StopBeforeStart(t *testing.T) {
-	w := NewHubWorker(nil, nil, "test-host")
+func TestWorkerComponent_StopBeforeStart(t *testing.T) {
+	w := NewWorker(nil, nil, "test-host")
 	if err := w.Stop(context.Background()); err != nil {
 		t.Errorf("Stop before Start: %v", err)
 	}

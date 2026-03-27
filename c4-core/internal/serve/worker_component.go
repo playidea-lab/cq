@@ -16,15 +16,15 @@ import (
 )
 
 const (
-	hubWorkerPollInterval = 20 * time.Second
-	hubWorkerHeartbeat    = 30 * time.Second
-	hubWorkerLeaseRenew   = 60 * time.Second
-	hubWorkerGracePeriod  = 5 * time.Second
+	workerPollInterval = 20 * time.Second
+	workerHeartbeat    = 30 * time.Second
+	workerLeaseRenew   = 60 * time.Second
+	workerGracePeriod  = 5 * time.Second
 )
 
-// HubWorkerComponent implements Component. It registers as a Hub worker on Start
+// WorkerComponent implements Component. It registers as a Hub worker on Start
 // and continuously claims + executes jobs until Stop is called.
-type HubWorkerComponent struct {
+type WorkerComponent struct {
 	client   *hub.Client
 	tags     []string
 	hostname string
@@ -35,18 +35,18 @@ type HubWorkerComponent struct {
 	jobCmd  *exec.Cmd // currently running job subprocess
 }
 
-// NewHubWorker creates a HubWorkerComponent.
-func NewHubWorker(client *hub.Client, tags []string, hostname string) *HubWorkerComponent {
-	return &HubWorkerComponent{
+// NewWorker creates a WorkerComponent.
+func NewWorker(client *hub.Client, tags []string, hostname string) *WorkerComponent {
+	return &WorkerComponent{
 		client:   client,
 		tags:     tags,
 		hostname: hostname,
 	}
 }
 
-func (w *HubWorkerComponent) Name() string { return "hub_worker" }
+func (w *WorkerComponent) Name() string { return "worker" }
 
-func (w *HubWorkerComponent) Start(ctx context.Context) error {
+func (w *WorkerComponent) Start(ctx context.Context) error {
 	// Register with Hub.
 	caps := map[string]any{
 		"hostname": w.hostname,
@@ -69,7 +69,7 @@ func (w *HubWorkerComponent) Start(ctx context.Context) error {
 	return nil
 }
 
-func (w *HubWorkerComponent) Stop(_ context.Context) error {
+func (w *WorkerComponent) Stop(_ context.Context) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -88,14 +88,14 @@ func (w *HubWorkerComponent) Stop(_ context.Context) error {
 		}()
 		select {
 		case <-done:
-		case <-time.After(hubWorkerGracePeriod):
+		case <-time.After(workerGracePeriod):
 			_ = w.jobCmd.Process.Kill()
 		}
 	}
 	return nil
 }
 
-func (w *HubWorkerComponent) Health() ComponentHealth {
+func (w *WorkerComponent) Health() ComponentHealth {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if !w.started {
@@ -105,8 +105,8 @@ func (w *HubWorkerComponent) Health() ComponentHealth {
 }
 
 // heartbeatLoop sends periodic heartbeats to Hub.
-func (w *HubWorkerComponent) heartbeatLoop(ctx context.Context) {
-	ticker := time.NewTicker(hubWorkerHeartbeat)
+func (w *WorkerComponent) heartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(workerHeartbeat)
 	defer ticker.Stop()
 	for {
 		select {
@@ -127,7 +127,7 @@ func (w *HubWorkerComponent) heartbeatLoop(ctx context.Context) {
 }
 
 // jobLoop continuously polls for jobs, executes them, and reports results.
-func (w *HubWorkerComponent) jobLoop(ctx context.Context) {
+func (w *WorkerComponent) jobLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -145,7 +145,7 @@ func (w *HubWorkerComponent) jobLoop(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(hubWorkerPollInterval):
+			case <-time.After(workerPollInterval):
 			}
 			continue
 		}
@@ -185,7 +185,7 @@ func (w *HubWorkerComponent) jobLoop(ctx context.Context) {
 }
 
 // executeJob runs a job command as a subprocess.
-func (w *HubWorkerComponent) executeJob(ctx context.Context, job *hub.Job) (int, error) {
+func (w *WorkerComponent) executeJob(ctx context.Context, job *hub.Job) (int, error) {
 	cmd := exec.CommandContext(ctx, "sh", "-c", job.Command)
 
 	// Use job workdir if specified, otherwise current directory.
@@ -227,8 +227,8 @@ func (w *HubWorkerComponent) executeJob(ctx context.Context, job *hub.Job) (int,
 }
 
 // leaseRenewLoop renews the job lease periodically until ctx is cancelled.
-func (w *HubWorkerComponent) leaseRenewLoop(ctx context.Context, leaseID, jobID string) {
-	ticker := time.NewTicker(hubWorkerLeaseRenew)
+func (w *WorkerComponent) leaseRenewLoop(ctx context.Context, leaseID, jobID string) {
+	ticker := time.NewTicker(workerLeaseRenew)
 	defer ticker.Stop()
 	for {
 		select {
