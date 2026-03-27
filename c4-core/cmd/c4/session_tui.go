@@ -301,13 +301,10 @@ func loadHistory(uuid string) []string {
 		if strings.HasPrefix(text, "<command-") || strings.HasPrefix(text, "Base directory") {
 			continue
 		}
-		// Take first line, trim
-		firstLine := strings.SplitN(text, "\n", 2)[0]
-		if len(firstLine) > 80 {
-			firstLine = firstLine[:80] + "…"
-		}
-		if firstLine != "" {
-			questions = append(questions, firstLine)
+		// Keep full text, trim excess whitespace
+		text = strings.TrimSpace(text)
+		if text != "" {
+			questions = append(questions, text)
 		}
 	}
 	return questions
@@ -330,6 +327,38 @@ func extractUserText(content any) string {
 		return strings.Join(parts, " ")
 	}
 	return ""
+}
+
+// wrapText splits text into lines respecting display width and newlines.
+func wrapText(text string, maxW int) []string {
+	var result []string
+	for _, paragraph := range strings.Split(text, "\n") {
+		paragraph = strings.TrimSpace(paragraph)
+		if paragraph == "" {
+			continue
+		}
+		// Simple word-wrap
+		words := strings.Fields(paragraph)
+		if len(words) == 0 {
+			continue
+		}
+		line := words[0]
+		for _, w := range words[1:] {
+			if lsDispWidth(line)+1+lsDispWidth(w) > maxW {
+				result = append(result, line)
+				line = w
+			} else {
+				line += " " + w
+			}
+		}
+		if line != "" {
+			result = append(result, line)
+		}
+	}
+	if len(result) == 0 {
+		result = []string{text}
+	}
+	return result
 }
 
 // openFileCmd opens a file path using the OS default handler.
@@ -707,10 +736,12 @@ func (m sessionTUIModel) View() string {
 	// History mode
 	if m.historyMode {
 		sb.WriteString(styleTitle.Render(" Session History "))
+		sb.WriteString("  ")
+		sb.WriteString(styleCount.Render(fmt.Sprintf("%d questions", len(m.historyItems))))
 		sb.WriteString("\n\n")
 
-		visible := 20
-		// Scroll window around cursor
+		// Render items with scroll window
+		visible := 12 // fewer items since each can be multi-line
 		start := m.historyCursor - visible/2
 		if start < 0 {
 			start = 0
@@ -726,21 +757,54 @@ func (m sessionTUIModel) View() string {
 
 		for i := start; i < end; i++ {
 			num := fmt.Sprintf("%3d", i+1)
-			line := m.historyItems[i]
-			if i == m.historyCursor {
-				sb.WriteString(styleSelected.Render(fmt.Sprintf(" ▸ %s  %s ", num, line)))
+			text := m.historyItems[i]
+			isSel := i == m.historyCursor
+
+			// Wrap text to lines (max width ~70)
+			lines := wrapText(text, 68)
+
+			if isSel {
+				// First line with cursor + number
+				first := lines[0]
+				sb.WriteString(styleSelected.Render(fmt.Sprintf(" ▸ %s  %s", num, first)))
+				padW := 74 - 7 - lsDispWidth(first)
+				if padW > 0 {
+					sb.WriteString(styleSelected.Render(strings.Repeat(" ", padW)))
+				}
+				sb.WriteString("\n")
+				// Continuation lines
+				for _, l := range lines[1:] {
+					sb.WriteString(styleSelected.Render(fmt.Sprintf("         %s", l)))
+					padW = 74 - 9 - lsDispWidth(l)
+					if padW > 0 {
+						sb.WriteString(styleSelected.Render(strings.Repeat(" ", padW)))
+					}
+					sb.WriteString("\n")
+				}
 			} else {
+				// First line
 				sb.WriteString(styleDate.Render(fmt.Sprintf("   %s", num)))
-				sb.WriteString(fmt.Sprintf("  %s", line))
+				sb.WriteString(fmt.Sprintf("  %s\n", lines[0]))
+				// Continuation lines
+				for _, l := range lines[1:] {
+					sb.WriteString(fmt.Sprintf("         %s\n", l))
+				}
 			}
+
+			// Separator between items
+			if i < end-1 {
+				sb.WriteString(styleFaint.Render("   ───"))
+				sb.WriteString("\n")
+			}
+		}
+
+		sb.WriteString("\n")
+		if len(m.historyItems) > visible {
+			sb.WriteString(styleFaint.Render(fmt.Sprintf("   %d/%d", m.historyCursor+1, len(m.historyItems))))
 			sb.WriteString("\n")
 		}
 
-		if len(m.historyItems) > visible {
-			sb.WriteString(styleFaint.Render(fmt.Sprintf("\n   %d/%d", m.historyCursor+1, len(m.historyItems))))
-		}
-
-		sb.WriteString("\n ")
+		sb.WriteString(" ")
 		sb.WriteString(helpEntry("↑↓", "move"))
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("Space", "back"))
