@@ -55,6 +55,10 @@ type sessionTUIModel struct {
 	// Detail mode: navigate file paths of selected session
 	detailMode   bool
 	detailCursor int
+
+	// New session mode
+	newMode    bool
+	newInput   string
 }
 
 // detailPaths returns the file paths for the currently selected session.
@@ -262,6 +266,30 @@ func openFileCmd(path string) tea.Cmd {
 func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// New session input mode
+		if m.newMode {
+			switch msg.Type {
+			case tea.KeyEnter:
+				name := strings.TrimSpace(m.newInput)
+				if name != "" {
+					m.selectedTag = name
+					m.newMode = false
+					return m, tea.Quit
+				}
+			case tea.KeyEsc:
+				m.newMode = false
+				m.newInput = ""
+			case tea.KeyBackspace:
+				if len(m.newInput) > 0 {
+					runes := []rune(m.newInput)
+					m.newInput = string(runes[:len(runes)-1])
+				}
+			case tea.KeyRunes:
+				m.newInput += msg.String()
+			}
+			return m, nil
+		}
+
 		// Delete confirmation mode
 		if m.confirmDelete {
 			switch msg.String() {
@@ -381,6 +409,9 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.detailMode = true
 						m.detailCursor = 0
 					}
+				case "n":
+					m.newMode = true
+					m.newInput = ""
 				case "d":
 					idx := m.cursorRowIndex()
 					if idx >= 0 {
@@ -536,6 +567,22 @@ func helpEntry(key, desc string) string {
 func (m sessionTUIModel) View() string {
 	var sb strings.Builder
 
+	// New session input
+	if m.newMode {
+		sb.WriteString("\n")
+		sb.WriteString(styleTitle.Render(" New Session "))
+		sb.WriteString("\n\n")
+		sb.WriteString("  Session name: ")
+		sb.WriteString(styleSearchBar.Render(m.newInput + "▏"))
+		sb.WriteString("\n\n")
+		sb.WriteString(" ")
+		sb.WriteString(helpEntry("Enter", "create & start"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("Esc", "cancel"))
+		sb.WriteString("\n")
+		return sb.String()
+	}
+
 	// Delete confirmation — full screen takeover
 	if m.confirmDelete {
 		sb.WriteString("\n")
@@ -580,17 +627,18 @@ func (m sessionTUIModel) View() string {
 	sb.WriteString(badgeStyle.Render(filterLabel))
 	sb.WriteString("\n\n")
 
-	// Rows
+	// Rows — display-width-aware column alignment
+	const tagColW = 18
+	const sumColW = 36
 	cursorRowIdx := m.cursorRowIndex()
 	nonHeaderCount := 0
 
 	for i, row := range m.rows {
 		if row.isHeader {
 			hs := groupHeaderStyle(row.status)
-			line := fmt.Sprintf(" ── %s (%d) ", row.status, row.count)
-			sb.WriteString(hs.Render(line))
-			// Extend with faint dashes
-			remaining := 70 - lipgloss.Width(line)
+			label := fmt.Sprintf(" ── %s (%d) ", row.status, row.count)
+			sb.WriteString(hs.Render(label))
+			remaining := 74 - lipgloss.Width(label)
 			if remaining > 0 {
 				sb.WriteString(styleFaint.Render(strings.Repeat("─", remaining)))
 			}
@@ -602,45 +650,64 @@ func (m sessionTUIModel) View() string {
 		nonHeaderCount++
 
 		// Status badge pill
-		badgeStyle, ok := statusBadgeStyles[row.rowStatus]
+		bStyle, ok := statusBadgeStyles[row.rowStatus]
 		if !ok {
-			badgeStyle = statusBadgeStyles["active"]
+			bStyle = statusBadgeStyles["active"]
 		}
-		badge := badgeStyle.Render(row.rowStatus)
+		badge := bStyle.Render(row.rowStatus)
+		badgeW := lipgloss.Width(badge)
 
-		// Cursor indicator
 		cursor := "   "
 		if isSelected {
 			cursor = " ▸ "
 		}
 
-		tagStr := row.tag
-		summaryStr := row.summary
+		// Tag: truncate + pad to fixed display width (CJK-aware)
+		tagDisplay := row.tag
+		if lsDispWidth(tagDisplay) > tagColW {
+			tagDisplay = lsTruncateToWidth(tagDisplay, tagColW-1) + "…"
+		}
+		tagPadded := lsPadToWidth(tagDisplay, tagColW)
+
+		// Summary: truncate + pad (CJK-aware)
+		sumDisplay := row.summary
+		if lsDispWidth(sumDisplay) > sumColW {
+			sumDisplay = lsTruncateToWidth(sumDisplay, sumColW-1) + "…"
+		}
+		sumPadded := lsPadToWidth(sumDisplay, sumColW)
+
 		dateStr := row.date
 
 		if isSelected {
-			// Selected row: subtle background
 			sb.WriteString(styleSelected.Render(cursor))
-			sb.WriteString(styleSelected.Render(fmt.Sprintf("%-16s ", tagStr)))
+			sb.WriteString(styleSelected.Render(tagPadded))
+			sb.WriteString(styleSelected.Render(" "))
 			sb.WriteString(badge)
-			sb.WriteString(styleSelected.Render(fmt.Sprintf(" %-40s ", summaryStr)))
+			sb.WriteString(styleSelected.Render(" "))
+			sb.WriteString(styleSelected.Render(sumPadded))
+			sb.WriteString(styleSelected.Render(" "))
 			sb.WriteString(styleSelected.Render(dateStr))
-			// Pad to fill line
-			used := 3 + 17 + lipgloss.Width(badge) + 42 + len(dateStr)
-			if pad := 80 - used; pad > 0 {
+			used := 3 + tagColW + 1 + badgeW + 1 + sumColW + 1 + len(dateStr)
+			if pad := 82 - used; pad > 0 {
 				sb.WriteString(styleSelected.Render(strings.Repeat(" ", pad)))
 			}
 		} else if row.rowStatus == "done" {
 			sb.WriteString(styleTagNameDim.Render(cursor))
-			sb.WriteString(styleTagNameDim.Render(fmt.Sprintf("%-16s ", tagStr)))
+			sb.WriteString(styleTagNameDim.Render(tagPadded))
+			sb.WriteString(" ")
 			sb.WriteString(badge)
-			sb.WriteString(styleSummaryDim.Render(fmt.Sprintf(" %-40s ", summaryStr)))
+			sb.WriteString(" ")
+			sb.WriteString(styleSummaryDim.Render(sumPadded))
+			sb.WriteString(" ")
 			sb.WriteString(styleDate.Render(dateStr))
 		} else {
 			sb.WriteString(cursor)
-			sb.WriteString(styleTagName.Render(fmt.Sprintf("%-16s ", tagStr)))
+			sb.WriteString(styleTagName.Render(tagPadded))
+			sb.WriteString(" ")
 			sb.WriteString(badge)
-			sb.WriteString(styleSummary.Render(fmt.Sprintf(" %-40s ", summaryStr)))
+			sb.WriteString(" ")
+			sb.WriteString(styleSummary.Render(sumPadded))
+			sb.WriteString(" ")
 			sb.WriteString(styleDate.Render(dateStr))
 		}
 		sb.WriteString("\n")
