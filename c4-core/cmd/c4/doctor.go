@@ -18,6 +18,7 @@ import (
 	"github.com/changmin/c4-core/internal/standards"
 	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // checkStatus represents the result of a single diagnostic check.
@@ -109,6 +110,12 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	if abs, err := filepath.Abs(projectDir); err == nil {
 		projectDir = abs
 	}
+	// TUI mode: launch async TUI when stdout is a terminal and --plain/--json are not set.
+	if !doctorJSON && !doctorPlain && term.IsTerminal(int(os.Stdout.Fd())) {
+		return runDoctorTUI()
+	}
+
+	// Synchronous mode: run all checks and print.
 	results := make([]checkResult, 0, len(doctorChecks))
 	for _, entry := range doctorChecks {
 		r := entry.Fn()
@@ -126,22 +133,11 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return printDoctorJSON(results)
 	}
 
-	// TUI mode: use interactive TUI when stdout is a terminal and --plain/--json are not set.
-	if !doctorPlain && term.IsTerminal(int(os.Stdout.Fd())) {
-		return runDoctorTUI(results)
-	}
-
 	printDoctorHuman(results)
 	return nil
 }
 
-// runDoctorTUI renders an interactive TUI for doctor results.
-// Stub — full implementation in T-902.
-func runDoctorTUI(results []checkResult) error {
-	// TODO(T-902): implement bubbletea TUI
-	printDoctorHuman(results)
-	return nil
-}
+// runDoctorTUI is implemented in doctor_tui.go.
 
 // printDoctorJSON outputs results as a JSON array.
 func printDoctorJSON(results []checkResult) error {
