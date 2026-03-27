@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/changmin/c4-core/internal/serve"
 	"github.com/spf13/cobra"
 	_ "modernc.org/sqlite"
@@ -241,7 +243,7 @@ func applyCommandVisibility() {
 }
 
 // runCQStart is the default command when `cq` is run without subcommands.
-// It ensures login → service install → prints status.
+// It ensures login → service install → shows dashboard TUI (or text fallback).
 func runCQStart(cmd *cobra.Command, args []string) error {
 	// Step 1: Check login status. If not logged in, initiate OAuth.
 	authClient, err := newAuthClient()
@@ -258,8 +260,7 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 2: Ensure OS service is installed and running.
-	alreadyRunning := serve.IsServeRunning()
-	if !alreadyRunning {
+	if !serve.IsServeRunning() {
 		fmt.Println("Starting CQ service...")
 		if err := installServeService(context.Background(), true); err != nil {
 			fmt.Fprintf(os.Stderr, "Service install failed: %v\n", err)
@@ -268,7 +269,61 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Step 3: Print status summary box.
+	// Step 3: TTY check — if not a terminal, use text fallback.
+	if !isTerminal(int(os.Stdin.Fd())) {
+		return runCQStartText()
+	}
+
+	// Step 4: Read default_tool from global config.
+	defaultTool := readGlobalConfig("default_tool")
+
+	// Step 5: If no default_tool, show selector.
+	if defaultTool == "" {
+		p := tea.NewProgram(newSelectorModel())
+		m, err := p.Run()
+		if err != nil {
+			return err
+		}
+		sm := m.(selectorModel)
+		if sm.selected == "" {
+			return nil // user quit without selecting
+		}
+		defaultTool = sm.selected
+		writeGlobalConfig("default_tool", defaultTool)
+	}
+
+	// Step 6: Show dashboard.
+	p := tea.NewProgram(newDashboardModel())
+	m, err := p.Run()
+	if err != nil {
+		return err
+	}
+	dm := m.(dashboardModel)
+
+	// Step 7: Handle dashboard result.
+	switch dm.action {
+	case "launch":
+		writeGlobalConfig("last_seen_version", version)
+		return launchTool(defaultTool, projectDir)
+	case "status":
+		return runStatus(cmd, nil)
+	case "config":
+		p2 := tea.NewProgram(newSelectorModel())
+		m2, err := p2.Run()
+		if err != nil {
+			return err
+		}
+		sm := m2.(selectorModel)
+		if sm.selected != "" {
+			writeGlobalConfig("default_tool", sm.selected)
+			fmt.Printf("기본 도구 변경: %s\n", sm.selected)
+		}
+	}
+	return nil
+}
+
+// runCQStartText is the non-interactive text fallback for non-TTY environments.
+func runCQStartText() error {
 	fmt.Println()
 	fmt.Printf("  CQ %s\n", version)
 	fmt.Println("  " + strings.Repeat("-", 40))
@@ -288,11 +343,7 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("  " + strings.Repeat("-", 40))
 	fmt.Println()
-	if !alreadyRunning {
-		fmt.Println("  Ready! Next steps:")
-	} else {
-		fmt.Println("  Next:")
-	}
+	fmt.Println("  Next:")
 	fmt.Println("    cq claude        Start Claude Code")
 	fmt.Println("    cq status        Service + project status")
 	fmt.Println()

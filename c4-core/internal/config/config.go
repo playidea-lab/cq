@@ -623,6 +623,8 @@ func New(projectRoot string, cloudDefaults ...CloudDefaults) (*Manager, error) {
 	v.SetDefault("risk_routing.models.default", "opus")
 	v.SetDefault("lighthouse.enforce_schema", true)
 	v.SetDefault("lighthouse.require_stub_first", false)
+	v.SetDefault("default_tool", "")
+	v.SetDefault("last_seen_version", "")
 
 	// Config file location — 2-tier: global (~/.c4/) then project (.c4/)
 	v.SetConfigName("config")
