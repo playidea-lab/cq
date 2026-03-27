@@ -717,24 +717,24 @@ func newMCPServer() (*mcpServer, error) {
 	}
 
 	// Register cq_workers and cq_relay_call MCP tools for remote worker access.
-	// These are HTTP-based (not WSS) so they work in both serve and mcp modes.
-	if ctx.cfgMgr != nil {
-		relayCfg := ctx.cfgMgr.GetConfig().Relay
-		if relayCfg.Enabled && relayCfg.URL != "" {
-			anonKey := ""
-			if ctx.cfgMgr != nil {
-				anonKey = ctx.cfgMgr.GetConfig().Cloud.AnonKey
-			}
-			var tokenFunc func() string
-			if ctx.cloudTP != nil {
-				tokenFunc = ctx.cloudTP.Token
-			}
-			relayhandler.Register(reg, &relayhandler.Deps{
-				RelayURL:  relayCfg.URL,
-				AnonKey:   anonKey,
-				TokenFunc: tokenFunc,
-			})
+	// Always registered regardless of relay config — if relay URL is not set,
+	// the handlers return a helpful "relay not configured" message instead of
+	// being invisible to the agent (which causes hallucinated CLI commands).
+	{
+		var relayURL, anonKey string
+		var tokenFunc func() string
+		if ctx.cfgMgr != nil {
+			relayURL = ctx.cfgMgr.GetConfig().Relay.URL
+			anonKey = ctx.cfgMgr.GetConfig().Cloud.AnonKey
 		}
+		if ctx.cloudTP != nil {
+			tokenFunc = ctx.cloudTP.Token
+		}
+		relayhandler.Register(reg, &relayhandler.Deps{
+			RelayURL:  relayURL,
+			AnonKey:   anonKey,
+			TokenFunc: tokenFunc,
+		})
 	}
 
 	// Start Agent inside MCP server (lazy, no cq serve required).
