@@ -7,7 +7,7 @@
 
 ---
 
-## Cloud-First Architecture (v1.16+)
+## Cloud-First Architecture (v1.37+)
 
 > connected/full tier에서 CQ의 "두뇌"는 클라우드, 로컬은 "손발"만 담당.
 
@@ -18,10 +18,10 @@
 │              │          │ 두뇌:                  │
 │ 손발:         │          │  ├ Tasks (Postgres)    │
 │  ├ 파일 I/O  │          │  ├ Knowledge (pgvector)│
-│  ├ Git       │          │  ├ Ontology L1/L2/L3   │
+│  ├ Git       │          │  ├ Drive (Storage)     │
 │  ├ 빌드/테스트│          │  ├ LLM Proxy (Edge Fn) │
-│  └ LSP       │          │  ├ Gates (Postgres)    │
-│              │          │  └ piki Standards      │
+│  └ LSP       │          │  ├ Hub (distributed)   │
+│              │          │  └ Sessions            │
 │ 캐시:         │          │                       │
 │  └ SQLite    │          └──────────────────────┘
 │              │   WSS     ┌──────────────────────┐
@@ -29,7 +29,12 @@
 │  ├ Relay     │          │  └ NAT 관통 MCP 접근   │
 │  ├ EventBus  │          └──────────────────────┘
 │  └ Token갱신 │
-└──────────────┘
+└──────────────┘          ┌──────────────────────┐
+                          │ External Brain (CF)   │
+Any AI (ChatGPT, ──MCP──►│  ├ OAuth 2.1 proxy    │
+ Claude, Gemini)          │  ├ Knowledge R/W      │
+                          │  └ Session summary    │
+                          └──────────────────────┘
 ```
 
 | 모드 | 데이터 SSOT | LLM | 설정 |
@@ -41,33 +46,35 @@
 - `cq` → 로그인 + `cloud.mode: cloud-primary` + relay + serve 자동 설정
 - Cloud 실패 시 SQLite fallback (읽기)
 - ~70개 도구가 클라우드, ~48개 도구가 로컬 필수 (파일/Git/빌드)
+- External Brain: ChatGPT/Claude/Gemini에서 OAuth MCP로 직접 접근 (로컬 설치 불필요)
 
 ---
 
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. ~45.0K LOC(src) + ~38.7K LOC(test). ~1,950개 테스트, 37 패키지.
+> Go 기반 MCP 서버. 169 도구 (118 base + 26 Hub + 25 conditional). 44 패키지.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 118 base + 26 Hub = 144 tools)
-                ├→ Go native (28): 상태/설정, 태스크, 파일, git, validation, config, health, eventbus rules
+Claude Code → Go MCP Server (stdio, 169 tools, tool tiering: 40 core + 129 extended)
+                ├→ Go native (28): 상태/설정, 태스크, 파일, git, validation, config, health
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
-                ├→ Soul/Persona/Twin (10): soul_evolve, soul_check, soul_sync, persona_learn, persona_analyze, persona_diff, whoami, reflect
+                ├→ Soul/Persona/Twin (10): soul_evolve, soul_check, persona_learn, ...
                 ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
-                ├→ CDP Runner + WebMCP (5): cdp_run, cdp_list, webmcp_discover, webmcp_call, webmcp_context
-                ├→ WebContent (1): web_fetch (content negotiation, SSRF, HTML→MD) — c2/webcontent
-                ├→ C1 Messenger (5): search, mentions, briefing, send_message, update_presence + ContextKeeper
-                ├→ Drive (6): upload, download, list, delete, info, mkdir
-                ├→ Go Native — Tier 1 (18): Research (5) + C2 (7) + GPU (6) + Soul Evolution (1)
-                ├→ Go Native — Tier 2 (13): Knowledge (Store+FTS5+Vector+Embedding+Usage+Ingest+Sync+Publish)
-                ├→ C7 Observe (4, c7_observe 조건부): observe_metrics, observe_logs, observe_config, observe_health
-                ├→ C6 Guard (5, c6_guard 조건부): guard_check, guard_audit, guard_policy_set/list, guard_role_assign
-                ├→ C8 Gate (6, c8_gate 조건부): gate_webhook_register/list/test, gate_schedule_add/list, gate_connector_status
-                ├→ Hub Client (19, 조건부): job, worker, DAG, artifact
+                ├→ CDP Runner + WebMCP (5): cdp_run, webmcp_discover, webmcp_call, ...
+                ├→ WebContent (1): web_fetch (content negotiation, SSRF, HTML→MD)
+                ├→ Drive (6): upload, download, list, delete, info, mkdir + TUS resumable
+                ├→ File Index (2): fileindex_search, fileindex_status (cross-device)
+                ├→ Session (3): session_index, session_summarize, snapshot/recall
+                ├→ Memory (1): memory_import (ChatGPT/Claude session import)
+                ├→ Relay (2): cq_workers, cq_relay_call
+                ├→ Knowledge (13): Store+FTS5+Vector+Embedding+Usage+Ingest+Sync+Publish
+                ├→ Hub Client (19, 조건부): job, worker, DAG, artifact, cron
                 ├→ Worker Standby (3, Hub 조건부): standby, complete, shutdown
-                ├→ EventSink (1): HTTP POST /v1/events/publish 수신 → C3 EventBus 전달
-                ├→ HubPoller (1): 30s 간격 C5 RUNNING jobs 상태 감시 → hub.job.completed/failed 발행
+                ├→ C7 Observe (4, c7_observe 조건부): observe_metrics, observe_logs, ...
+                ├→ C6 Guard (5, c6_guard 조건부): guard_check, guard_audit, ...
+                ├→ C8 Gate (6, c8_gate 조건부): gate_webhook, gate_schedule, ...
+                ├→ EventSink (1) + HubPoller (1)
                 └→ JSON-RPC proxy (10) → Python Sidecar (LSP 7 + C2 Doc 2 + Onboard 1)
 ```
 
@@ -123,7 +130,11 @@ c4-core/
 │   ├── knowledge/    # C9 Knowledge (Store+FTS5+Vector+Embedding+Usage+Chunker+Ingest+Sync)
 │   ├── research/     # Research iteration store (paper+experiment loop)
 │   ├── c2/           # C2 Workspace/Profile/Persona + webcontent (fetch, HTML→MD, llms.txt)
-│   ├── drive/        # C0 Drive client (Supabase Storage)
+│   ├── drive/        # C0 Drive client (TUS resumable upload, dataset sync)
+│   ├── fileindex/    # Cross-device file search
+│   ├── session/      # Session tracking, LLM summarizer, context injection
+│   ├── memory/       # ChatGPT/Claude session import pipeline
+│   ├── relay/        # WebSocket relay client (NAT traversal)
 │   ├── llm/          # LLM Gateway (Anthropic, OpenAI, Gemini, Ollama)
 │   ├── cdp/          # Chrome DevTools Protocol runner + WebMCP + CDP auto-discovery
 │   ├── observe/      # C7 Observe: Logger(slog) + Metrics + Middleware (c7_observe build tag)
@@ -136,14 +147,11 @@ c4-core/
 ### 빌드/테스트/설치
 
 ```bash
-# 빌드 + 테스트
-cd c4-core && go build ./... && go test ./...
+# 빌드 + 설치 (CRITICAL — 반드시 make install 사용)
+cd c4-core && make install
 
-# 사용자 설치 (CRITICAL — .mcp.json이 이 경로를 참조)
-cd c4-core && go build -o ~/.local/bin/cq ./cmd/c4/
-
-# 개발용 바이너리 (CI/로컬 테스트)
-cd c4-core && go build -o bin/cq ./cmd/c4/
+# 테스트
+cd c4-core && go test ./...
 
 # 환경 진단
 cq doctor              # 8개 항목 건강 체크
@@ -382,15 +390,37 @@ cd c1 && bun install && bun test
 
 ---
 
+## External Brain (infra/cloudflare-worker/)
+
+> Cloudflare Worker 기반 OAuth 2.1 MCP proxy. ChatGPT/Claude/Gemini에서 CQ 지식 베이스에 직접 접근.
+
+### 도구
+| 도구 | 설명 |
+|------|------|
+| `c4_knowledge_record` | AI가 proactive하게 지식 저장 (5가지 호출 조건 tool description에 내장) |
+| `c4_knowledge_search` | 벡터 + FTS + ilike 3단 fallback 검색 |
+| `c4_session_summary` | 세션 종료 시 전체 요약 캡처 (안전망) |
+| `c4_status` | 프로젝트 상태 조회 |
+
+### 핵심 설계
+- **AI Self-Capture**: tool description engineering으로 AI가 자발적으로 지식 기록
+- **MCP initialize instructions**: 3단계 행동 지침 (시작→검색, 중간→기록, 종료→요약)
+- **OAuth 2.1**: GitHub 로그인 → Supabase user 매핑 (user_metadata 기반)
+- **resolveProjectId**: owner_id 기반 프로젝트 자동 조회/생성
+
+---
+
 ## Infra (infra/supabase/)
 
-> PostgreSQL 마이그레이션 21개 (00001~00021). Supabase 기반 클라우드 레이어.
+> PostgreSQL 마이그레이션 52개 (00001~00052). Supabase 기반 클라우드 레이어.
 
 ### 주요 테이블
 - `c4_tasks`, `c4_documents`, `c4_projects` — C4 핵심 데이터
-- `c1_channels`, `c1_messages`, `c1_participants`, `c1_channel_summaries` — C1 메시징
-- `c1_members` — 통합 멤버 모델 (user/agent/system + presence)
-- RLS 정책 (migration 00014: 보안 픽스)
+- `c4_drive_files`, `c4_datasets` — Drive 파일 및 데이터셋 관리
+- `hub_jobs`, `hub_workers`, `hub_dags`, `hub_cron_schedules` — Hub 분산 실행
+- `c1_channels`, `c1_messages`, `c1_members` — 메시징
+- `notification_channels` — Telegram/Dooray 알림 채널
+- RLS 정책 (52 migrations, pgvector, tsvector FTS)
 
 ---
 
