@@ -20,8 +20,11 @@ import (
 type namedSessionEntry struct {
 	UUID    string `json:"uuid"`
 	Dir     string `json:"dir"`
-	Tool    string `json:"tool,omitempty"` // claude, codex, cursor
-	Memo    string `json:"memo,omitempty"` // user-defined description
+	Tool    string `json:"tool,omitempty"`    // claude, codex, cursor
+	Memo    string `json:"memo,omitempty"`    // user-defined description
+	Idea    string `json:"idea,omitempty"`    // session idea / initial goal
+	Status  string `json:"status,omitempty"` // session lifecycle status (e.g., active, paused, done)
+	Summary string `json:"summary,omitempty"` // auto-generated or user-set summary
 	Updated string `json:"updated"`
 }
 
