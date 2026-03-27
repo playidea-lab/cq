@@ -159,6 +159,7 @@ func RegisterLegacyAliases(reg *mcp.Registry) {
 		{"c4_job_summary", "cq_job_summary"},
 		// hub
 		{"c4_hub_submit", "cq_hub_submit"},
+		{"c4_hub_wait", "cq_hub_wait"},
 		{"c4_hub_status", "cq_hub_status"},
 		{"c4_hub_list", "cq_hub_list"},
 		{"c4_hub_cancel", "cq_hub_cancel"},

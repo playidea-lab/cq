@@ -5,6 +5,7 @@ package hubhandler
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/changmin/c4-core/internal/eventbus"
 	"github.com/changmin/c4-core/internal/hub"
@@ -82,6 +83,23 @@ func registerHubJobHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 		},
 	}, func(raw json.RawMessage) (any, error) {
 		return handleHubSubmit(hubClient, raw)
+	})
+
+	// cq_hub_wait — Block until job completes (keeps Claude's turn alive)
+	reg.Register(mcp.ToolSchema{
+		Name:        "cq_hub_wait",
+		Description: "Block until a Hub job completes or fails. Use after cq_hub_submit to keep the conversation alive while the job runs remotely. Returns final status with results and metrics.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"job_id":      map[string]any{"type": "string", "description": "Job ID to wait for"},
+				"timeout_sec": map[string]any{"type": "integer", "description": "Max wait time in seconds (default: 600, max: 3600)"},
+				"poll_sec":    map[string]any{"type": "integer", "description": "Poll interval in seconds (default: 10)"},
+			},
+			"required": []string{"job_id"},
+		},
+	}, func(raw json.RawMessage) (any, error) {
+		return handleHubWait(hubClient, raw)
 	})
 
 	// c4_hub_status — Get job status
@@ -502,4 +520,78 @@ func handleHubEstimate(client *hub.Client, raw json.RawMessage) (any, error) {
 		result["estimated_completion_time"] = resp.EstimatedEndTime
 	}
 	return result, nil
+}
+
+// handleHubWait polls job status until terminal state or timeout.
+// This keeps Claude's MCP turn alive so the conversation doesn't break.
+func handleHubWait(client *hub.Client, raw json.RawMessage) (any, error) {
+	var params struct {
+		JobID      string `json:"job_id"`
+		TimeoutSec int    `json:"timeout_sec"`
+		PollSec    int    `json:"poll_sec"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return nil, fmt.Errorf("parsing params: %w", err)
+	}
+	if params.JobID == "" {
+		return nil, fmt.Errorf("job_id is required")
+	}
+	if params.TimeoutSec <= 0 {
+		params.TimeoutSec = 600
+	}
+	if params.TimeoutSec > 3600 {
+		params.TimeoutSec = 3600
+	}
+	if params.PollSec <= 0 {
+		params.PollSec = 10
+	}
+	if params.PollSec < 3 {
+		params.PollSec = 3
+	}
+
+	deadline := time.After(time.Duration(params.TimeoutSec) * time.Second)
+	ticker := time.NewTicker(time.Duration(params.PollSec) * time.Second)
+	defer ticker.Stop()
+
+	startTime := time.Now()
+	polls := 0
+
+	for {
+		select {
+		case <-deadline:
+			return map[string]any{
+				"job_id":     params.JobID,
+				"status":     "timeout",
+				"waited_sec": int(time.Since(startTime).Seconds()),
+				"polls":      polls,
+				"message":    fmt.Sprintf("Job did not complete within %d seconds. Use cq_hub_status to check later.", params.TimeoutSec),
+			}, nil
+		case <-ticker.C:
+			polls++
+			job, err := client.GetJob(params.JobID)
+			if err != nil {
+				return map[string]any{
+					"job_id":     params.JobID,
+					"status":     "error",
+					"error":      err.Error(),
+					"waited_sec": int(time.Since(startTime).Seconds()),
+					"polls":      polls,
+				}, nil
+			}
+
+			jobMap, ok := job.(map[string]any)
+			if !ok {
+				continue
+			}
+
+			status, _ := jobMap["status"].(string)
+			switch status {
+			case "SUCCEEDED", "FAILED", "CANCELLED":
+				jobMap["waited_sec"] = int(time.Since(startTime).Seconds())
+				jobMap["polls"] = polls
+				return jobMap, nil
+			}
+			// QUEUED, RUNNING — keep polling
+		}
+	}
 }
