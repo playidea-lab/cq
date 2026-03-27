@@ -17,10 +17,10 @@ import (
 )
 
 // statusOrder defines the display order for session groups.
-var statusOrder = []string{"in-progress", "planned", "idea", "active", "done"}
+var statusOrder = []string{"running", "in-progress", "planned", "idea", "active", "done"}
 
 // filterCycle is the order of Tab-cycling for status filters.
-var filterCycle = []string{"all", "in-progress", "planned", "idea", "active", "done"}
+var filterCycle = []string{"all", "running", "in-progress", "planned", "idea", "active", "done"}
 
 // tuiRow represents a single row in the TUI list.
 type tuiRow struct {
@@ -98,6 +98,7 @@ func newSessionTUIModel() sessionTUIModel {
 		statusFilter: "all",
 	}
 	m.sessions, _ = loadNamedSessions()
+	recalcStatuses(m.sessions)
 	m.searchIndex = buildSearchIndex(m.sessions)
 	m.rows = buildRows(m.sessions, m.searchIndex, m.query, m.statusFilter)
 	return m
@@ -693,9 +694,10 @@ var (
 
 	// Status badge styles: colored background pill
 	statusBadgeStyles = map[string]lipgloss.Style{
+		"running":     lipgloss.NewStyle().Background(lipgloss.Color("2")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
 		"idea":        lipgloss.NewStyle().Background(lipgloss.Color("3")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
 		"planned":     lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
-		"in-progress": lipgloss.NewStyle().Background(lipgloss.Color("2")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
+		"in-progress": lipgloss.NewStyle().Background(lipgloss.Color("6")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
 		"active":      lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("15")).Padding(0, 1),
 		"done":        lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("245")).Padding(0, 1),
 	}
@@ -704,12 +706,14 @@ var (
 func groupHeaderStyle(status string) lipgloss.Style {
 	col := lipgloss.Color("7")
 	switch status {
+	case "running":
+		col = lipgloss.Color("2")
 	case "idea":
 		col = lipgloss.Color("3")
 	case "planned":
 		col = lipgloss.Color("4")
 	case "in-progress":
-		col = lipgloss.Color("2")
+		col = lipgloss.Color("6")
 	case "done":
 		col = lipgloss.Color("8")
 	}

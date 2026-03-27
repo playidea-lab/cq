@@ -225,6 +225,9 @@ func launchToolNamed(tool, projectDir, name string) error {
 			return fmt.Errorf("start %s: %w", tool, err)
 		}
 
+		// Write PID file so cq sessions can detect running sessions.
+		writeSessionPID(name, cmd.Process.Pid)
+
 		// Watch for session-specific .reboot-{name} file — only this session responds.
 		rebootDetected := make(chan struct{}, 1)
 		go func() {
@@ -282,7 +285,8 @@ func launchToolNamed(tool, projectDir, name string) error {
 			continue
 		}
 
-		// Capture session status and summary before exiting (best-effort).
+		// Remove PID file and capture session status before exiting (best-effort).
+		removeSessionPID(name)
 		if !isUUID(name) {
 			captureSession(name)
 		}

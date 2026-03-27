@@ -7,11 +7,101 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+// --- PID file management ---
+
+func sessionPIDDir() string {
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".c4", "running")
+}
+
+func writeSessionPID(name string, pid int) {
+	dir := sessionPIDDir()
+	_ = os.MkdirAll(dir, 0755)
+	_ = os.WriteFile(filepath.Join(dir, name+".pid"), []byte(strconv.Itoa(pid)), 0600)
+}
+
+func removeSessionPID(name string) {
+	os.Remove(filepath.Join(sessionPIDDir(), name+".pid"))
+}
+
+// isSessionRunning checks if a named session has a live PID file.
+func isSessionRunning(name string) bool {
+	data, err := os.ReadFile(filepath.Join(sessionPIDDir(), name+".pid"))
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return false
+	}
+	// Check if process is alive (signal 0 = existence check)
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+// --- Real-time status recalculation ---
+
+// recalcStatuses updates all session statuses in-place based on current file/DB state.
+// Running sessions (PID alive) get "running" status.
+func recalcStatuses(sessions map[string]namedSessionEntry) {
+	for tag, entry := range sessions {
+		if isSessionRunning(tag) {
+			entry.Status = "running"
+			sessions[tag] = entry
+			continue
+		}
+		// Only recalc if idea is set (otherwise keep stored status)
+		if entry.Idea != "" || entry.Dir != "" {
+			newStatus := inferStatusQuiet(entry)
+			if newStatus != "" {
+				entry.Status = newStatus
+				sessions[tag] = entry
+			}
+		}
+	}
+}
+
+// inferStatusQuiet is like inferStatus but without interactive prompting.
+// Returns empty string if status cannot be determined.
+func inferStatusQuiet(entry namedSessionEntry) string {
+	dir := entry.Dir
+	idea := entry.Idea
+
+	if idea != "" {
+		ideaPath := filepath.Join(dir, ".c4", "ideas", idea+".md")
+		if _, err := os.Stat(ideaPath); err == nil {
+			specPath := filepath.Join(dir, "docs", "specs", idea+".md")
+			if _, err := os.Stat(specPath); err != nil {
+				return "idea"
+			}
+			// spec exists — check tasks
+			done, total, dbErr := captureSessionCountTasks(dir, idea)
+			if dbErr == nil {
+				if total == 0 {
+					return "planned"
+				}
+				if done == total {
+					return "done"
+				}
+				return "in-progress"
+			}
+			return "planned"
+		}
+	}
+
+	return "" // can't determine — keep existing
+}
 
 // captureSessionSummarizeFn is set by the llm_gateway build variant.
 // When nil, LLM summarization is skipped and summary remains empty.
