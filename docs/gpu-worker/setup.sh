@@ -62,6 +62,16 @@ else
     warn "nvidia-smi 없음 — CPU-only 모드"
 fi
 
+# ── 4.5. SSH keepalive (WSL2 NAT drops idle connections) ──
+if [ ! -f "$HOME/.ssh/config" ] || ! grep -q 'ServerAliveInterval' "$HOME/.ssh/config" 2>/dev/null; then
+    mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+    printf '\nHost *\n    ServerAliveInterval 30\n    ServerAliveCountMax 3\n' >> "$HOME/.ssh/config"
+    chmod 600 "$HOME/.ssh/config"
+    ok "SSH keepalive 설정 (~/.ssh/config)"
+else
+    ok "SSH keepalive 이미 설정됨"
+fi
+
 # ── 5. 작업 디렉토리 생성 ──
 WORK_DIR="$HOME/c5-worker"
 mkdir -p "$WORK_DIR/scripts"

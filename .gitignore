@@ -96,5 +96,8 @@ _mnist_exp/
 # Downloaded packages
 *.whl
 
+# Node
+node_modules/
+
 # Local projects
 projects/
