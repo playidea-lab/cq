@@ -393,6 +393,26 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.deleteTarget = m.rows[idx].tag
 			}
 
+		case tea.KeyCtrlS:
+			idx := m.cursorRowIndex()
+			if idx >= 0 {
+				tag := m.rows[idx].tag
+				entry := m.sessions[tag]
+				status := entry.Status
+				if status == "" {
+					status = "active"
+				}
+				switch status {
+				case "active", "":
+					entry.Status = "done"
+				case "done":
+					entry.Status = "active"
+				}
+				m.sessions[tag] = entry
+				_ = saveNamedSessions(m.sessions)
+				m.rebuildRows()
+			}
+
 		case tea.KeyBackspace:
 			if len(m.query) > 0 {
 				runes := []rune(m.query)
@@ -748,6 +768,8 @@ func (m sessionTUIModel) View() string {
 		sb.WriteString(helpEntry("→", "files"))
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("Enter", "start"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("^S", "done/active"))
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("^D", "delete"))
 		sb.WriteString("  ")
