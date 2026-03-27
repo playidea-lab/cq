@@ -884,6 +884,29 @@ type HubJobRequest struct {
 	ProjectID        string
 }
 
+// LogMetricsSupabase inserts metric data into the Supabase hub_metrics table.
+func (c *Client) LogMetricsSupabase(jobID string, step int, metrics map[string]float64) error {
+	// Convert float64 map to any map for JSON marshaling
+	metricsAny := make(map[string]any, len(metrics))
+	for k, v := range metrics {
+		metricsAny[k] = v
+	}
+	metricsJSON, err := json.Marshal(metricsAny)
+	if err != nil {
+		return fmt.Errorf("log metrics: marshal: %w", err)
+	}
+	body := map[string]any{
+		"job_id":  jobID,
+		"step":    step,
+		"metrics": string(metricsJSON),
+	}
+	// Use supabasePost to POST to /rest/v1/hub_metrics
+	if err := c.supabasePost("/rest/v1/hub_metrics", body, nil); err != nil {
+		return fmt.Errorf("log metrics: %w", err)
+	}
+	return nil
+}
+
 // HubJobStatus is the minimal job status for the LoopOrchestrator.
 type HubJobStatus struct {
 	JobID       string
