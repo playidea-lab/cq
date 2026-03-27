@@ -62,6 +62,10 @@ type sessionTUIModel struct {
 	newMode  bool
 	newInput string
 
+	// Terminal size
+	width  int
+	height int
+
 	// History mode: user questions from JSONL
 	historyMode   bool
 	historyItems  []string // user questions (first line each)
@@ -378,6 +382,10 @@ func openFileCmd(path string) tea.Cmd {
 
 func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
 	case tea.KeyMsg:
 		// History mode: scrollable list of user questions
 		if m.historyMode {
@@ -750,7 +758,11 @@ func (m sessionTUIModel) View() string {
 		}
 
 		// Line-budget based scrolling: find window around cursor that fits ~30 lines
-		const maxLines = 30
+		// Use terminal height minus header(3) + footer(3) lines
+		maxLines := m.height - 6
+		if maxLines < 10 {
+			maxLines = 10
+		}
 		// Start from cursor, expand outward
 		start, end := m.historyCursor, m.historyCursor+1
 		usedLines := len(allItems[m.historyCursor].lines) + 1 // +1 for separator
