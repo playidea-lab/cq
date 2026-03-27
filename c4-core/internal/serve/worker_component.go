@@ -3,6 +3,7 @@
 package serve
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -232,14 +233,43 @@ func (w *WorkerComponent) executeJob(ctx context.Context, job *hub.Job) (int, er
 		}
 	}
 
-	cmd.Stdout = os.Stderr // route to serve log
 	cmd.Stderr = os.Stderr
+
+	// Pipe stdout through a metric scanner; fall back to direct routing on error.
+	stdoutPipe, pipeErr := cmd.StdoutPipe()
+	if pipeErr != nil {
+		cmd.Stdout = os.Stderr
+	}
 
 	w.mu.Lock()
 	w.jobCmd = cmd
 	w.mu.Unlock()
 
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		w.mu.Lock()
+		w.jobCmd = nil
+		w.mu.Unlock()
+		return 1, err
+	}
+
+	// Scan stdout, tee to stderr and parse metrics.
+	if pipeErr == nil {
+		jobID := job.GetID()
+		step := 0
+		scanner := bufio.NewScanner(stdoutPipe)
+		for scanner.Scan() {
+			line := scanner.Text()
+			fmt.Fprintln(os.Stderr, line)
+			if metrics := hub.ParseMetrics(line); metrics != nil {
+				step++
+				if err := w.client.LogMetricsSupabase(jobID, step, metrics); err != nil {
+					fmt.Fprintf(os.Stderr, "cq serve: metric log: %v\n", err)
+				}
+			}
+		}
+	}
+
+	err := cmd.Wait()
 
 	w.mu.Lock()
 	w.jobCmd = nil

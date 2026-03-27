@@ -200,6 +200,111 @@ func TestWorkerComponent_TildeExpansion(t *testing.T) {
 	_ = w // suppress unused warning
 }
 
+func TestWorkerComponent_MetricParsing(t *testing.T) {
+	var (
+		registered   atomic.Bool
+		completed    atomic.Bool
+		metricsBody  atomic.Value
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rest/v1/rpc/register_worker", func(w http.ResponseWriter, r *http.Request) {
+		registered.Store(true)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"worker_id": "w-metric"})
+	})
+	mux.HandleFunc("/rest/v1/rpc/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	jobServed := make(chan struct{}, 1)
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case jobServed <- struct{}{}:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"lease_id": "lease-metric-001",
+				"job": map[string]any{
+					"job_id":  "job-metric-001",
+					"command": `echo "@loss=0.5 @acc=0.9"`,
+				},
+			})
+		default:
+			time.Sleep(100 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(nil)
+		}
+	})
+
+	mux.HandleFunc("/rest/v1/rpc/complete_job", func(w http.ResponseWriter, r *http.Request) {
+		completed.Store(true)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "{}")
+	})
+
+	mux.HandleFunc("/rest/v1/rpc/renew_lease", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"renewed": true})
+	})
+
+	// Capture hub_metrics POST requests.
+	metricsCh := make(chan map[string]any, 10)
+	mux.HandleFunc("/rest/v1/hub_metrics", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			metricsBody.Store(body)
+			metricsCh <- body
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprint(w, "{}")
+	})
+
+	client := newHubWorkerTestClient(t, mux)
+	comp := NewWorker(client, []string{"test"}, "test-host")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := comp.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer comp.Stop(context.Background())
+
+	// Wait for metrics POST.
+	select {
+	case body := <-metricsCh:
+		// Verify step=1.
+		if step, ok := body["step"].(float64); !ok || step != 1 {
+			t.Errorf("hub_metrics step = %v, want 1", body["step"])
+		}
+		// Verify metrics contain loss and acc.
+		// LogMetricsSupabase serializes metrics as a JSON string.
+		metricsRaw, ok := body["metrics"]
+		if !ok {
+			t.Fatal("hub_metrics body missing 'metrics' field")
+		}
+		metricsStr, ok := metricsRaw.(string)
+		if !ok {
+			t.Fatalf("hub_metrics 'metrics' is %T, want string", metricsRaw)
+		}
+		var metricsMap map[string]any
+		if err := json.Unmarshal([]byte(metricsStr), &metricsMap); err != nil {
+			t.Fatalf("hub_metrics 'metrics' parse: %v", err)
+		}
+		if _, hasLoss := metricsMap["loss"]; !hasLoss {
+			t.Errorf("metrics missing 'loss', got: %v", metricsMap)
+		}
+		if _, hasAcc := metricsMap["acc"]; !hasAcc {
+			t.Errorf("metrics missing 'acc', got: %v", metricsMap)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("hub_metrics POST was not received within timeout")
+	}
+
+	_ = registered.Load()
+}
+
 func TestWorkerComponent_NotifyFunc(t *testing.T) {
 	var (
 		registered atomic.Bool
