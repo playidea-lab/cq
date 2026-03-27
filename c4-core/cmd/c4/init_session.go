@@ -13,6 +13,7 @@ import (
 	"github.com/changmin/c4-core/internal/mailbox"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // --- Named session support ---
@@ -410,14 +411,35 @@ func jsonlLastTimestamp(path string) time.Time {
 	return time.Time{}
 }
 
+var sessionsPlain bool
+
 // sessionsCmd lists named sessions with enhanced status-aware formatting.
 // Active sessions (idea/planned/in-progress/active) get full 3-4 line format.
 // Done sessions appear in compact form below a separator (max 5 recent).
+// When stdout is a TTY and --plain is not set, opens an interactive TUI dashboard.
 var sessionsCmd = &cobra.Command{
 	Use:   "sessions",
 	Short: "List named Claude Code sessions (tmux-style)",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		isTerminal := term.IsTerminal(int(os.Stdout.Fd()))
+		if !sessionsPlain && isTerminal {
+			tag, err := runSessionsTUI()
+			if err != nil {
+				return err
+			}
+			if tag != "" {
+				sessions, _ := loadNamedSessions()
+				if entry, ok := sessions[tag]; ok && entry.Status == "done" {
+					entry.Status = "active"
+					sessions[tag] = entry
+					_ = saveNamedSessions(sessions)
+				}
+				return launchToolNamed("claude", projectDir, tag)
+			}
+			return nil
+		}
+
 		sessions, err := loadNamedSessions()
 		if err != nil {
 			return err
@@ -741,6 +763,7 @@ var sessionMemoCmd = &cobra.Command{
 }
 
 func init() {
+	sessionsCmd.Flags().BoolVar(&sessionsPlain, "plain", false, "plain text output (no TUI)")
 	sessionNameCmd.Flags().BoolVarP(&sessionNameForce, "force", "f", false, "overwrite existing session name without confirmation")
 	sessionNameCmd.Flags().StringVarP(&sessionNameMemo, "memo", "m", "", "short description of this session")
 	sessionNameCmd.Flags().StringVar(&sessionNameUUID, "uuid", "", "explicitly set session UUID (bypass auto-detection)")
