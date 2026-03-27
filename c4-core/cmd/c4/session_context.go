@@ -61,8 +61,11 @@ var sessionContextCmd = &cobra.Command{
 
 		// Show session info.
 		statusColor := statusColorCode(entry.Status)
-		reset := "\033[0m"
-		fmt.Printf("📋 Session: %s  [%s%s%s]\n", tag, statusColor, statusDisplay(entry.Status), reset)
+		statusLabel := statusDisplay(entry.Status)
+		if statusColor != "" {
+			statusLabel = statusColor + statusLabel + "\033[0m"
+		}
+		fmt.Printf("📋 Session: %s  [%s]\n", tag, statusLabel)
 		if entry.Summary != "" {
 			fmt.Printf("   %s\n", entry.Summary)
 		}

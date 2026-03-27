@@ -465,6 +465,14 @@ var sessionsCmd = &cobra.Command{
 		const reset = "\033[0m"
 		activeCurUUID := curUUID
 
+		// Compute max name width for column alignment.
+		maxNameW := 8
+		for _, n := range names {
+			if w := lsDispWidth(n); w > maxNameW {
+				maxNameW = w
+			}
+		}
+
 		// --- Active sessions: full format ---
 		counts := map[string]int{"idea": 0, "planned": 0, "in-progress": 0, "active": 0, "done": 0}
 		for i, n := range activeNames {
@@ -497,11 +505,15 @@ var sessionsCmd = &cobra.Command{
 			}
 
 			// Line 1: indicator | name | uuid[:8] | status(colored) | date
-			fmt.Printf("%s%s  %s  %s%s%s  %s%s\n",
+			statusFmt := statusStr
+			if color != "" {
+				statusFmt = color + statusStr + reset
+			}
+			fmt.Printf("%s%s  %s  %s  %s%s\n",
 				indicator,
-				n,
+				lsPadToWidth(n, maxNameW),
 				entry.UUID[:8],
-				color, statusStr, reset,
+				lsPadToWidth(statusFmt, 14),
 				dateStr,
 				extra)
 			// Line 2: summary
