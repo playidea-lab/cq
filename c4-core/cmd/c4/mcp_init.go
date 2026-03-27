@@ -832,6 +832,10 @@ var coreMCPTools = []string{
 	"c4_diff_summary",
 	"c4_gpu_status",
 
+	// Remote workspace
+	"cq_workers",
+	"cq_relay_call",
+
 	// Hub (remote workers)
 	"c4_hub_submit",
 	"c4_hub_workers",
