@@ -662,6 +662,24 @@ func (m sessionTUIModel) View() string {
 			cursor = " ▸ "
 		}
 
+		// Doc markers: small dots indicating which documents exist
+		var markers string
+		if row.ideaPath != "" || row.specPath != "" || row.designPath != "" {
+			m1, m2, m3 := "·", "·", "·"
+			if row.ideaPath != "" {
+				m1 = "●"
+			}
+			if row.specPath != "" {
+				m2 = "●"
+			}
+			if row.designPath != "" {
+				m3 = "●"
+			}
+			markers = m1 + m2 + m3 + " "
+		} else {
+			markers = "    "
+		}
+
 		// Tag: truncate + pad to fixed display width (CJK-aware)
 		tagDisplay := row.tag
 		if lsDispWidth(tagDisplay) > tagColW {
@@ -678,8 +696,12 @@ func (m sessionTUIModel) View() string {
 
 		dateStr := row.date
 
+		markerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Faint(true)
+		markerStyleSel := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Background(lipgloss.Color("236"))
+
 		if isSelected {
 			sb.WriteString(styleSelected.Render(cursor))
+			sb.WriteString(markerStyleSel.Render(markers))
 			sb.WriteString(styleSelected.Render(tagPadded))
 			sb.WriteString(styleSelected.Render(" "))
 			sb.WriteString(badge)
@@ -687,12 +709,13 @@ func (m sessionTUIModel) View() string {
 			sb.WriteString(styleSelected.Render(sumPadded))
 			sb.WriteString(styleSelected.Render(" "))
 			sb.WriteString(styleSelected.Render(dateStr))
-			used := 3 + tagColW + 1 + badgeW + 1 + sumColW + 1 + len(dateStr)
-			if pad := 82 - used; pad > 0 {
+			used := 3 + 4 + tagColW + 1 + badgeW + 1 + sumColW + 1 + len(dateStr)
+			if pad := 86 - used; pad > 0 {
 				sb.WriteString(styleSelected.Render(strings.Repeat(" ", pad)))
 			}
 		} else if row.rowStatus == "done" {
 			sb.WriteString(styleTagNameDim.Render(cursor))
+			sb.WriteString(styleFaint.Render(markers))
 			sb.WriteString(styleTagNameDim.Render(tagPadded))
 			sb.WriteString(" ")
 			sb.WriteString(badge)
@@ -702,6 +725,7 @@ func (m sessionTUIModel) View() string {
 			sb.WriteString(styleDate.Render(dateStr))
 		} else {
 			sb.WriteString(cursor)
+			sb.WriteString(markerStyle.Render(markers))
 			sb.WriteString(styleTagName.Render(tagPadded))
 			sb.WriteString(" ")
 			sb.WriteString(badge)
