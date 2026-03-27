@@ -85,7 +85,7 @@ func init() {
 		cmd.Flags().StringVar(&botName, "bot", "", "select telegram bot by name, or show bot menu if empty")
 		cmd.Flag("bot").NoOptDefVal = " " // sentinel: --bot without value
 	}
-	sessionCmd.AddCommand(sessionNameCmd, sessionRmCmd, sessionMemoCmd)
+	sessionCmd.AddCommand(sessionNameCmd, sessionRmCmd, sessionMemoCmd, sessionContextCmd)
 	rootCmd.AddCommand(claudeCmd, codexCmd, cursorCmd, geminiCmd, sessionsCmd, sessionCmd)
 }
 

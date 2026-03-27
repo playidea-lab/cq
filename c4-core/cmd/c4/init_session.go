@@ -406,8 +406,9 @@ func jsonlLastTimestamp(path string) time.Time {
 	return time.Time{}
 }
 
-// sessionsCmd lists named sessions in tmux-style format.
-// Detects the current session via CQ_SESSION_UUID env var or filesystem.
+// sessionsCmd lists named sessions with enhanced status-aware formatting.
+// Active sessions (idea/planned/in-progress/active) get full 3-4 line format.
+// Done sessions appear in compact form below a separator (max 5 recent).
 var sessionsCmd = &cobra.Command{
 	Use:   "sessions",
 	Short: "List named Claude Code sessions (tmux-style)",
@@ -446,28 +447,28 @@ var sessionsCmd = &cobra.Command{
 				}
 			}
 		}
-		// Compute max name display width for column alignment.
-		maxNameW := 8
+
+		// Separate active vs done sessions.
+		var activeNames, doneNames []string
 		for _, n := range names {
-			if w := lsDispWidth(n); w > maxNameW {
-				maxNameW = w
+			if sessions[n].Status == "done" {
+				doneNames = append(doneNames, n)
+			} else {
+				activeNames = append(activeNames, n)
 			}
 		}
-		const dirColW = 22
-		activeCurUUID := curUUID // snapshot for first-match duplicate prevention
-		for _, n := range names {
+
+		const reset = "\033[0m"
+		activeCurUUID := curUUID
+
+		// --- Active sessions: full format ---
+		counts := map[string]int{"idea": 0, "planned": 0, "in-progress": 0, "active": 0, "done": 0}
+		for i, n := range activeNames {
 			entry := sessions[n]
 			t, tErr := time.Parse(time.RFC3339, entry.Updated)
 			dateStr := "--"
 			if tErr == nil {
 				dateStr = t.Format("Jan 02 15:04")
-			}
-			shortDir := entry.Dir
-			if homeDir, hErr := os.UserHomeDir(); hErr == nil {
-				shortDir = strings.Replace(shortDir, homeDir, "~", 1)
-			}
-			if lsDispWidth(shortDir) > dirColW {
-				shortDir = lsTruncateToWidth(shortDir, dirColW-1) + "…"
 			}
 			isCurrent := activeCurUUID != "" && entry.UUID == activeCurUUID
 			if isCurrent {
@@ -477,23 +478,88 @@ var sessionsCmd = &cobra.Command{
 			if isCurrent {
 				indicator = "● "
 			}
+			statusStr := entry.Status
+			if statusStr == "" {
+				statusStr = "active"
+			}
+			color := statusColorCode(statusStr)
+			counts[statusStr]++
+
 			extra := ""
 			if ms != nil {
-				if count, err := ms.UnreadCount(n); err == nil && count > 0 {
+				if count, mErr := ms.UnreadCount(n); mErr == nil && count > 0 {
 					extra = fmt.Sprintf("  ✉%d", count)
 				}
 			}
-			fmt.Printf("%s%s  %s  %s  %s%s\n",
+
+			// Line 1: indicator | name | uuid[:8] | status(colored) | date
+			fmt.Printf("%s%s  %s  %s%s%s  %s%s\n",
 				indicator,
-				lsPadToWidth(n, maxNameW),
+				n,
 				entry.UUID[:8],
-				lsPadToWidth(shortDir, dirColW),
+				color, statusStr, reset,
 				dateStr,
 				extra)
-			if entry.Memo != "" {
-				fmt.Printf("    %s\n", entry.Memo)
+			// Line 2: summary
+			if entry.Summary != "" {
+				fmt.Printf("    %s\n", entry.Summary)
+			}
+			// Lines 3-4: idea path / spec path (if present)
+			ideaSlug := entry.Idea
+			if ideaSlug == "" {
+				ideaSlug, _ = matchIdeaByTag(n)
+			}
+			if ideaSlug != "" {
+				ideaPath := filepath.Join(projectDir, ".c4", "ideas", ideaSlug+".md")
+				if _, statErr := os.Stat(ideaPath); statErr == nil {
+					fmt.Printf("    ├─ 💡 %s\n", ideaPath)
+				}
+			}
+			// Blank line between sessions (not after last active if done list follows).
+			if i < len(activeNames)-1 || len(doneNames) > 0 {
+				fmt.Println()
 			}
 		}
+
+		// --- Done sessions: compact, max 5 recent ---
+		if len(doneNames) > 0 {
+			counts["done"] = len(doneNames)
+			fmt.Printf("\033[90m── done (%d) ──\033[0m\n", len(doneNames))
+			// Show at most 5 most recent done sessions (names are sorted alphabetically;
+			// for recency we just take the last 5 in sorted order as best-effort).
+			start := 0
+			if len(doneNames) > 5 {
+				start = len(doneNames) - 5
+			}
+			for _, n := range doneNames[start:] {
+				entry := sessions[n]
+				t, tErr := time.Parse(time.RFC3339, entry.Updated)
+				dateStr := "--"
+				if tErr == nil {
+					dateStr = t.Format("Jan 02 15:04")
+				}
+				summary := entry.Summary
+				if len(summary) > 40 {
+					summary = summary[:40] + "…"
+				}
+				fmt.Printf("\033[90m  %-20s  %s  %s\033[0m\n", n, dateStr, summary)
+			}
+		}
+
+		// --- Bottom summary ---
+		total := len(sessions)
+		fmt.Printf("\n%d sessions", total)
+		parts := []string{}
+		for _, k := range []string{"idea", "planned", "in-progress", "active", "done"} {
+			if counts[k] > 0 {
+				parts = append(parts, fmt.Sprintf("%d %s", counts[k], k))
+			}
+		}
+		if len(parts) > 0 {
+			fmt.Printf(" — %s", strings.Join(parts, ", "))
+		}
+		fmt.Println()
+
 		return nil
 	},
 }
