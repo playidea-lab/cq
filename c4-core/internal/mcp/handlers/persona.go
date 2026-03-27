@@ -341,24 +341,60 @@ func listUserSoulFiles(projectRoot, username string) []string {
 func analyzePatternsForSuggestions(stats map[string]any, total int) []string {
 	suggestions := []string{}
 	outcomes, _ := stats["outcomes"].(map[string]int)
+	now := time.Now().Format("2006-01-02")
 
+	// 1. Overall rejection rate
 	if rejected, ok := outcomes["rejected"]; ok && rejected > 0 {
 		rate := float64(rejected) / float64(total) * 100
 		if rate > 30 {
 			suggestions = append(suggestions, fmt.Sprintf(
-				"High rejection rate (%.0f%%). Review failure patterns and add pre-submit checklist.",
-				rate))
+				"[%s] High rejection rate (%.0f%% of %d tasks). Review failure patterns and add pre-submit checklist.",
+				now, rate, total))
+		} else if rate > 10 {
+			suggestions = append(suggestions, fmt.Sprintf(
+				"[%s] Moderate rejection rate (%.0f%% of %d tasks). Review recent rejections for recurring patterns.",
+				now, rate, total))
 		}
 	}
 
-	if avgScore, ok := stats["avg_review_score"].(float64); ok && avgScore < 0.7 {
+	// 2. Recent trend (more actionable than all-time)
+	if recentRate, ok := stats["recent_rejection_rate"].(float64); ok && recentRate > 0.15 {
 		suggestions = append(suggestions, fmt.Sprintf(
-			"Low average review score (%.2f). Focus on code quality and DoD compliance.",
-			avgScore))
+			"[%s] Recent rejection trend: %.0f%% in last 20 tasks. Quality may be declining — slow down and verify before submitting.",
+			now, recentRate*100))
 	}
 
-	if total > 10 {
-		suggestions = append(suggestions, "Consider specializing: check which domains have best outcomes.")
+	// 3. Review score
+	if avgScore, ok := stats["avg_review_score"].(float64); ok && avgScore > 0 && avgScore < 0.7 {
+		suggestions = append(suggestions, fmt.Sprintf(
+			"[%s] Low average review score (%.2f). Focus on code quality and DoD compliance.",
+			now, avgScore))
+	}
+
+	// 4. Validation failures
+	if valFailed, ok := outcomes["validation_failed"]; ok && valFailed > 0 {
+		valRate := float64(valFailed) / float64(total) * 100
+		if valRate > 10 {
+			suggestions = append(suggestions, fmt.Sprintf(
+				"[%s] Validation failure rate %.0f%%. Run tests locally before submitting.",
+				now, valRate))
+		}
+	}
+
+	// 5. Milestone achievements
+	switch {
+	case total >= 500:
+		suggestions = append(suggestions, fmt.Sprintf("[%s] 500+ tasks completed. Focus on mentoring patterns and architectural decisions.", now))
+	case total >= 100:
+		suggestions = append(suggestions, fmt.Sprintf("[%s] 100+ tasks completed. Review which task types yield highest quality.", now))
+	case total >= 10:
+		// Only suggest specialization once — it will be deduped after first write
+		suggestions = append(suggestions, fmt.Sprintf("[%s] %d tasks completed. Consider specializing by domain.", now, total))
+	}
+
+	// 6. Perfect streak recognition
+	if rejected, ok := outcomes["rejected"]; (!ok || rejected == 0) && total >= 20 {
+		suggestions = append(suggestions, fmt.Sprintf("[%s] Zero rejections across %d tasks — strong quality record.", now, total))
 	}
 
 	return suggestions
@@ -471,9 +507,18 @@ func applySuggestionsToSoul(projectRoot, username, role string, suggestions []st
 	}
 
 	for _, s := range suggestions {
-		// Deduplicate by exact suggestion text (not substring)
-		if !existingSuggestions[s] {
-			newLines = append(newLines, fmt.Sprintf("- [%s] %s", date, s))
+		// Strip date prefix from suggestion if present for dedup comparison
+		dedup := s
+		if idx := strings.Index(s, "] "); idx >= 0 && strings.HasPrefix(s, "[") {
+			dedup = strings.TrimSpace(s[idx+2:])
+		}
+		if !existingSuggestions[dedup] {
+			// Suggestion already has date prefix from analyzePatternsForSuggestions
+			if strings.HasPrefix(s, "[") {
+				newLines = append(newLines, fmt.Sprintf("- %s", s))
+			} else {
+				newLines = append(newLines, fmt.Sprintf("- [%s] %s", date, s))
+			}
 		}
 	}
 

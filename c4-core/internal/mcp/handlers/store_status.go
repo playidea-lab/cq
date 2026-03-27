@@ -212,13 +212,26 @@ func (s *SQLiteStore) GetPersonaStats(personaID string) (map[string]any, error) 
 	}
 	stats["outcomes"] = outcomes
 
-	// Average review score
+	// Average review score (only from scored tasks)
 	var avgScore sql.NullFloat64
-	if err := s.db.QueryRow("SELECT AVG(review_score) FROM persona_stats WHERE persona_id = ? AND review_score > 0", personaID).Scan(&avgScore); err != nil {
+	var scoredCount int
+	if err := s.db.QueryRow("SELECT AVG(review_score), COUNT(*) FROM persona_stats WHERE persona_id = ? AND review_score > 0", personaID).Scan(&avgScore, &scoredCount); err != nil {
 		fmt.Fprintf(os.Stderr, "c4: get-persona-stats: avg score: %v\n", err)
 	}
 	if avgScore.Valid {
 		stats["avg_review_score"] = avgScore.Float64
+	}
+	stats["scored_tasks"] = scoredCount
+
+	// Recent rejection trend (last 20 tasks)
+	var recentRejected int
+	var recentTotal int
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*), SUM(CASE WHEN outcome='rejected' THEN 1 ELSE 0 END)
+		FROM (SELECT outcome FROM persona_stats WHERE persona_id=? ORDER BY created_at DESC LIMIT 20)`,
+		personaID).Scan(&recentTotal, &recentRejected); err == nil && recentTotal > 0 {
+		stats["recent_rejection_rate"] = float64(recentRejected) / float64(recentTotal)
+		stats["recent_total"] = recentTotal
 	}
 
 	return stats, nil

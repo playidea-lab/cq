@@ -184,14 +184,19 @@ func (s *SQLiteStore) autoLearnFromDiff(commitRange string) {
 }
 
 // recordPersonaStat records a persona outcome for a task (best-effort).
-func (s *SQLiteStore) recordPersonaStat(personaID, taskID, outcome string) {
+// reviewScore is optional — pass 0 if not available.
+func (s *SQLiteStore) recordPersonaStat(personaID, taskID, outcome string, reviewScore ...float64) {
 	if personaID == "" {
 		personaID = "direct"
 	}
+	score := 0.0
+	if len(reviewScore) > 0 {
+		score = reviewScore[0]
+	}
 	if _, err := s.db.Exec(`
-		INSERT OR REPLACE INTO persona_stats (persona_id, task_id, outcome, created_at)
-		VALUES (?, ?, ?, ?)`,
-		personaID, taskID, outcome, time.Now().UTC().Format(time.RFC3339),
+		INSERT OR REPLACE INTO persona_stats (persona_id, task_id, outcome, review_score, created_at)
+		VALUES (?, ?, ?, ?, ?)`,
+		personaID, taskID, outcome, score, time.Now().UTC().Format(time.RFC3339),
 	); err != nil {
 		fmt.Fprintf(os.Stderr, "c4: recordPersonaStat %s/%s: %v\n", personaID, taskID, err)
 	}
