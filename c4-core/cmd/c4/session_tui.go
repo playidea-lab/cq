@@ -365,7 +365,7 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.historyCursor++
 				}
 			case tea.KeyRunes:
-				if msg.String() == "`" {
+				if msg.String() == " " {
 					m.historyMode = false
 					return m, nil
 				}
@@ -529,8 +529,8 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyRunes:
 			ch := msg.String()
-			if ch == "`" {
-				// Backtick: open history for selected session
+			if ch == " " && !m.isSearching() {
+				// Space (when not searching): open history for selected session
 				idx := m.cursorRowIndex()
 				if idx >= 0 {
 					tag := m.rows[idx].tag
@@ -745,7 +745,7 @@ func (m sessionTUIModel) View() string {
 		sb.WriteString("\n ")
 		sb.WriteString(helpEntry("↑↓", "move"))
 		sb.WriteString("  ")
-		sb.WriteString(helpEntry("`", "back"))
+		sb.WriteString(helpEntry("Space", "back"))
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("Esc", "back"))
 		sb.WriteString("\n")
@@ -960,7 +960,7 @@ func (m sessionTUIModel) View() string {
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("→", "files"))
 		sb.WriteString("  ")
-		sb.WriteString(helpEntry("`", "history"))
+		sb.WriteString(helpEntry("Space", "history"))
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("Enter", "start"))
 		sb.WriteString("  ")
