@@ -917,12 +917,15 @@ func (m sessionTUIModel) View() string {
 		isSelected := i == cursorRowIdx
 		nonHeaderCount++
 
-		// Status badge pill
+		// Status badge pill — fixed visual width (pad shorter badges)
 		bStyle, ok := statusBadgeStyles[row.rowStatus]
 		if !ok {
 			bStyle = statusBadgeStyles["active"]
 		}
-		badge := bStyle.Render(row.rowStatus)
+		// "in-progress" is longest (11 chars + 2 padding = 13 visual).
+		// Pad status text to 11 chars so all badges are same width.
+		statusText := fmt.Sprintf("%-11s", row.rowStatus)
+		badge := bStyle.Render(statusText)
 		badgeW := lipgloss.Width(badge)
 
 		cursor := "   "
@@ -960,12 +963,19 @@ func (m sessionTUIModel) View() string {
 		if lsDispWidth(sumDisplay) > sumColW {
 			sumDisplay = lsTruncateToWidth(sumDisplay, sumColW-1) + "…"
 		}
-		sumPadded := lsPadToWidth(sumDisplay, sumColW)
-
 		dateStr := row.date
 
 		markerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Faint(true)
 		markerStyleSel := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Background(lipgloss.Color("236"))
+
+		// Calculate padding between summary and date to right-align date
+		// Layout: cursor(3) + markers(4) + tag + " " + badge + " " + summary + pad + date
+		leftUsed := 3 + 4 + tagColW + 1 + badgeW + 1 + lsDispWidth(sumDisplay)
+		dateW := len(dateStr)
+		midPad := m.width - leftUsed - dateW
+		if midPad < 1 {
+			midPad = 1
+		}
 
 		if isSelected {
 			sb.WriteString(styleSelected.Render(cursor))
@@ -974,13 +984,9 @@ func (m sessionTUIModel) View() string {
 			sb.WriteString(styleSelected.Render(" "))
 			sb.WriteString(badge)
 			sb.WriteString(styleSelected.Render(" "))
-			sb.WriteString(styleSelected.Render(sumPadded))
-			sb.WriteString(styleSelected.Render(" "))
+			sb.WriteString(styleSelected.Render(sumDisplay))
+			sb.WriteString(styleSelected.Render(strings.Repeat(" ", midPad)))
 			sb.WriteString(styleSelected.Render(dateStr))
-			used := 3 + 4 + tagColW + 1 + badgeW + 1 + sumColW + 1 + len(dateStr)
-			if pad := m.width - used; pad > 0 {
-				sb.WriteString(styleSelected.Render(strings.Repeat(" ", pad)))
-			}
 		} else if row.rowStatus == "done" {
 			sb.WriteString(styleTagNameDim.Render(cursor))
 			sb.WriteString(styleFaint.Render(markers))
@@ -988,8 +994,8 @@ func (m sessionTUIModel) View() string {
 			sb.WriteString(" ")
 			sb.WriteString(badge)
 			sb.WriteString(" ")
-			sb.WriteString(styleSummaryDim.Render(sumPadded))
-			sb.WriteString(" ")
+			sb.WriteString(styleSummaryDim.Render(sumDisplay))
+			sb.WriteString(strings.Repeat(" ", midPad))
 			sb.WriteString(styleDate.Render(dateStr))
 		} else {
 			sb.WriteString(cursor)
@@ -998,8 +1004,8 @@ func (m sessionTUIModel) View() string {
 			sb.WriteString(" ")
 			sb.WriteString(badge)
 			sb.WriteString(" ")
-			sb.WriteString(styleSummary.Render(sumPadded))
-			sb.WriteString(" ")
+			sb.WriteString(styleSummary.Render(sumDisplay))
+			sb.WriteString(strings.Repeat(" ", midPad))
 			sb.WriteString(styleDate.Render(dateStr))
 		}
 		sb.WriteString("\n")
