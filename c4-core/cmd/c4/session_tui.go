@@ -391,40 +391,25 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyRunes:
 			ch := msg.String()
-			if m.isSearching() {
-				m.query += ch
-				m.rebuildRows()
-			} else {
+			// All printable characters go to search query.
+			// Shortcuts (d/n) only work when query is empty.
+			if m.query == "" {
 				switch ch {
-				case "q":
-					return m, tea.Quit
-				case "j":
-					m.moveCursor(1)
-				case "k":
-					m.moveCursor(-1)
-				case "l":
-					// Right alias — enter detail mode
-					paths := m.detailPaths()
-					if len(paths) > 0 {
-						m.detailMode = true
-						m.detailCursor = 0
-					}
 				case "n":
 					m.newMode = true
 					m.newInput = ""
+					return m, nil
 				case "d":
 					idx := m.cursorRowIndex()
 					if idx >= 0 {
 						m.confirmDelete = true
 						m.deleteTarget = m.rows[idx].tag
 					}
-				case "/":
-					// noop — next char enters search
-				default:
-					m.query += ch
-					m.rebuildRows()
+					return m, nil
 				}
 			}
+			m.query += ch
+			m.rebuildRows()
 		}
 	}
 	return m, nil
@@ -773,9 +758,9 @@ func (m sessionTUIModel) View() string {
 		sb.WriteString("  ")
 		sb.WriteString(helpEntry("Tab", "filter"))
 		sb.WriteString("  ")
-		sb.WriteString(helpEntry("Esc", "clear"))
+		sb.WriteString(helpEntry("Esc", "quit/clear"))
 		sb.WriteString("  ")
-		sb.WriteString(helpEntry("q", "quit"))
+		sb.WriteString(helpEntry("n", "new"))
 	}
 	sb.WriteString("\n")
 
