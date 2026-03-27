@@ -579,17 +579,31 @@ func handleHubWait(client *hub.Client, raw json.RawMessage) (any, error) {
 				}, nil
 			}
 
-			jobMap, ok := job.(map[string]any)
-			if !ok {
-				continue
-			}
-
-			status, _ := jobMap["status"].(string)
-			switch status {
+			switch job.Status {
 			case "SUCCEEDED", "FAILED", "CANCELLED":
-				jobMap["waited_sec"] = int(time.Since(startTime).Seconds())
-				jobMap["polls"] = polls
-				return jobMap, nil
+				result := map[string]any{
+					"job_id":      job.ID,
+					"name":        job.Name,
+					"status":      job.Status,
+					"command":     job.Command,
+					"workdir":     job.Workdir,
+					"worker_id":   job.WorkerID,
+					"created_at":  job.CreatedAt,
+					"started_at":  job.StartedAt,
+					"finished_at": job.FinishedAt,
+					"waited_sec":  int(time.Since(startTime).Seconds()),
+					"polls":       polls,
+				}
+				if job.ExitCode != nil {
+					result["exit_code"] = *job.ExitCode
+				}
+				if len(job.Result) > 0 {
+					result["result"] = json.RawMessage(job.Result)
+				}
+				if job.BestMetric != nil {
+					result["best_metric"] = *job.BestMetric
+				}
+				return result, nil
 			}
 			// QUEUED, RUNNING — keep polling
 		}
