@@ -38,10 +38,42 @@ type checkResult struct {
 	Fix     string      `json:"fix,omitempty"`
 }
 
+// doctorCheckEntry describes a single diagnostic check with metadata.
+type doctorCheckEntry struct {
+	Name      string
+	Fn        func() checkResult
+	FixSafe   bool // true if --fix can auto-repair this check
+	IsNetwork bool // true if this check requires network access
+}
+
 var (
-	doctorFix  bool
-	doctorJSON bool
+	doctorFix   bool
+	doctorJSON  bool
+	doctorPlain bool
 )
+
+// doctorChecks is the ordered list of diagnostic checks run by the doctor command.
+var doctorChecks = []doctorCheckEntry{
+	{Name: "cq binary", Fn: checkBinary},
+	{Name: ".c4 directory", Fn: checkC4Dir},
+	{Name: ".mcp.json", Fn: checkMCPJson},
+	{Name: "CLAUDE.md symlink", Fn: checkClaudeMDSymlink, FixSafe: true},
+	{Name: "hooks", Fn: checkHooks, FixSafe: true},
+	{Name: "python sidecar", Fn: checkPythonSidecar},
+	{Name: "hub", Fn: checkHub, IsNetwork: true},
+	{Name: "cloud", Fn: checkCloud, IsNetwork: true},
+	{Name: "supabase", Fn: checkSupabase, IsNetwork: true},
+	{Name: "relay", Fn: checkRelay, IsNetwork: true},
+	{Name: "OS service", Fn: func() checkResult { return checkOSService(doctorFix) }, FixSafe: true},
+	{Name: "stale socket", Fn: checkStaleSocket, FixSafe: true},
+	{Name: "zombie serve", Fn: checkZombieServe},
+	{Name: "sidecar hang", Fn: checkSidecarHang},
+	{Name: "skill health", Fn: checkSkillHealth},
+	{Name: "standards", Fn: checkStandards},
+	{Name: "ontology L1", Fn: checkOntologyL1},
+	{Name: "ontology L2", Fn: checkOntologyL2},
+	{Name: "knowledge health", Fn: checkKnowledgeHealth},
+}
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
@@ -59,6 +91,7 @@ Use --json for machine-readable output.`,
 func init() {
 	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "auto-fix simple issues")
 	doctorCmd.Flags().BoolVar(&doctorJSON, "json", false, "output results as JSON")
+	doctorCmd.Flags().BoolVar(&doctorPlain, "plain", false, "force plain text output (no TUI)")
 	// doctor doesn't require a .c4/ directory — override the root PersistentPreRunE
 	doctorCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error { return nil }
 	rootCmd.AddCommand(doctorCmd)
@@ -76,31 +109,9 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	if abs, err := filepath.Abs(projectDir); err == nil {
 		projectDir = abs
 	}
-	checks := []func() checkResult{
-		checkBinary,
-		checkC4Dir,
-		checkMCPJson,
-		checkClaudeMDSymlink,
-		checkHooks,
-		checkPythonSidecar,
-		checkHub,
-		checkCloud,
-		checkSupabase,
-		checkRelay,
-		func() checkResult { return checkOSService(doctorFix) },
-		checkStaleSocket,
-		checkZombieServe,
-		checkSidecarHang,
-		checkSkillHealth,
-		checkStandards,
-		checkOntologyL1,
-		checkOntologyL2,
-		checkKnowledgeHealth,
-	}
-
-	results := make([]checkResult, 0, len(checks))
-	for _, fn := range checks {
-		r := fn()
+	results := make([]checkResult, 0, len(doctorChecks))
+	for _, entry := range doctorChecks {
+		r := entry.Fn()
 		if doctorFix && (r.Status == checkFail || r.Status == checkWarn) {
 			fixed := tryFix(&r)
 			if fixed != "" {
@@ -114,6 +125,20 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	if doctorJSON {
 		return printDoctorJSON(results)
 	}
+
+	// TUI mode: use interactive TUI when stdout is a terminal and --plain/--json are not set.
+	if !doctorPlain && term.IsTerminal(int(os.Stdout.Fd())) {
+		return runDoctorTUI(results)
+	}
+
+	printDoctorHuman(results)
+	return nil
+}
+
+// runDoctorTUI renders an interactive TUI for doctor results.
+// Stub — full implementation in T-902.
+func runDoctorTUI(results []checkResult) error {
+	// TODO(T-902): implement bubbletea TUI
 	printDoctorHuman(results)
 	return nil
 }
