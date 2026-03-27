@@ -54,8 +54,13 @@ func newServiceConfig(execPath, configPath string) service.Config {
 		args = append(args, "--config", configPath)
 	}
 
-	// Resolve project directory for --dir and WorkingDirectory.
-	dir := projectDir
+	// Resolve working directory for --dir.
+	// Prefer home directory (global serve) to avoid binding to a single project.
+	homeDir, _ := os.UserHomeDir()
+	dir := homeDir
+	if dir == "" {
+		dir = projectDir
+	}
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
@@ -122,8 +127,17 @@ func resolveInstallPaths() (execPath, configPath string, err error) {
 	if err != nil {
 		return "", "", fmt.Errorf("eval symlinks: %w", err)
 	}
-	// Resolve config path at install time (absolute) so OS service can find it
-	// regardless of HOME or working directory differences.
+	// Resolve config path: prefer global (~/.c4/config.yaml) over project-specific.
+	// Global config ensures cq serve works regardless of which project started it.
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		globalConfig := filepath.Join(home, ".c4", "config.yaml")
+		if _, statErr := os.Stat(globalConfig); statErr == nil {
+			configPath = globalConfig
+			return execPath, configPath, nil
+		}
+	}
+	// Fallback: project-specific config.
 	dir := projectDir
 	if dir == "" {
 		dir, _ = os.Getwd()
