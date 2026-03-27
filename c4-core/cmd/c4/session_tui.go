@@ -1066,12 +1066,19 @@ func (m sessionTUIModel) View() string {
 	content := sb.String()
 	contentLines := strings.Count(content, "\n")
 	if m.height > 0 {
-		// -1 for help bar itself
-		gap := m.height - contentLines - 1
+		// -2 for separator + help bar
+		gap := m.height - contentLines - 2
 		for i := 0; i < gap; i++ {
 			sb.WriteString("\n")
 		}
 	}
+	// Separator + help bar
+	if m.width > 0 {
+		sb.WriteString(styleFaint.Render(strings.Repeat("─", m.width)))
+	} else {
+		sb.WriteString(styleFaint.Render(strings.Repeat("─", 74)))
+	}
+	sb.WriteString("\n")
 	sb.WriteString(helpBar.String())
 
 	return sb.String()
