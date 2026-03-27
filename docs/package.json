@@ -9,6 +9,7 @@
     "generate": "node scripts/generate-agent-files.mjs"
   },
   "devDependencies": {
-    "vitepress": "^1.6.3"
+    "vitepress": "^1.6.3",
+    "vitepress-plugin-comment-with-giscus": "^1.1.15"
   }
 }
