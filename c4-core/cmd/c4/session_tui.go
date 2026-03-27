@@ -458,23 +458,63 @@ func (m *sessionTUIModel) rebuildRows() {
 // --- Lipgloss styles ---
 
 var (
-	styleHeader    = lipgloss.NewStyle().Bold(true)
-	styleFaint     = lipgloss.NewStyle().Faint(true)
-	styleSelected  = lipgloss.NewStyle().Bold(true).Reverse(true)
-	styleFilePath  = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("6")) // cyan, cmd+click friendly
-	styleStatusTag = map[string]lipgloss.Style{
-		"idea":        lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true),  // yellow
-		"planned":     lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Bold(true),  // blue
-		"in-progress": lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true),  // green
-		"active":      lipgloss.NewStyle().Foreground(lipgloss.Color("7")),             // white
-		"done":        lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Faint(true), // gray
+	styleFaint    = lipgloss.NewStyle().Faint(true)
+	styleSelected = lipgloss.NewStyle().
+			Background(lipgloss.Color("236")).
+			Foreground(lipgloss.Color("15")).
+			Bold(true)
+	styleFilePath = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("6")).
+			Faint(true)
+	styleFileSelected = lipgloss.NewStyle().
+				Background(lipgloss.Color("236")).
+				Foreground(lipgloss.Color("14")).
+				Bold(true)
+	styleSearchBar = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("14")).
+			Bold(true)
+	styleSearchPlaceholder = lipgloss.NewStyle().
+				Faint(true).
+				Italic(true)
+	styleHelpKey = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("14")).
+			Bold(true)
+	styleHelpDesc = lipgloss.NewStyle().
+			Faint(true)
+	styleConfirm = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("1")).
+			Bold(true)
+	styleTitle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("15")).
+			Background(lipgloss.Color("62")).
+			Padding(0, 1)
+	styleCount = lipgloss.NewStyle().
+			Faint(true)
+	styleTagName = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("15"))
+	styleTagNameDim = lipgloss.NewStyle().
+			Faint(true)
+	styleSummary = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("252"))
+	styleSummaryDim = lipgloss.NewStyle().
+			Faint(true)
+	styleDate = lipgloss.NewStyle().
+			Faint(true).
+			Foreground(lipgloss.Color("244"))
+
+	// Status badge styles: colored background pill
+	statusBadgeStyles = map[string]lipgloss.Style{
+		"idea":        lipgloss.NewStyle().Background(lipgloss.Color("3")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
+		"planned":     lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
+		"in-progress": lipgloss.NewStyle().Background(lipgloss.Color("2")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
+		"active":      lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("15")).Padding(0, 1),
+		"done":        lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("245")).Padding(0, 1),
 	}
-	styleSearchBar = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
-	styleHelpBar   = lipgloss.NewStyle().Faint(true)
-	styleConfirm   = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true) // red
 )
 
-func headerStyle(status string) lipgloss.Style {
+func groupHeaderStyle(status string) lipgloss.Style {
 	col := lipgloss.Color("7")
 	switch status {
 	case "idea":
@@ -486,18 +526,34 @@ func headerStyle(status string) lipgloss.Style {
 	case "done":
 		col = lipgloss.Color("8")
 	}
-	return styleHeader.Foreground(col)
+	return lipgloss.NewStyle().Bold(true).Foreground(col)
+}
+
+func helpEntry(key, desc string) string {
+	return styleHelpKey.Render(key) + " " + styleHelpDesc.Render(desc)
 }
 
 func (m sessionTUIModel) View() string {
 	var sb strings.Builder
 
-	// Delete confirmation
+	// Delete confirmation — full screen takeover
 	if m.confirmDelete {
-		sb.WriteString(styleConfirm.Render(fmt.Sprintf("  Delete session '%s'? [y/N] ", m.deleteTarget)))
+		sb.WriteString("\n")
+		sb.WriteString(styleConfirm.Render(fmt.Sprintf("  ⚠  Delete session '%s'? ", m.deleteTarget)))
+		sb.WriteString(styleHelpKey.Render("[y]"))
+		sb.WriteString(styleHelpDesc.Render(" yes  "))
+		sb.WriteString(styleHelpKey.Render("[N]"))
+		sb.WriteString(styleHelpDesc.Render(" cancel"))
 		sb.WriteString("\n")
 		return sb.String()
 	}
+
+	// Title bar
+	total := len(m.sessions)
+	sb.WriteString(styleTitle.Render(" cq sessions "))
+	sb.WriteString(" ")
+	sb.WriteString(styleCount.Render(fmt.Sprintf("%d sessions", total)))
+	sb.WriteString("\n\n")
 
 	// Search bar
 	filterLabel := m.statusFilter
@@ -505,18 +561,23 @@ func (m sessionTUIModel) View() string {
 		filterLabel = "all"
 	}
 	if m.isSearching() {
-		sb.WriteString(styleSearchBar.Render(fmt.Sprintf("🔍 %s▏", m.query)))
+		sb.WriteString("  ")
+		sb.WriteString(styleSearchBar.Render(fmt.Sprintf(" 🔍 %s▏ ", m.query)))
 	} else {
-		sb.WriteString(styleFaint.Render("🔍 type to search..."))
+		sb.WriteString("  ")
+		sb.WriteString(styleSearchPlaceholder.Render(" 🔍 type to search... "))
 	}
-	filterText := styleFaint.Render(fmt.Sprintf("[Tab: %s]", filterLabel))
-	// Right-align filter
-	pad := 60 - lipgloss.Width(sb.String()) - lipgloss.Width(filterText)
-	if pad < 1 {
-		pad = 1
+
+	// Filter badge
+	badgeStyle, ok := statusBadgeStyles[filterLabel]
+	if !ok {
+		badgeStyle = lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("15")).Padding(0, 1)
 	}
-	sb.WriteString(strings.Repeat(" ", pad))
-	sb.WriteString(filterText)
+	if filterLabel == "all" {
+		badgeStyle = lipgloss.NewStyle().Background(lipgloss.Color("62")).Foreground(lipgloss.Color("15")).Padding(0, 1)
+	}
+	sb.WriteString("  ")
+	sb.WriteString(badgeStyle.Render(filterLabel))
 	sb.WriteString("\n\n")
 
 	// Rows
@@ -525,8 +586,14 @@ func (m sessionTUIModel) View() string {
 
 	for i, row := range m.rows {
 		if row.isHeader {
-			hs := headerStyle(row.status)
-			sb.WriteString(hs.Render(fmt.Sprintf(" ── %s (%d) ──", row.status, row.count)))
+			hs := groupHeaderStyle(row.status)
+			line := fmt.Sprintf(" ── %s (%d) ", row.status, row.count)
+			sb.WriteString(hs.Render(line))
+			// Extend with faint dashes
+			remaining := 70 - lipgloss.Width(line)
+			if remaining > 0 {
+				sb.WriteString(styleFaint.Render(strings.Repeat("─", remaining)))
+			}
 			sb.WriteString("\n")
 			continue
 		}
@@ -534,42 +601,51 @@ func (m sessionTUIModel) View() string {
 		isSelected := i == cursorRowIdx
 		nonHeaderCount++
 
-		// Status badge with color
-		stStyle, ok := styleStatusTag[row.rowStatus]
+		// Status badge pill
+		badgeStyle, ok := statusBadgeStyles[row.rowStatus]
 		if !ok {
-			stStyle = lipgloss.NewStyle()
+			badgeStyle = statusBadgeStyles["active"]
 		}
-		statusBadge := stStyle.Render(fmt.Sprintf("%-12s", row.rowStatus))
+		badge := badgeStyle.Render(row.rowStatus)
 
-		// Build the line
-		cursor := "  "
+		// Cursor indicator
+		cursor := "   "
 		if isSelected {
-			cursor = "▸ "
+			cursor = " ▸ "
 		}
 
-		tagStr := fmt.Sprintf("%-18s", row.tag)
-		summaryStr := fmt.Sprintf("%-45s", row.summary)
+		tagStr := row.tag
+		summaryStr := row.summary
 		dateStr := row.date
 
 		if isSelected {
-			line := fmt.Sprintf("%s%s  %s  %s  %s", cursor, tagStr, statusBadge, summaryStr, dateStr)
-			sb.WriteString(styleSelected.Render(line))
+			// Selected row: subtle background
+			sb.WriteString(styleSelected.Render(cursor))
+			sb.WriteString(styleSelected.Render(fmt.Sprintf("%-16s ", tagStr)))
+			sb.WriteString(badge)
+			sb.WriteString(styleSelected.Render(fmt.Sprintf(" %-40s ", summaryStr)))
+			sb.WriteString(styleSelected.Render(dateStr))
+			// Pad to fill line
+			used := 3 + 17 + lipgloss.Width(badge) + 42 + len(dateStr)
+			if pad := 80 - used; pad > 0 {
+				sb.WriteString(styleSelected.Render(strings.Repeat(" ", pad)))
+			}
 		} else if row.rowStatus == "done" {
-			line := fmt.Sprintf("%s%s  %s  %s  %s", cursor, tagStr, statusBadge, summaryStr, dateStr)
-			sb.WriteString(styleFaint.Render(line))
+			sb.WriteString(styleTagNameDim.Render(cursor))
+			sb.WriteString(styleTagNameDim.Render(fmt.Sprintf("%-16s ", tagStr)))
+			sb.WriteString(badge)
+			sb.WriteString(styleSummaryDim.Render(fmt.Sprintf(" %-40s ", summaryStr)))
+			sb.WriteString(styleDate.Render(dateStr))
 		} else {
 			sb.WriteString(cursor)
-			sb.WriteString(lipgloss.NewStyle().Bold(true).Render(tagStr))
-			sb.WriteString("  ")
-			sb.WriteString(statusBadge)
-			sb.WriteString("  ")
-			sb.WriteString(summaryStr)
-			sb.WriteString("  ")
-			sb.WriteString(styleFaint.Render(dateStr))
+			sb.WriteString(styleTagName.Render(fmt.Sprintf("%-16s ", tagStr)))
+			sb.WriteString(badge)
+			sb.WriteString(styleSummary.Render(fmt.Sprintf(" %-40s ", summaryStr)))
+			sb.WriteString(styleDate.Render(dateStr))
 		}
 		sb.WriteString("\n")
 
-		// Show file paths for selected row
+		// File paths for selected row
 		if isSelected {
 			paths := m.detailPaths()
 			pathIdx := 0
@@ -578,44 +654,62 @@ func (m sessionTUIModel) View() string {
 				if isLast {
 					branch = "└─"
 				}
-				line := fmt.Sprintf("    %s %s %s", branch, icon, path)
+				line := fmt.Sprintf("      %s %s %s", branch, icon, path)
 				if m.detailMode && pathIdx == m.detailCursor {
-					sb.WriteString(styleSelected.Render(line))
+					sb.WriteString(styleFileSelected.Render(line))
 				} else {
 					sb.WriteString(styleFilePath.Render(line))
 				}
 				sb.WriteString("\n")
 				pathIdx++
 			}
-			_ = paths // used for detail cursor indexing
-			if row.ideaPath != "" {
-				isLast := row.specPath == "" && row.designPath == ""
-				renderPath("💡", row.ideaPath, isLast)
-			}
-			if row.specPath != "" {
-				isLast := row.designPath == ""
-				renderPath("📄", row.specPath, isLast)
-			}
-			if row.designPath != "" {
-				renderPath("🏗 ", row.designPath, true)
+			_ = paths
+			hasFiles := row.ideaPath != "" || row.specPath != "" || row.designPath != ""
+			if hasFiles {
+				if row.ideaPath != "" {
+					renderPath("💡", row.ideaPath, row.specPath == "" && row.designPath == "")
+				}
+				if row.specPath != "" {
+					renderPath("📄", row.specPath, row.designPath == "")
+				}
+				if row.designPath != "" {
+					renderPath("🏗 ", row.designPath, true)
+				}
 			}
 		}
 	}
 
 	if nonHeaderCount == 0 {
-		sb.WriteString(styleFaint.Render("  (no sessions match)"))
+		sb.WriteString("\n")
+		sb.WriteString(styleFaint.Render("  No sessions match your search."))
 		sb.WriteString("\n")
 	}
 
 	// Help bar
 	sb.WriteString("\n")
-	var help string
 	if m.detailMode {
-		help = "[↑↓] 이동  [Enter] 열기  [←/h] 돌아가기"
+		sb.WriteString(" ")
+		sb.WriteString(helpEntry("↑↓", "move"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("Enter", "open"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("←", "back"))
 	} else {
-		help = "[↑↓] 이동  [→/l] 파일보기  [Enter] 시작  [d] 삭제  [Tab] 필터  [Esc] 검색취소  [q] 종료"
+		sb.WriteString(" ")
+		sb.WriteString(helpEntry("↑↓", "move"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("→", "files"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("Enter", "start"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("d", "delete"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("Tab", "filter"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("Esc", "clear"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("q", "quit"))
 	}
-	sb.WriteString(styleHelpBar.Render(help))
 	sb.WriteString("\n")
 
 	return sb.String()
