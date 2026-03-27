@@ -223,9 +223,7 @@ func buildRows(sessions map[string]namedSessionEntry, idx map[string]string, que
 			if summary == "" && entry.Idea != "" {
 				summary = entry.Idea
 			}
-			if len(summary) > 45 {
-				summary = summary[:45] + "…"
-			}
+			// Don't truncate here — View truncates dynamically based on terminal width
 			ideaPath, specPath, designPath := resolveFilePaths(tag, entry)
 			rows = append(rows, tuiRow{
 				tag:        tag,
