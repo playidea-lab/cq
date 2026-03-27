@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -29,10 +31,18 @@ type WorkerComponent struct {
 	tags     []string
 	hostname string
 
-	mu      sync.Mutex
-	cancel  context.CancelFunc
-	started bool
-	jobCmd  *exec.Cmd // currently running job subprocess
+	mu         sync.Mutex
+	cancel     context.CancelFunc
+	started    bool
+	jobCmd     *exec.Cmd                          // currently running job subprocess
+	notifyFunc func(jobID, status string, exitCode int) // job completion callback
+}
+
+// SetNotifyFunc sets a callback invoked (in a goroutine) after each job completes.
+func (w *WorkerComponent) SetNotifyFunc(fn func(jobID, status string, exitCode int)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.notifyFunc = fn
 }
 
 // NewWorker creates a WorkerComponent.
@@ -178,6 +188,13 @@ func (w *WorkerComponent) jobLoop(ctx context.Context) {
 		}
 		if completeErr := w.client.CompleteJob(jobID, status, exitCode); completeErr != nil {
 			fmt.Fprintf(os.Stderr, "cq serve: hub worker complete job %s: %v\n", jobID, completeErr)
+		} else {
+			w.mu.Lock()
+			notify := w.notifyFunc
+			w.mu.Unlock()
+			if notify != nil {
+				go notify(jobID, status, exitCode)
+			}
 		}
 
 		if jobErr != nil {
@@ -193,8 +210,15 @@ func (w *WorkerComponent) executeJob(ctx context.Context, job *hub.Job) (int, er
 	cmd := exec.CommandContext(ctx, "sh", "-c", job.Command)
 
 	// Use job workdir if specified, otherwise current directory.
-	if job.Workdir != "" {
-		cmd.Dir = job.Workdir
+	// Expand leading ~/ to the user's home directory.
+	workdir := job.Workdir
+	if strings.HasPrefix(workdir, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			workdir = filepath.Join(home, workdir[2:])
+		}
+	}
+	if workdir != "" {
+		cmd.Dir = workdir
 	}
 
 	// Inherit environment + add job-specific env vars.

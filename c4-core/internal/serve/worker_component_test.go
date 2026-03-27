@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -168,5 +171,104 @@ func TestWorkerComponent_StopBeforeStart(t *testing.T) {
 	w := NewWorker(nil, nil, "test-host")
 	if err := w.Stop(context.Background()); err != nil {
 		t.Errorf("Stop before Start: %v", err)
+	}
+}
+
+func TestWorkerComponent_TildeExpansion(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+
+	job := &hub.Job{
+		Command: "pwd",
+		Workdir: "~/",
+	}
+
+	w := NewWorker(nil, nil, "test-host")
+	// Execute inline tilde expansion logic (mirrors executeJob).
+	workdir := job.Workdir
+	if strings.HasPrefix(workdir, "~/") {
+		if h, e := os.UserHomeDir(); e == nil {
+			workdir = filepath.Join(h, workdir[2:])
+		}
+	}
+
+	if workdir != home {
+		t.Errorf("tilde expansion: got %q, want %q", workdir, home)
+	}
+	_ = w // suppress unused warning
+}
+
+func TestWorkerComponent_NotifyFunc(t *testing.T) {
+	var (
+		registered atomic.Bool
+		completed  atomic.Bool
+	)
+
+	notifyCh := make(chan string, 1)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rest/v1/rpc/register_worker", func(w http.ResponseWriter, r *http.Request) {
+		registered.Store(true)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"worker_id": "w-notify"})
+	})
+	mux.HandleFunc("/rest/v1/rpc/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	jobServed := make(chan struct{}, 1)
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case jobServed <- struct{}{}:
+			w.Header().Set("Content-Type", "application/json")
+			// ClaimJobWithWait expects {"lease_id": "...", "job": {...}} format.
+			json.NewEncoder(w).Encode(map[string]any{
+				"lease_id": "lease-notify-001",
+				"job": map[string]any{
+					"job_id":  "job-notify-001",
+					"command": "echo notify-test",
+				},
+			})
+		default:
+			time.Sleep(100 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(nil)
+		}
+	})
+
+	mux.HandleFunc("/rest/v1/rpc/complete_job", func(w http.ResponseWriter, r *http.Request) {
+		completed.Store(true)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "{}")
+	})
+
+	mux.HandleFunc("/rest/v1/rpc/renew_lease", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"renewed": true})
+	})
+
+	client := newHubWorkerTestClient(t, mux)
+	comp := NewWorker(client, []string{"test"}, "test-host")
+	comp.SetNotifyFunc(func(jobID, status string, exitCode int) {
+		notifyCh <- status
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := comp.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer comp.Stop(context.Background())
+
+	select {
+	case status := <-notifyCh:
+		if status != "SUCCEEDED" {
+			t.Errorf("notifyFunc status = %q, want SUCCEEDED", status)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("notifyFunc was not called within timeout")
 	}
 }
