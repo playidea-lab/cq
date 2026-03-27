@@ -884,8 +884,16 @@ func (m sessionTUIModel) View() string {
 	sb.WriteString("\n\n")
 
 	// Rows — display-width-aware column alignment
+	// Fixed: cursor(3) + markers(4) + tag(18) + gap(1) + badge(~14) + gap(1) + summary(dynamic) + gap(1) + date(12)
 	const tagColW = 18
-	const sumColW = 36
+	fixedW := 3 + 4 + tagColW + 1 + 14 + 1 + 1 + 12 // ~54
+	sumColW := m.width - fixedW
+	if sumColW < 20 {
+		sumColW = 20
+	}
+	if sumColW > 80 {
+		sumColW = 80
+	}
 	cursorRowIdx := m.cursorRowIndex()
 	nonHeaderCount := 0
 
@@ -894,7 +902,11 @@ func (m sessionTUIModel) View() string {
 			hs := groupHeaderStyle(row.status)
 			label := fmt.Sprintf(" ── %s (%d) ", row.status, row.count)
 			sb.WriteString(hs.Render(label))
-			remaining := 74 - lipgloss.Width(label)
+			headerW := m.width
+			if headerW < 74 {
+				headerW = 74
+			}
+			remaining := headerW - lipgloss.Width(label)
 			if remaining > 0 {
 				sb.WriteString(styleFaint.Render(strings.Repeat("─", remaining)))
 			}
@@ -966,7 +978,7 @@ func (m sessionTUIModel) View() string {
 			sb.WriteString(styleSelected.Render(" "))
 			sb.WriteString(styleSelected.Render(dateStr))
 			used := 3 + 4 + tagColW + 1 + badgeW + 1 + sumColW + 1 + len(dateStr)
-			if pad := 86 - used; pad > 0 {
+			if pad := m.width - used; pad > 0 {
 				sb.WriteString(styleSelected.Render(strings.Repeat(" ", pad)))
 			}
 		} else if row.rowStatus == "done" {
