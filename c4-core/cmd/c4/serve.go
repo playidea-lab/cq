@@ -23,6 +23,7 @@ import (
 var (
 	servePort   int
 	servePIDDir string
+	serveWorker bool // --worker: auto-register as Hub worker
 )
 
 var serveCmd = &cobra.Command{
@@ -57,6 +58,7 @@ Example:
 func init() {
 	serveCmd.Flags().IntVar(&servePort, "port", 4140, "health endpoint port")
 	serveCmd.Flags().StringVar(&servePIDDir, "pid-dir", "", "PID file directory (default: ~/.c4/serve)")
+	serveCmd.Flags().BoolVar(&serveWorker, "worker", false, "auto-register as Hub worker (claims and executes jobs)")
 
 	serveStopCmd.Flags().StringVar(&servePIDDir, "pid-dir", "", "PID file directory (default: ~/.c4/serve)")
 
@@ -151,6 +153,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	registerSSESubscriberServeComponent(mgr, cfg, ebComp, wakeCh)
 	registerStaleCheckerServeComponent(mgr, cfg, ebComp)
 	registerSessionSummarizerServeComponent(mgr, srv.initCtx.db, srv.knowledgeStore, srv.initCtx.llmGateway)
+	registerHubWorkerServeComponent(mgr, cfg, srv.initCtx.hubClient)
 	registerFileIndexComponent(srv.registry, projectDir)
 	registerToolSocketComponent(mgr, srv)
 	if cfg.Serve.MCPHTTP.Enabled {
