@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'CQ',
-  description: 'AI Project Orchestration Engine for Claude Code',
+  description: 'External Brain for AI — persistent memory, quality gates, and distributed execution',
   base: '/cq/',
 
   head: [
@@ -169,7 +169,7 @@ export default defineConfig({
 
     footer: {
       message: 'Released under MIT + Commons Clause. Free to use, commercial resale prohibited.',
-      copyright: 'Copyright © 2025 PlayIdea-Lab'
+      copyright: 'Copyright © 2026 PlayIdea-Lab'
     },
 
     search: {

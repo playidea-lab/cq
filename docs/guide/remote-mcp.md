@@ -2,7 +2,44 @@
 
 Access CQ tools from any machine — even behind NAT.
 
-## Recommended: Relay (v1.27+)
+## External Brain: OAuth 2.1 MCP (v1.37+)
+
+Connect any AI platform (ChatGPT, Claude, Gemini, Codex) to your CQ knowledge base — **no local install required**. The Cloudflare Worker acts as an OAuth 2.1 MCP proxy.
+
+```
+Any AI (ChatGPT, Claude, Gemini)
+    │
+    ▼  MCP (OAuth 2.1)
+Cloudflare Worker (mcp.pilab.kr)
+    │
+    ▼  PostgREST
+Supabase (knowledge, sessions, projects)
+```
+
+### What AI gets access to
+
+| Tool | Description |
+|------|-------------|
+| `c4_knowledge_search` | Search your knowledge base (vector + FTS) |
+| `c4_knowledge_record` | Save knowledge proactively (AI calls this automatically) |
+| `c4_session_summary` | Capture full session summary before conversation ends |
+| `c4_status` | Check project status |
+
+### How it works
+
+1. AI connects via MCP OAuth 2.1 flow (GitHub login)
+2. CQ's tool descriptions are engineered so AI **proactively** saves knowledge — no user action needed
+3. At session start, AI searches for prior context on the current topic
+4. Before session ends, AI captures a full summary as a safety net
+5. All knowledge is searchable from any future AI session
+
+::: tip No install needed
+This works from ChatGPT's MCP integration, Claude.ai, or any MCP-compatible client. Your knowledge base lives in the cloud — the AI just needs OAuth access.
+:::
+
+---
+
+## Relay: NAT Traversal (v1.27+)
 
 The easiest way to access CQ remotely is the **Relay** — a WSS bridge that traverses NAT automatically.
 
