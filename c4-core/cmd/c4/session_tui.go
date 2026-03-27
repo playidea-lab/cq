@@ -1032,36 +1032,47 @@ func (m sessionTUIModel) View() string {
 		sb.WriteString("\n")
 	}
 
-	// Help bar
-	sb.WriteString("\n")
+	// Build help bar
+	var helpBar strings.Builder
 	if m.detailMode {
-		sb.WriteString(" ")
-		sb.WriteString(helpEntry("↑↓", "move"))
-		sb.WriteString("  ")
-		sb.WriteString(helpEntry("Enter", "open"))
-		sb.WriteString("  ")
-		sb.WriteString(helpEntry("←", "back"))
+		helpBar.WriteString(" ")
+		helpBar.WriteString(helpEntry("↑↓", "move"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Enter", "open"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("←", "back"))
 	} else {
-		sb.WriteString(" ")
-		sb.WriteString(helpEntry("↑↓", "move"))
-		sb.WriteString("  ")
-		sb.WriteString(helpEntry("→", "files"))
-		sb.WriteString("  ")
-		sb.WriteString(helpEntry("Space", "history"))
-		sb.WriteString("  ")
-		sb.WriteString(helpEntry("Enter", "start"))
-		sb.WriteString("  ")
-		sb.WriteString(helpEntry("^S", "done/active"))
-		sb.WriteString("  ")
-		sb.WriteString(helpEntry("^D", "delete"))
-		sb.WriteString("  ")
-		sb.WriteString(helpEntry("^N", "new"))
-		sb.WriteString("  ")
-		sb.WriteString(helpEntry("Tab", "filter"))
-		sb.WriteString("  ")
-		sb.WriteString(helpEntry("Esc", "quit/clear"))
+		helpBar.WriteString(" ")
+		helpBar.WriteString(helpEntry("↑↓", "move"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("→", "files"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Space", "history"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Enter", "start"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("^S", "done/active"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("^D", "delete"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("^N", "new"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Tab", "filter"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Esc", "quit/clear"))
 	}
-	sb.WriteString("\n")
+
+	// Fill remaining space to pin help bar at bottom
+	content := sb.String()
+	contentLines := strings.Count(content, "\n")
+	if m.height > 0 {
+		// -1 for help bar itself
+		gap := m.height - contentLines - 1
+		for i := 0; i < gap; i++ {
+			sb.WriteString("\n")
+		}
+	}
+	sb.WriteString(helpBar.String())
 
 	return sb.String()
 }
