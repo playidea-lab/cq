@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -14,7 +15,6 @@ import (
 // --- Custom messages for dashboard actions ---
 
 type launchToolMsg struct{ tool string }
-type showStatusMsg struct{}
 type changeConfigMsg struct{}
 
 // --- Dashboard TUI Model ---
@@ -26,12 +26,21 @@ type dashboardRow struct {
 	badge string // optional: status badge key (for statusBadgeStyles)
 }
 
+// componentRow holds a single service component's health for detail view.
+type componentRow struct {
+	name   string
+	status string // "ok", "degraded", "error", "skipped"
+	detail string
+}
+
 type dashboardModel struct {
 	version     string
 	rows        []dashboardRow
-	whatsNew    string // "New in vX.Y.Z: ..." or ""
+	components  []componentRow // service health details
+	whatsNew    string         // "New in vX.Y.Z: ..." or ""
 	defaultTool string
 	action      string // "launch", "status", "config", or "" (quit)
+	showDetail  bool   // toggle: show component details
 
 	width  int
 	height int
@@ -46,7 +55,7 @@ func newDashboardModel() dashboardModel {
 		m.defaultTool = "claude"
 	}
 
-	// Service health row
+	// Service health row + component details
 	components, err := fetchServeHealth(servePort)
 	if err != nil {
 		m.rows = append(m.rows, dashboardRow{
@@ -55,10 +64,15 @@ func newDashboardModel() dashboardModel {
 		})
 	} else {
 		okCount := 0
-		for _, h := range components {
+		for name, h := range components {
 			if h.Status == "ok" {
 				okCount++
 			}
+			m.components = append(m.components, componentRow{
+				name:   name,
+				status: h.Status,
+				detail: h.Detail,
+			})
 		}
 		badge := "active"
 		if okCount == len(components) {
@@ -68,6 +82,10 @@ func newDashboardModel() dashboardModel {
 			label: "Service",
 			value: fmt.Sprintf("%d/%d components", okCount, len(components)),
 			badge: badge,
+		})
+		// Sort components by name for stable display
+		sort.Slice(m.components, func(i, j int) bool {
+			return m.components[i].name < m.components[j].name
 		})
 	}
 
@@ -137,9 +155,6 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case launchToolMsg:
 		m.action = "launch"
 		return m, tea.Quit
-	case showStatusMsg:
-		m.action = "status"
-		return m, tea.Quit
 	case changeConfigMsg:
 		m.action = "config"
 		return m, tea.Quit
@@ -156,7 +171,7 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "q":
 				return m, tea.Quit
 			case "s":
-				return m, func() tea.Msg { return showStatusMsg{} }
+				m.showDetail = !m.showDetail
 			case "c":
 				return m, func() tea.Msg { return changeConfigMsg{} }
 			}
@@ -200,6 +215,28 @@ func (m dashboardModel) View() string {
 
 		sb.WriteString(styleTagName.Render(row.value))
 		sb.WriteString("\n")
+
+		// Component detail expansion (below Service row)
+		if row.label == "Service" && m.showDetail && len(m.components) > 0 {
+			for i, c := range m.components {
+				branch := "├─"
+				if i == len(m.components)-1 {
+					branch = "└─"
+				}
+				icon := "✓"
+				cStyle := styleFilePath
+				if c.status != "ok" {
+					icon = "✗"
+					cStyle = styleConfirm
+				}
+				line := fmt.Sprintf("      %s %s %-20s %s", branch, icon, c.name, c.status)
+				if c.detail != "" {
+					line += fmt.Sprintf(" (%s)", c.detail)
+				}
+				sb.WriteString(cStyle.Render(line))
+				sb.WriteString("\n")
+			}
+		}
 	}
 
 	// What's New

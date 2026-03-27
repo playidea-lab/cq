@@ -305,8 +305,6 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 	case "launch":
 		writeGlobalConfig("last_seen_version", version)
 		return launchTool(defaultTool, projectDir)
-	case "status":
-		return runStatus(cmd, nil)
 	case "config":
 		p2 := tea.NewProgram(newSelectorModel(), tea.WithAltScreen())
 		m2, err := p2.Run()
