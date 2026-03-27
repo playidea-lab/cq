@@ -26,10 +26,11 @@ var severityOrder = []checkStatus{checkFail, checkWarn, checkInfo, checkOK}
 
 // checkItem wraps a check entry with runtime state.
 type checkItem struct {
-	entry   doctorCheckEntry // from doctor.go (Name, Fn, FixSafe, IsNetwork)
-	result  checkResult      // filled when check completes
-	loading bool             // true while check is running
-	detail  string           // extended error info
+	entry      doctorCheckEntry // from doctor.go (Name, Fn, FixSafe, IsNetwork)
+	result     checkResult      // filled when check completes
+	loading    bool             // true while check is running
+	detail     string           // extended error info
+	completedAt time.Time       // when the check last completed
 }
 
 // Messages for the TUI event loop.
@@ -122,6 +123,7 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.index >= 0 && msg.index < len(m.checks) {
 			m.checks[msg.index].loading = false
 			m.checks[msg.index].result = msg.result
+			m.checks[msg.index].completedAt = time.Now()
 			if msg.result.Fix != "" {
 				m.checks[msg.index].detail = msg.result.Fix
 			}
@@ -132,6 +134,7 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.index >= 0 && msg.index < len(m.checks) {
 			m.checks[msg.index].loading = false
 			m.checks[msg.index].result = msg.result
+			m.checks[msg.index].completedAt = time.Now()
 			if msg.result.Fix != "" {
 				m.checks[msg.index].detail = msg.result.Fix
 			}
@@ -440,6 +443,24 @@ func doctorSeverityHeaderStyle(status checkStatus) lipgloss.Style {
 	return lipgloss.NewStyle().Bold(true).Foreground(col)
 }
 
+// relativeTime returns a short human-readable relative time string.
+func relativeTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	d := time.Since(t)
+	switch {
+	case d < 5*time.Second:
+		return "now"
+	case d < time.Minute:
+		return fmt.Sprintf("%ds ago", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+}
+
 func (m doctorTUIModel) View() string {
 	// Fix confirmation — full screen takeover
 	if m.confirmFix {
@@ -633,17 +654,18 @@ func (m doctorTUIModel) viewList() string {
 	sb.WriteString("\n\n")
 
 	// Rows — display-width-aware column alignment (matches session_tui.go pattern)
-	// Layout: cursor(3) + name(20) + " " + message(dynamic) + pad + badge(6) + margin(1)
+	// Layout: cursor(3) + name(20) + sp(1) + message(dynamic) + pad + badge(6) + sp(1) + date(8)
 	const nameColW = 20
 	const badgeFieldW = 6 // "FAIL" = 4 chars + 2 padding = 6 visual width
-	// Fixed columns: cursor(3) + name(20) + sp(1) + sp(1) + badge(6) + margin(1)
-	fixedW := 3 + nameColW + 1 + 1 + badgeFieldW + 1
+	const dateColW = 8    // "now", "5s ago", "3m ago", "2h ago"
+	// Fixed columns: cursor(3) + name(20) + sp(1) + sp(1) + badge(6) + sp(1) + date(8) + margin(1)
+	fixedW := 3 + nameColW + 1 + 1 + badgeFieldW + 1 + dateColW + 1
 	msgColW := m.width - fixedW
-	if msgColW < 20 {
-		msgColW = 20
+	if msgColW < 16 {
+		msgColW = 16
 	}
-	if msgColW > 60 {
-		msgColW = 60
+	if msgColW > 56 {
+		msgColW = 56
 	}
 
 	cursorIdx := -1
@@ -689,20 +711,19 @@ func (m doctorTUIModel) viewList() string {
 		namePadded := lsPadToWidth(item.entry.Name, nameColW)
 
 		if item.loading {
-			// Loading row: spinner + "checking..." + right-aligned "⋯" badge area
+			// Loading row: spinner + "checking..."
 			spinner := spinnerFrames[m.spinnerFrame]
 			loadingText := spinner + " checking..."
-			leftUsed := 3 + nameColW + 1 + lsDispWidth(loadingText)
-			midPad := m.width - leftUsed - badgeFieldW - 1
-			if midPad < 1 {
-				midPad = 1
-			}
 			if isSelected {
 				sb.WriteString(styleSelected.Render(cursor))
 				sb.WriteString(styleSelected.Render(namePadded))
 				sb.WriteString(styleSelected.Render(" "))
 				sb.WriteString(styleSelected.Render(loadingText))
-				sb.WriteString(styleSelected.Render(strings.Repeat(" ", midPad+badgeFieldW+1)))
+				leftUsed := 3 + nameColW + 1 + lsDispWidth(loadingText)
+				pad := m.width - leftUsed
+				if pad > 0 {
+					sb.WriteString(styleSelected.Render(strings.Repeat(" ", pad)))
+				}
 			} else {
 				sb.WriteString(cursor)
 				sb.WriteString(styleFaint.Render(namePadded))
@@ -713,8 +734,8 @@ func (m doctorTUIModel) viewList() string {
 			continue
 		}
 
-		// Completed check — right-align badge (sessions pattern)
-		// Severity badge: pad status text to fixed width for alignment
+		// Completed check: name | message | pad | badge | date
+		// Severity badge: pad status text to fixed visual width for column alignment
 		statusText := string(item.result.Status)
 		padTotal := badgeFieldW - 2 - len(statusText) // -2 for lipgloss Padding(0,1)
 		if padTotal > 0 {
@@ -728,14 +749,21 @@ func (m doctorTUIModel) viewList() string {
 		}
 		badgeVisW := lipgloss.Width(badge)
 
+		// Date: right-aligned, fixed column
+		dateStr := relativeTime(item.completedAt)
+		datePadded := lsPadToWidth(dateStr, dateColW)
+
+		// Message: truncate to available width
 		msgDisplay := item.result.Message
 		if lsDispWidth(msgDisplay) > msgColW {
 			msgDisplay = lsTruncateToWidth(msgDisplay, msgColW-1) + "…"
 		}
 
-		// Calculate padding between message and badge to right-align badge
+		// Calculate padding between message and badge+date to right-align
+		// Layout: cursor(3) + name + " " + message + midPad + badge + " " + date
 		leftUsed := 3 + nameColW + 1 + lsDispWidth(msgDisplay)
-		midPad := m.width - leftUsed - badgeVisW - 1
+		rightUsed := badgeVisW + 1 + dateColW
+		midPad := m.width - leftUsed - rightUsed - 1
 		if midPad < 1 {
 			midPad = 1
 		}
@@ -747,7 +775,9 @@ func (m doctorTUIModel) viewList() string {
 			sb.WriteString(styleSelected.Render(msgDisplay))
 			sb.WriteString(styleSelected.Render(strings.Repeat(" ", midPad)))
 			sb.WriteString(badge)
-			trailing := m.width - leftUsed - midPad - badgeVisW
+			sb.WriteString(styleSelected.Render(" "))
+			sb.WriteString(styleSelected.Render(datePadded))
+			trailing := m.width - leftUsed - midPad - badgeVisW - 1 - dateColW
 			if trailing > 0 {
 				sb.WriteString(styleSelected.Render(strings.Repeat(" ", trailing)))
 			}
@@ -758,6 +788,8 @@ func (m doctorTUIModel) viewList() string {
 			sb.WriteString(styleSummary.Render(msgDisplay))
 			sb.WriteString(strings.Repeat(" ", midPad))
 			sb.WriteString(badge)
+			sb.WriteString(" ")
+			sb.WriteString(styleDate.Render(datePadded))
 		}
 		sb.WriteString("\n")
 	}
