@@ -48,9 +48,13 @@ func (w *WorkerComponent) Name() string { return "worker" }
 
 func (w *WorkerComponent) Start(ctx context.Context) error {
 	// Register with Hub.
+	// RegisterWorker extracts map keys as capability strings, so each tag
+	// must be a separate key. "hostname" is also passed as a key.
 	caps := map[string]any{
 		"hostname": w.hostname,
-		"tags":     w.tags,
+	}
+	for _, tag := range w.tags {
+		caps[tag] = true
 	}
 	workerID, err := w.client.RegisterWorker(caps)
 	if err != nil {
