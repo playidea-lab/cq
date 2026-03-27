@@ -922,9 +922,14 @@ func (m sessionTUIModel) View() string {
 		if !ok {
 			bStyle = statusBadgeStyles["active"]
 		}
-		// "in-progress" is longest (11 chars + 2 padding = 13 visual).
-		// Pad status text to 11 chars so all badges are same width.
-		statusText := fmt.Sprintf("%-11s", row.rowStatus)
+		// Center status text in 11-char field (matches "in-progress" length).
+		statusText := row.rowStatus
+		padTotal := 11 - len(statusText)
+		if padTotal > 0 {
+			padLeft := padTotal / 2
+			padRight := padTotal - padLeft
+			statusText = strings.Repeat(" ", padLeft) + statusText + strings.Repeat(" ", padRight)
+		}
 		badge := bStyle.Render(statusText)
 		badgeW := lipgloss.Width(badge)
 
@@ -971,7 +976,7 @@ func (m sessionTUIModel) View() string {
 		// Calculate padding between summary and date to right-align date
 		// Layout: cursor(3) + markers(4) + tag + " " + badge + " " + summary + pad + date
 		leftUsed := 3 + 4 + tagColW + 1 + badgeW + 1 + lsDispWidth(sumDisplay)
-		dateW := len(dateStr)
+		dateW := len(dateStr) + 1 // +1 for right margin
 		midPad := m.width - leftUsed - dateW
 		if midPad < 1 {
 			midPad = 1
