@@ -4,10 +4,11 @@
 
 **External Brain for AI**
 
-AI codes fast but forgets, skips planning, and doesn't learn.
-CQ is the brain it's missing.
+Every AI conversation becomes permanent knowledge.
+CQ gives AI persistent memory, quality gates, and distributed execution.
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
+![Version](https://img.shields.io/badge/version-v1.37-blue)
 ![MCP Tools](https://img.shields.io/badge/MCP_Tools-169-blueviolet)
 ![License](https://img.shields.io/badge/License-Personal_Study-orange)
 
@@ -23,17 +24,38 @@ cq               # Login + start service (one-time)
 cq claude        # Start building
 ```
 
-Works with **Claude Code, Cursor, Codex CLI, Gemini CLI** — any MCP-compatible tool.
+Works with **Claude Code, ChatGPT, Cursor, Codex CLI, Gemini** — any MCP-compatible tool.
 
 Update anytime: `cq update`
 
 ## What CQ Does
 
-**Plans before coding** — Requirements analysis, architecture decisions, and task breakdown with Definition of Done — before a single line is written.
+### External Brain — Memory That Persists Across AI Platforms
 
-**Gates, not trust** — 6-axis review (correctness, security, reliability, observability, testing, readability). Compiled into the binary — not optional.
+Connect CQ as a remote MCP server and every AI conversation contributes to your knowledge base. ChatGPT discovers a bug root cause? Claude picks it up in the next session. Decisions, patterns, and preferences follow you everywhere.
 
-**Learns from experience** — Every review rejection becomes a warning for the next task. Past decisions and patterns are auto-extracted into reusable knowledge.
+- **AI Self-Capture** — Tool descriptions engineered so AI proactively saves knowledge without being asked
+- **Session Summary** — Automatic end-of-conversation capture as a safety net
+- **Cross-Platform Search** — Vector + FTS + ilike fallback across all stored knowledge
+- **OAuth 2.1** — Secure third-party access via Cloudflare Worker MCP proxy
+
+### Plans Before Coding
+
+Requirements analysis (EARS), architecture decisions (ADR), and task breakdown with Definition of Done — before a single line is written.
+
+### Gates, Not Trust
+
+6-axis review (correctness, security, reliability, observability, testing, readability). Compiled into the binary — not optional. Every review rejection feeds back as context for the next task.
+
+### Distributed Execution
+
+GPU workers connect via WebSocket relay through NAT. Submit training jobs from your laptop, execute on remote machines, collect results — all orchestrated through the Hub.
+
+- **Relay** — Fly.io-hosted WebSocket relay for NAT traversal (TCP keepalive, WSL2-aware)
+- **Hub** — Distributed job queue with DAG support, artifact upload, cron scheduling
+- **Drive** — Cloud file storage with TUS resumable upload, dataset versioning (content-addressable)
+- **File Index** — Search files across all connected devices
+
 ## Architecture
 
 ```
@@ -48,25 +70,42 @@ Update anytime: `cq update`
 │                   │         │  └ Hub (distributed jobs)   │
 │ Service (cq serve)│   WSS   │                             │
 │  ├ Relay ─────────┼────────►│  Relay (Fly.io)             │
-│  ├ Relay proxy    │         │  └ NAT traversal            │
-│  ├ EventBus       │         │                             │
+│  ├ EventBus       │         │  └ NAT traversal            │
 │  └ Token refresh  │         │                             │
-└──────────────────┘          └────────────────────────────┘
+└──────────────────┘          │ External Brain (CF Worker)  │
+                              │  ├ OAuth 2.1 MCP proxy      │
+Any AI (ChatGPT,   ── MCP ──►│  ├ Knowledge record/search  │
+ Claude, Gemini)              │  └ Session summary          │
+                              └────────────────────────────┘
 
 solo:       Everything local (SQLite + your API key)
-connected:  Brain in cloud + relay (cq → login + serve)
+connected:  Brain in cloud + relay (login + serve)
 full:       Connected + GPU workers + research loop
 ```
 
+## Key Components
+
+| Component | Description |
+|-----------|-------------|
+| **Go MCP Server** | 169 tools (118 base + 26 Hub + 25 conditional), Registry-based |
+| **Knowledge** | FTS5 + pgvector (OpenAI 1536d) + 3-way RRF + auto-distill |
+| **Drive** | TUS resumable upload, Range-based download, dataset sync |
+| **Relay** | WebSocket NAT traversal, TCP keepalive, WSL2-aware ping |
+| **Hub** | Distributed job queue, DAG engine, artifact store, cron |
+| **Session** | Auto-summarize via LLM, context injection on startup |
+| **Research Loop** | Autonomous ML experiment cycle (plan→train→evaluate→iterate) |
+| **36 Skills** | Claude Code slash commands (/plan, /run, /finish, /pi, etc.) |
+
 ## Learn More
 
-[Installation](https://playidea-lab.github.io/cq/guide/install) | [Quick Start](https://playidea-lab.github.io/cq/guide/quickstart) | [Architecture](docs/ARCHITECTURE.md) | [Tiers](https://playidea-lab.github.io/cq/guide/tiers)
+[Installation](docs/getting-started/설치-가이드.md) | [Quick Start](docs/getting-started/빠른-시작.md) | [Architecture](docs/ARCHITECTURE.md) | [Worker Setup](docs/gpu-worker/README.md) | [Relay Guide](docs/guide/relay.md)
 
 ## Development
 
 ```bash
-cd c4-core && go build ./... && go test -p 1 ./...   # Go
-uv run pytest tests/                                   # Python
+cd c4-core && make install                             # Build + install
+cd c4-core && go build ./... && go test -p 1 ./...    # Go tests
+uv run pytest tests/                                   # Python tests
 cq doctor                                              # Health check
 ```
 

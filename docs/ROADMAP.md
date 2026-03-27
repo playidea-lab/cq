@@ -1,53 +1,62 @@
-# C4 Roadmap
+# CQ Roadmap
 
-## Current Version: v1.5.2 (GPU Auto-Detect + Job Notifications + Non-GPU Filter)
+## Current Version: v1.37 (External Brain + Relay + Drive + Session Intelligence)
 
-현재 버전은 **Go MCP Server (148 base + Hub 30 + Tiered 15, POP 3도구), Native Go/Dart LSP (goast/dartast), LLM Gateway (캐시 최적화), CDP Runner + WebMCP + Auto-Discovery, Cloud Foundation (CloudPrimaryStore + Session Limit), Knowledge v4 (OllamaEmbeddings + reindex + distill), C1 Unified Dashboard Messenger (HarnessWatcher + Cursor 어댑터, MessageViewer 스크롤 안정화), C3 EventBus v4, C5 Hub Server (Tenant Isolation + Dooray webhook + ExperimentStore + @key=value Protocol), Research Loop (LoopOrchestrator + GateController + StateYAMLWriter + NotifyBridge + SpecPipeline + MCP handlers + EventBus instant wake + Debate metrics injection), POP (Personal Ontology Pipeline, c4-finish 자동 주입), Persona/Soul Evolution, 36개 Skills (/pi EARS 통합 재설계), 3-layer Deprecated 스킬 강제 시스템, 프로젝트 단위 2-layer Permission Hook, bats 테스트 스위트, Named Session (gemini 지원 포함), 쉘 자동완성, OS 서비스 통합, Skill Health Pipeline (c4_skill_eval_run/status/generate), Drive Dataset Versioning (CAS), Hub secrets store 통합**를 포함합니다.
+CQ는 **AI의 외장 두뇌**입니다. 모든 AI 대화가 지식으로 누적되고, 분산 실행 인프라를 통해 원격 GPU에서 학습을 돌리고, 품질 게이트가 코드 품질을 보장합니다.
 
 ### 핵심 구조
 
-- **Go MCP Server (Primary)** - 148 도구 (Base 118 + Hub 30, Tiered 15 조건부), Registry-based, SQLite Store, JSON-RPC Bridge, LLM Gateway (프롬프트 캐싱), CDP Runner + WebMCP, Hub Client, Native LSP (goast/dartast), Lighthouse Docs SSOT
-- **C9 Knowledge v4** - Store + FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + Time-Weighted UsageTracker (30일 반감기) + FindRelated + Community Blending + Auto-Distill (LLM 패턴 추출) + Chunker + BatchIngest + ReindexSync
-- **C0 Drive** - Supabase 파일 저장소, metadata JSONB, c4_drive_mkdir 6개 도구, PostgREST URL 인코딩, server-side filtering
-- **C1 Messenger** - Tauri 2.x 통합 대시보드 (4-탭: Messenger/Documents/Settings/Team), 통합 멤버 모델 (user/agent/system), Realtime Presence, MCP 5도구
-- **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2 + Python sidecar piggyback + correlation_id (16+ event types) + hub.* 이벤트 C1 라우팅
-- **C5 Hub Server** - 분산 작업 큐, Per-Project API Key RBAC, multi-tenant, Docker, hub.Client 완전 호환, DAG/Edge/Deploy/Artifact, EventBus 통합 (hub.job.started/completed/failed/cancelled), ExperimentStore (run lifecycle), @key=value stdout protocol
-- **Research Loop** - LoopOrchestrator (serve.Component), GateController, StateYAMLWriter (.c9/state.yaml), NotifyBridge (per-event cooldown), SpecPipeline, MCP handlers (c4_research_loop_start/stop), EventBus instant wake, Debate extraContext metrics injection, `cq research run` CLI
-- **WebContent + WebMCP** - web_fetch (content negotiation, SSRF, rate limit, HTML→MD), webmcp_discover/call/context (Chrome DevTools Protocol), CDP auto-discovery
-- **Native LSP** - `goast/` (Go 심볼 파싱), `dartast/` (Dart 심볼 파싱), Python/JS/TS sidecar 폴백
-- **Daemon Scheduler** - 로컬 작업 스케줄러, 13 REST API, GPU 할당, 소요시간 예측
-- **LLM Gateway** - 4개 Provider (Anthropic/OpenAI/Gemini/Ollama), 5단계 라우팅, CostTracker, 모델 카탈로그 9종
-- **Cloud Layer** - Go PostgREST client (Auth + CloudStore + HybridStore + KnowledgeCloudClient + TokenProvider auto-refresh)
-- **Python Sidecar** - LSP 10 proxy tools (7 LSP + 2 C2 Doc + 1 Onboard)
-- **Skills** - 36개 Claude Code Skills (.claude/skills/), /pi (ideation) + c9-* (11개 ML 연구 루프) + Commands 완전 마이그레이션
-- **Lighthouse** - register_all, spec auto-generate, auto-seed, auto-backfill, llms.txt export
-- **Infra** - Supabase PostgreSQL (21 migrations, RLS, tsvector FTS, c1_members)
+- **Go MCP Server** — 169 도구 (118 base + 26 Hub + 25 conditional), Registry-based, tool tiering (40 core + 129 extended)
+- **External Brain (CF Worker)** — OAuth 2.1 MCP proxy, AI self-capture (proactive knowledge record), session summary, cross-platform memory (ChatGPT/Claude/Gemini/Codex)
+- **Knowledge v4** — FTS5 + pgvector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + auto-distill + Cloud↔Local sync
+- **Drive** — TUS resumable upload, Range-based resume download, dataset sync CLI, content-addressable versioning, post-merge git hook
+- **Relay** — Fly.io WebSocket relay, TCP keepalive, WSL2-aware ping, NAT traversal, cq_workers/cq_relay_call tools
+- **Hub** — 분산 작업 큐, DAG engine, artifact auto-upload, cron scheduling, worker affinity, Per-Project API Key RBAC
+- **Session Intelligence** — LLM 자동 요약, startup context injection, session index CLI
+- **File Index** — cross-device file search ("where's the best model?")
+- **Research Loop** — LoopOrchestrator, GateController, Debate metrics, `cq research run` CLI
+- **LLM Gateway** — 4 Provider (Anthropic/OpenAI/Gemini/Ollama), 프롬프트 캐싱, CostTracker
+- **Cloud Layer** — Supabase PostgREST (52 migrations, RLS, pgvector, notification channels)
+- **EventBus v4** — gRPC daemon (UDS) + WebSocket bridge + DLQ + hub.* routing
+- **Skills** — 36개 Claude Code Skills, /pi (ideation) → /plan → /run → /finish 파이프라인
+- **Infra** — Supabase PostgreSQL, Cloudflare Workers, Fly.io Relay, systemd/Task Scheduler 통합
 
 ### 지원 기능
 
 - State Machine (INIT → DISCOVERY → DESIGN → PLAN → EXECUTE ⇄ CHECKPOINT → REFINE → POLISH → COMPLETE)
-- Multi-Worker (SQLite WAL 모드, race-condition free)
-- Direct Mode (c4_claim/c4_report) + Worker Mode (c4_get_task/c4_submit)
+- Multi-Worker (Cloud SSOT, SQLite cache fallback)
+- Direct Mode (cq_claim/cq_report) + Worker Mode (cq_get_task/cq_submit)
 - EARS Requirements + ADR (Architecture Decision Records)
-- Validation Runner (lint, unit tests)
-- Checkpoint System (APPROVE, REQUEST_CHANGES, REPLAN, REDESIGN)
-- **Code Analysis Engine** - Multilspy → Jedi → Tree-sitter 3단계 fallback, LSP 7개 도구
-- **Knowledge Store v4** - FTS5 + Vector (OpenAI 1536d) + 3-way RRF (FTS+Vector+Popularity) + Time-Weighted Usage (30일 반감기) + FindRelated + Community Blending + Auto-Distill
-- **GPU/ML Native** - GPU 감지, 스케줄링, DAG→Task 변환
-- **Experiment Tracker** - ExperimentStore (Hub API proxy), @key=value stdout protocol, ExperimentWrapper auto-activation, checkpoint + status validation
-- **Artifact Store** - Content-addressable 로컬 저장소
-- **Team Collaboration** - Supabase 기반 팀 상태 공유 + Realtime WebSocket
-- **C1 Multi-Provider** - Claude Code, Codex CLI, Cursor 3개 프로바이더
-- **C0 Drive** - 클라우드 파일 저장소 (metadata, URL 인코딩, 보안)
-- **C1 Context Hub** - 채널 메시징, Context Keeper (LLM 요약), Agent 통합 (notifyKeeper 4-param)
-- **C1 Documents** - 마크다운 파일 편집기, 지속성 (persona/skill/spec/config)
-- **C3 EventBus v4** - gRPC daemon (UDS) + WebSocket bridge + DLQ + Filter v2, Python sidecar piggyback, task lifecycle events
-- **코드베이스**: Go ~54.9K (c4-core) + Go ~7.3K (c5) + Python ~22.9K + Rust ~10.2K + TS+CSS ~13.7K + SQL ~1.3K = **~110.3K LOC (src)**, 테스트 ~68.7K LOC, **총 ~179.0K LOC**
-- **테스트**: Go ~3,198 (c4-core ~2,730 + c5 ~468) + Python 728 + Rust 92 = **~4,018 tests** (50+ packages)
+- 6-axis Code Review (correctness, security, reliability, observability, testing, readability)
+- Cross-platform MCP (Claude Code, ChatGPT, Cursor, Codex CLI, Gemini)
+- GPU worker auto-setup (SSH keepalive, systemd, WSL2-aware)
+- Telegram/Dooray notification channels
+- Named sessions with Gemini support
+- Memory import (ChatGPT/Claude session import pipeline)
 
 ---
 
 ## 완료된 릴리즈 이력
+
+### v1.37 ✅ (2026-03-27)
+- **feat(mcp)**: Memory Ingest v3.0 — AI self-capture via tool description engineering
+- **feat(mcp)**: c4_session_summary tool, MCP initialize instructions (3-stage behavior)
+- **feat(mcp)**: resolveProjectId (replaces hardcoded UUID), user_metadata-first GitHub ID resolution
+- **feat(memory)**: cq memory import — ChatGPT/Claude session import pipeline
+- **feat(fileindex)**: cross-device file search ("where's the best model?")
+- **feat(hub)**: auto-upload output artifacts on job completion
+- **feat(drive)**: dataset sync CLI + post-merge git hook, TUS resumable upload, Range-based resume download
+- **feat(relay)**: TCP keepalive + WSL2-aware ping, cq_workers/cq_relay_call tools
+- **feat(session)**: async LLM summarizer, startup context injection, session index CLI
+- **feat(oauth)**: CF Worker OAuth 2.1 Provider for Remote MCP
+- **chore**: permission hook cleanup, OAuth provider 0.3.1, SSH keepalive in worker setup
+
+### v1.28 ✅ (2026-03-24)
+- **feat(relay)**: Relay MCP Server, NAT traversal, WebSocket upgrade
+- **feat(serve)**: WSL2 Windows Task Scheduler, Linux systemd auto-restart
+- **feat(mcp)**: tool tiering (40 core + 129 extended), c4→cq rename with backward-compat
+- **feat(ux)**: auto-routing (Small/Medium/Large), quiet startup, token-free .mcp.json
+- **docs**: deployment-topology, ARCHITECTURE update for v1.28
 
 ### v1.5.2 ✅ (2026-03-20)
 - **feat(c5)**: GPU 자동 감지 — command에 torch/cuda/train 포함 시 requires_gpu=true 자동 설정
