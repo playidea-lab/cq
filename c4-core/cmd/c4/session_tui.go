@@ -16,6 +16,9 @@ import (
 // statusOrder defines the display order for session groups.
 var statusOrder = []string{"in-progress", "planned", "idea", "active", "done"}
 
+// filterCycle is the order of Tab-cycling for status filters.
+var filterCycle = []string{"all", "in-progress", "planned", "idea", "active", "done"}
+
 // tuiRow represents a single row in the TUI list.
 type tuiRow struct {
 	isHeader bool
@@ -23,32 +26,31 @@ type tuiRow struct {
 	status string
 	count  int
 	// session row fields
-	tag     string
-	summary string
-	date    string
+	tag       string
+	summary   string
+	date      string
 	rowStatus string
+	// file paths for detail display
+	ideaPath   string
+	specPath   string
+	designPath string
 }
 
 // sessionTUIModel is the bubbletea model for the session picker.
 type sessionTUIModel struct {
-	// raw session data
 	sessions    map[string]namedSessionEntry
 	searchIndex map[string]string // tag → lowercased search text
 
-	// filtered/grouped rows to display
 	rows []tuiRow
 
-	// state
 	query        string
-	statusFilter string // "" means all
-	cursor       int    // points to a non-header row by visual index
+	statusFilter string // "all" means no filter
+	cursor       int
 
-	// result
-	selectedTag string
+	selectedTag  string
+	confirmDelete bool   // waiting for delete confirmation
+	deleteTarget  string // tag to delete
 }
-
-// filterCycle is the order of Tab-cycling for status filters.
-var filterCycle = []string{"all", "in-progress", "planned", "idea", "active", "done"}
 
 func newSessionTUIModel() sessionTUIModel {
 	m := sessionTUIModel{
@@ -71,9 +73,9 @@ func buildSearchIndex(sessions map[string]namedSessionEntry) map[string]string {
 			strings.ToLower(tag),
 			strings.ToLower(entry.Summary),
 			strings.ToLower(entry.Status),
+			strings.ToLower(entry.Memo),
 		}
 
-		// Idea slug: use stored Idea field or fuzzy-match
 		ideaSlug := entry.Idea
 		if ideaSlug == "" {
 			ideaSlug, _ = matchIdeaByTag(tag)
@@ -86,7 +88,6 @@ func buildSearchIndex(sessions map[string]namedSessionEntry) map[string]string {
 			}
 		}
 
-		// Also scan specs dir for a file matching the tag
 		if specEntries, err := os.ReadDir(specsDir); err == nil {
 			lowerTag := strings.ToLower(tag)
 			for _, e := range specEntries {
@@ -109,35 +110,50 @@ func buildSearchIndex(sessions map[string]namedSessionEntry) map[string]string {
 	return idx
 }
 
-// buildRows groups sessions and returns the display rows, applying query and status filter.
+// resolveFilePaths finds idea/spec/design file paths for a session entry.
+func resolveFilePaths(tag string, entry namedSessionEntry) (ideaPath, specPath, designPath string) {
+	ideaSlug := entry.Idea
+	if ideaSlug == "" {
+		ideaSlug, _ = matchIdeaByTag(tag)
+	}
+	if ideaSlug != "" {
+		p := filepath.Join(".c4", "ideas", ideaSlug+".md")
+		if _, err := os.Stat(filepath.Join(projectDir, p)); err == nil {
+			ideaPath = p
+		}
+		p = filepath.Join("docs", "specs", ideaSlug+".md")
+		if _, err := os.Stat(filepath.Join(projectDir, p)); err == nil {
+			specPath = p
+		}
+		p = filepath.Join(".c4", "designs", ideaSlug+".md")
+		if _, err := os.Stat(filepath.Join(projectDir, p)); err == nil {
+			designPath = p
+		}
+	}
+	return
+}
+
 func buildRows(sessions map[string]namedSessionEntry, idx map[string]string, query, statusFilter string) []tuiRow {
 	lowerQuery := strings.ToLower(query)
 
-	// Collect matching tags per status
 	byStatus := make(map[string][]string)
 	for tag, entry := range sessions {
 		status := entry.Status
 		if status == "" {
 			status = "active"
 		}
-
-		// Status filter
 		if statusFilter != "" && statusFilter != "all" && status != statusFilter {
 			continue
 		}
-
-		// Query filter
 		if lowerQuery != "" {
 			corpus := idx[tag]
 			if !strings.Contains(corpus, lowerQuery) {
 				continue
 			}
 		}
-
 		byStatus[status] = append(byStatus[status], tag)
 	}
 
-	// Sort tags within each group alphabetically
 	for status := range byStatus {
 		sort.Strings(byStatus[status])
 	}
@@ -148,43 +164,42 @@ func buildRows(sessions map[string]namedSessionEntry, idx map[string]string, que
 		if !ok || len(tags) == 0 {
 			continue
 		}
-		// Group header
 		rows = append(rows, tuiRow{
 			isHeader: true,
 			status:   status,
 			count:    len(tags),
 		})
-		// Session rows
 		for _, tag := range tags {
 			entry := sessions[tag]
 			dateStr := "--"
 			if t, err := time.Parse(time.RFC3339, entry.Updated); err == nil {
 				dateStr = t.Format("Jan 02 15:04")
 			}
-			// Summary with fallback: summary → memo → idea slug → (empty)
 			summary := entry.Summary
 			if summary == "" {
 				summary = entry.Memo
 			}
 			if summary == "" && entry.Idea != "" {
-				summary = "💡 " + entry.Idea
+				summary = entry.Idea
 			}
-			if len(summary) > 50 {
-				summary = summary[:50] + "…"
+			if len(summary) > 45 {
+				summary = summary[:45] + "…"
 			}
+			ideaPath, specPath, designPath := resolveFilePaths(tag, entry)
 			rows = append(rows, tuiRow{
-				isHeader:  false,
-				tag:       tag,
-				summary:   summary,
-				date:      dateStr,
-				rowStatus: status,
+				tag:        tag,
+				summary:    summary,
+				date:       dateStr,
+				rowStatus:  status,
+				ideaPath:   ideaPath,
+				specPath:   specPath,
+				designPath: designPath,
 			})
 		}
 	}
 	return rows
 }
 
-// nonHeaderRows returns indices of all non-header rows.
 func (m *sessionTUIModel) nonHeaderIndices() []int {
 	var out []int
 	for i, r := range m.rows {
@@ -195,28 +210,49 @@ func (m *sessionTUIModel) nonHeaderIndices() []int {
 	return out
 }
 
-// Init loads sessions and builds the initial display.
 func (m sessionTUIModel) Init() tea.Cmd {
 	return nil
 }
 
-// Update handles keyboard input.
+// isSearching returns true when search query is active — keys go to query instead of shortcuts.
+func (m *sessionTUIModel) isSearching() bool {
+	return m.query != ""
+}
+
 func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Delete confirmation mode
+		if m.confirmDelete {
+			switch msg.String() {
+			case "y", "Y":
+				delete(m.sessions, m.deleteTarget)
+				_ = saveNamedSessions(m.sessions)
+				delete(m.searchIndex, m.deleteTarget)
+				m.confirmDelete = false
+				m.deleteTarget = ""
+				m.rebuildRows()
+			default:
+				m.confirmDelete = false
+				m.deleteTarget = ""
+			}
+			return m, nil
+		}
+
 		switch msg.Type {
 		case tea.KeyEnter:
-			indices := m.nonHeaderIndices()
-			if len(indices) > 0 {
-				// Find the cursor-th non-header row
-				idx := m.cursorRowIndex()
-				if idx >= 0 {
-					m.selectedTag = m.rows[idx].tag
-				}
+			idx := m.cursorRowIndex()
+			if idx >= 0 {
+				m.selectedTag = m.rows[idx].tag
 			}
 			return m, tea.Quit
 
 		case tea.KeyEsc:
+			if m.isSearching() {
+				m.query = ""
+				m.rebuildRows()
+				return m, nil
+			}
 			return m, tea.Quit
 
 		case tea.KeyUp:
@@ -230,30 +266,46 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyBackspace:
 			if len(m.query) > 0 {
-				// Remove last rune
 				runes := []rune(m.query)
 				m.query = string(runes[:len(runes)-1])
 				m.rebuildRows()
 			}
 
 		case tea.KeyRunes:
-			switch msg.String() {
-			case "q":
-				return m, tea.Quit
-			case "j":
-				m.moveCursor(1)
-			case "k":
-				m.moveCursor(-1)
-			default:
-				m.query += msg.String()
+			ch := msg.String()
+			if m.isSearching() {
+				// In search mode: all chars go to query
+				m.query += ch
 				m.rebuildRows()
+			} else {
+				// Navigation mode: shortcuts active
+				switch ch {
+				case "q":
+					return m, tea.Quit
+				case "j":
+					m.moveCursor(1)
+				case "k":
+					m.moveCursor(-1)
+				case "d":
+					idx := m.cursorRowIndex()
+					if idx >= 0 {
+						m.confirmDelete = true
+						m.deleteTarget = m.rows[idx].tag
+					}
+				case "/":
+					// Enter search mode (query starts empty, next char will make isSearching true)
+					// Do nothing — user will type next char which enters search
+				default:
+					// Start searching
+					m.query += ch
+					m.rebuildRows()
+				}
 			}
 		}
 	}
 	return m, nil
 }
 
-// cursorRowIndex returns the visual index in m.rows of the row at cursor position.
 func (m *sessionTUIModel) cursorRowIndex() int {
 	indices := m.nonHeaderIndices()
 	if len(indices) == 0 {
@@ -269,7 +321,6 @@ func (m *sessionTUIModel) cursorRowIndex() int {
 	return indices[c]
 }
 
-// moveCursor moves the cursor by delta, skipping headers.
 func (m *sessionTUIModel) moveCursor(delta int) {
 	indices := m.nonHeaderIndices()
 	if len(indices) == 0 {
@@ -284,7 +335,6 @@ func (m *sessionTUIModel) moveCursor(delta int) {
 	}
 }
 
-// cycleFilter cycles the status filter.
 func (m *sessionTUIModel) cycleFilter() {
 	current := m.statusFilter
 	if current == "" {
@@ -300,61 +350,80 @@ func (m *sessionTUIModel) cycleFilter() {
 	m.rebuildRows()
 }
 
-// rebuildRows rebuilds the display rows after a filter/query change.
 func (m *sessionTUIModel) rebuildRows() {
 	m.rows = buildRows(m.sessions, m.searchIndex, m.query, m.statusFilter)
-	// Clamp cursor
 	indices := m.nonHeaderIndices()
 	if m.cursor >= len(indices) {
-		m.cursor = max(0, len(indices)-1)
+		if len(indices) > 0 {
+			m.cursor = len(indices) - 1
+		} else {
+			m.cursor = 0
+		}
 	}
 }
 
 // --- Lipgloss styles ---
 
 var (
-	styleHeader = lipgloss.NewStyle().Bold(true)
-	styleFaint  = lipgloss.NewStyle().Faint(true)
-	styleReverse = lipgloss.NewStyle().Reverse(true)
-
-	statusColors = map[string]lipgloss.Color{
-		"idea":        lipgloss.Color("3"),  // yellow
-		"planned":     lipgloss.Color("4"),  // blue
-		"in-progress": lipgloss.Color("2"),  // green
-		"active":      lipgloss.Color("7"),  // white
-		"done":        lipgloss.Color("8"),  // gray
+	styleHeader    = lipgloss.NewStyle().Bold(true)
+	styleFaint     = lipgloss.NewStyle().Faint(true)
+	styleSelected  = lipgloss.NewStyle().Bold(true).Reverse(true)
+	styleFilePath  = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("6")) // cyan, cmd+click friendly
+	styleStatusTag = map[string]lipgloss.Style{
+		"idea":        lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true),  // yellow
+		"planned":     lipgloss.NewStyle().Foreground(lipgloss.Color("4")).Bold(true),  // blue
+		"in-progress": lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true),  // green
+		"active":      lipgloss.NewStyle().Foreground(lipgloss.Color("7")),             // white
+		"done":        lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Faint(true), // gray
 	}
+	styleSearchBar = lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Bold(true)
+	styleHelpBar   = lipgloss.NewStyle().Faint(true)
+	styleConfirm   = lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true) // red
 )
 
 func headerStyle(status string) lipgloss.Style {
-	col, ok := statusColors[status]
-	if !ok {
-		col = lipgloss.Color("7")
+	col := lipgloss.Color("7")
+	switch status {
+	case "idea":
+		col = lipgloss.Color("3")
+	case "planned":
+		col = lipgloss.Color("4")
+	case "in-progress":
+		col = lipgloss.Color("2")
+	case "done":
+		col = lipgloss.Color("8")
 	}
 	return styleHeader.Foreground(col)
 }
 
-// View renders the TUI.
 func (m sessionTUIModel) View() string {
 	var sb strings.Builder
 
-	// Top line: query + filter indicator
+	// Delete confirmation
+	if m.confirmDelete {
+		sb.WriteString(styleConfirm.Render(fmt.Sprintf("  Delete session '%s'? [y/N] ", m.deleteTarget)))
+		sb.WriteString("\n")
+		return sb.String()
+	}
+
+	// Search bar
 	filterLabel := m.statusFilter
 	if filterLabel == "" || filterLabel == "all" {
 		filterLabel = "all"
 	}
-	queryDisplay := fmt.Sprintf("🔍 %s", m.query)
-	filterDisplay := fmt.Sprintf("[Tab: %s]", filterLabel)
-
-	// Simple two-column: left query, right filter
-	sb.WriteString(queryDisplay)
-	// Pad to 50 chars for right-alignment (best-effort, fixed width)
-	pad := 60 - len(queryDisplay) - len(filterDisplay)
+	if m.isSearching() {
+		sb.WriteString(styleSearchBar.Render(fmt.Sprintf("🔍 %s▏", m.query)))
+	} else {
+		sb.WriteString(styleFaint.Render("🔍 type to search..."))
+	}
+	filterText := styleFaint.Render(fmt.Sprintf("[Tab: %s]", filterLabel))
+	// Right-align filter
+	pad := 60 - lipgloss.Width(sb.String()) - lipgloss.Width(filterText)
 	if pad < 1 {
 		pad = 1
 	}
 	sb.WriteString(strings.Repeat(" ", pad))
-	sb.WriteString(filterDisplay)
+	sb.WriteString(filterText)
 	sb.WriteString("\n\n")
 
 	// Rows
@@ -364,29 +433,64 @@ func (m sessionTUIModel) View() string {
 	for i, row := range m.rows {
 		if row.isHeader {
 			hs := headerStyle(row.status)
-			sb.WriteString(hs.Render(fmt.Sprintf("── %s (%d) ──", row.status, row.count)))
+			sb.WriteString(hs.Render(fmt.Sprintf(" ── %s (%d) ──", row.status, row.count)))
 			sb.WriteString("\n")
-		} else {
-			isSelected := i == cursorRowIdx
-			// Show: cursor tag status summary date
-			statusLabel := row.rowStatus
-			if statusLabel == "" {
-				statusLabel = "active"
-			}
-			line := fmt.Sprintf("  %-20s  %-12s  %-50s  %s", row.tag, statusLabel, row.summary, row.date)
+			continue
+		}
 
-			var style lipgloss.Style
-			if row.rowStatus == "done" {
-				style = styleFaint
-			} else {
-				style = lipgloss.NewStyle()
+		isSelected := i == cursorRowIdx
+		nonHeaderCount++
+
+		// Status badge with color
+		stStyle, ok := styleStatusTag[row.rowStatus]
+		if !ok {
+			stStyle = lipgloss.NewStyle()
+		}
+		statusBadge := stStyle.Render(fmt.Sprintf("%-12s", row.rowStatus))
+
+		// Build the line
+		cursor := "  "
+		if isSelected {
+			cursor = "▸ "
+		}
+
+		tagStr := fmt.Sprintf("%-18s", row.tag)
+		summaryStr := fmt.Sprintf("%-45s", row.summary)
+		dateStr := row.date
+
+		if isSelected {
+			line := fmt.Sprintf("%s%s  %s  %s  %s", cursor, tagStr, statusBadge, summaryStr, dateStr)
+			sb.WriteString(styleSelected.Render(line))
+		} else if row.rowStatus == "done" {
+			line := fmt.Sprintf("%s%s  %s  %s  %s", cursor, tagStr, statusBadge, summaryStr, dateStr)
+			sb.WriteString(styleFaint.Render(line))
+		} else {
+			sb.WriteString(cursor)
+			sb.WriteString(lipgloss.NewStyle().Bold(true).Render(tagStr))
+			sb.WriteString("  ")
+			sb.WriteString(statusBadge)
+			sb.WriteString("  ")
+			sb.WriteString(summaryStr)
+			sb.WriteString("  ")
+			sb.WriteString(styleFaint.Render(dateStr))
+		}
+		sb.WriteString("\n")
+
+		// Show file paths for selected row
+		if isSelected {
+			if row.ideaPath != "" {
+				sb.WriteString(styleFilePath.Render(fmt.Sprintf("    ├─ 💡 %s", row.ideaPath)))
+				sb.WriteString("\n")
 			}
-			if isSelected {
-				style = styleReverse
+			if row.specPath != "" {
+				sb.WriteString(styleFilePath.Render(fmt.Sprintf("    ├─ 📄 %s", row.specPath)))
+				sb.WriteString("\n")
 			}
-			sb.WriteString(style.Render(line))
-			sb.WriteString("\n")
-			nonHeaderCount++
+			if row.designPath != "" {
+				last := "└─"
+				sb.WriteString(styleFilePath.Render(fmt.Sprintf("    %s 🏗  %s", last, row.designPath)))
+				sb.WriteString("\n")
+			}
 		}
 	}
 
@@ -395,16 +499,15 @@ func (m sessionTUIModel) View() string {
 		sb.WriteString("\n")
 	}
 
-	// Bottom help bar
+	// Help bar
 	sb.WriteString("\n")
-	sb.WriteString(styleFaint.Render("[↑↓/jk] 이동  [Enter] 시작  [/] 검색  [Tab] 필터  [q] 종료"))
+	help := "[↑↓/jk] 이동  [Enter] 시작  [d] 삭제  [Tab] 필터  [Esc] 검색취소  [q] 종료"
+	sb.WriteString(styleHelpBar.Render(help))
 	sb.WriteString("\n")
 
 	return sb.String()
 }
 
-// runSessionsTUI runs the interactive session picker and returns the selected tag.
-// Returns empty string if user quit without selection.
 func runSessionsTUI() (string, error) {
 	m := newSessionTUIModel()
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -416,11 +519,4 @@ func runSessionsTUI() (string, error) {
 		return final.selectedTag, nil
 	}
 	return "", nil
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
