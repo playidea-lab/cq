@@ -38,6 +38,11 @@ type checkCompleteMsg struct {
 	result checkResult
 }
 
+type fixCompleteMsg struct {
+	index  int
+	result checkResult
+}
+
 type tickMsg struct{}
 
 // doctorTUIModel is the bubbletea model for the doctor TUI.
@@ -51,6 +56,14 @@ type doctorTUIModel struct {
 
 	// Spinner state
 	spinnerFrame int
+
+	// Fix confirmation
+	confirmFix    bool
+	confirmTarget int
+
+	// Detail view
+	detailMode   bool
+	detailScroll int
 }
 
 func newDoctorTUIModel() doctorTUIModel {
@@ -75,6 +88,15 @@ func runCheckCmd(index int, entry doctorCheckEntry) tea.Cmd {
 			index:  index,
 			result: result,
 		}
+	}
+}
+
+// runFixCmd runs tryFix on a check item, then re-runs the check to get fresh status.
+func runFixCmd(index int, item *checkItem) tea.Cmd {
+	return func() tea.Msg {
+		tryFix(&item.result)
+		newResult := item.entry.Fn()
+		return fixCompleteMsg{index: index, result: newResult}
 	}
 }
 
@@ -106,6 +128,16 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case fixCompleteMsg:
+		if msg.index >= 0 && msg.index < len(m.checks) {
+			m.checks[msg.index].loading = false
+			m.checks[msg.index].result = msg.result
+			if msg.result.Fix != "" {
+				m.checks[msg.index].detail = msg.result.Fix
+			}
+		}
+		return m, nil
+
 	case tickMsg:
 		m.spinnerFrame = (m.spinnerFrame + 1) % len(spinnerFrames)
 		// Only keep ticking if there are still loading checks.
@@ -122,14 +154,104 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Fix confirmation mode — intercept all keys
+		if m.confirmFix {
+			switch msg.String() {
+			case "y", "Y":
+				idx := m.confirmTarget
+				m.confirmFix = false
+				if idx >= 0 && idx < len(m.checks) {
+					m.checks[idx].loading = true
+					return m, tea.Batch(runFixCmd(idx, &m.checks[idx]), tickCmd())
+				}
+			default:
+				m.confirmFix = false
+			}
+			return m, nil
+		}
+
+		// Detail mode — intercept all keys
+		if m.detailMode {
+			switch msg.Type {
+			case tea.KeyLeft, tea.KeyEsc:
+				m.detailMode = false
+				m.detailScroll = 0
+				return m, nil
+			case tea.KeyEnter:
+				// Fix from detail view
+				idx := m.cursorCheckIndex()
+				if idx >= 0 && idx < len(m.checks) {
+					item := &m.checks[idx]
+					if !item.loading && item.result.Fix != "" {
+						if item.entry.FixSafe {
+							item.loading = true
+							return m, tea.Batch(runFixCmd(idx, item), tickCmd())
+						}
+						m.confirmFix = true
+						m.confirmTarget = idx
+					}
+				}
+				return m, nil
+			case tea.KeyRunes:
+				switch msg.String() {
+				case "h":
+					m.detailMode = false
+					m.detailScroll = 0
+				case "r":
+					// Recheck only this check
+					idx := m.cursorCheckIndex()
+					if idx >= 0 && idx < len(m.checks) {
+						m.checks[idx].loading = true
+						return m, tea.Batch(runCheckCmd(idx, m.checks[idx].entry), tickCmd())
+					}
+				case "q":
+					m.detailMode = false
+					m.detailScroll = 0
+				}
+			}
+			return m, nil
+		}
+
+		// Normal mode
 		switch msg.Type {
 		case tea.KeyUp:
 			m.moveCursor(-1)
 		case tea.KeyDown:
 			m.moveCursor(1)
+		case tea.KeyRight:
+			idx := m.cursorCheckIndex()
+			if idx >= 0 && !m.checks[idx].loading {
+				m.detailMode = true
+				m.detailScroll = 0
+			}
+		case tea.KeyEnter:
+			idx := m.cursorCheckIndex()
+			if idx >= 0 && idx < len(m.checks) {
+				item := &m.checks[idx]
+				if !item.loading && item.result.Fix != "" {
+					if item.entry.FixSafe {
+						item.loading = true
+						return m, tea.Batch(runFixCmd(idx, item), tickCmd())
+					}
+					m.confirmFix = true
+					m.confirmTarget = idx
+				}
+			}
+		case tea.KeyTab:
+			cycle := []string{"all", "FAIL", "WARN", "INFO", "OK"}
+			cur := 0
+			for i, v := range cycle {
+				if v == m.statusFilter {
+					cur = i
+					break
+				}
+			}
+			m.statusFilter = cycle[(cur+1)%len(cycle)]
+			m.cursor = 0
 		case tea.KeyEsc:
 			if m.query != "" {
 				m.query = ""
+				m.cursor = 0
 				return m, nil
 			}
 			return m, tea.Quit
@@ -137,6 +259,7 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.query) > 0 {
 				runes := []rune(m.query)
 				m.query = string(runes[:len(runes)-1])
+				m.cursor = 0
 			}
 		case tea.KeyRunes:
 			ch := msg.String()
@@ -147,20 +270,47 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				m.query += ch
+				m.cursor = 0
 			case "j":
 				if m.query == "" {
 					m.moveCursor(1)
 					return m, nil
 				}
 				m.query += ch
+				m.cursor = 0
 			case "q":
 				if m.query == "" {
 					return m, tea.Quit
 				}
 				m.query += ch
-			default:
-				// Enter, r, Tab, search keys — no-ops for now (T-903)
+				m.cursor = 0
+			case "l":
+				if m.query == "" {
+					idx := m.cursorCheckIndex()
+					if idx >= 0 && !m.checks[idx].loading {
+						m.detailMode = true
+						m.detailScroll = 0
+					}
+					return m, nil
+				}
 				m.query += ch
+				m.cursor = 0
+			case "r":
+				if m.query == "" {
+					// Recheck all
+					cmds := make([]tea.Cmd, 0, len(m.checks)+1)
+					for i := range m.checks {
+						m.checks[i].loading = true
+						cmds = append(cmds, runCheckCmd(i, m.checks[i].entry))
+					}
+					cmds = append(cmds, tickCmd())
+					return m, tea.Batch(cmds...)
+				}
+				m.query += ch
+				m.cursor = 0
+			default:
+				m.query += ch
+				m.cursor = 0
 			}
 		}
 	}
@@ -289,6 +439,139 @@ func doctorSeverityHeaderStyle(status checkStatus) lipgloss.Style {
 }
 
 func (m doctorTUIModel) View() string {
+	// Fix confirmation — full screen takeover
+	if m.confirmFix {
+		return m.viewConfirmFix()
+	}
+
+	// Detail mode — full screen takeover
+	if m.detailMode {
+		return m.viewDetail()
+	}
+
+	return m.viewList()
+}
+
+func (m doctorTUIModel) viewConfirmFix() string {
+	var sb strings.Builder
+	idx := m.confirmTarget
+	fixDesc := ""
+	name := ""
+	if idx >= 0 && idx < len(m.checks) {
+		fixDesc = m.checks[idx].result.Fix
+		name = m.checks[idx].entry.Name
+	}
+	sb.WriteString("\n")
+	sb.WriteString(styleConfirm.Render(fmt.Sprintf("  ⚠ Run fix for '%s': %s? (y/N) ", name, fixDesc)))
+	sb.WriteString("\n")
+
+	// Fill remaining space
+	contentLines := strings.Count(sb.String(), "\n")
+	if m.height > 0 {
+		gap := m.height - contentLines - 2
+		for i := 0; i < gap; i++ {
+			sb.WriteString("\n")
+		}
+	}
+	m.renderSeparator(&sb)
+	sb.WriteString("\n")
+	sb.WriteString(" ")
+	sb.WriteString(helpEntry("y", "confirm"))
+	sb.WriteString("  ")
+	sb.WriteString(helpEntry("N", "cancel"))
+	return sb.String()
+}
+
+func (m doctorTUIModel) viewDetail() string {
+	var sb strings.Builder
+	idx := m.cursorCheckIndex()
+	if idx < 0 || idx >= len(m.checks) {
+		return m.viewList()
+	}
+	item := m.checks[idx]
+
+	// Header
+	badge := ""
+	if bStyle, ok := severityBadgeStyles[item.result.Status]; ok {
+		badge = bStyle.Render(string(item.result.Status))
+	}
+
+	titleW := m.width
+	if titleW < 74 {
+		titleW = 74
+	}
+
+	sb.WriteString(styleTitle.Render(" cq doctor "))
+	sb.WriteString(" > ")
+	sb.WriteString(styleTagName.Render(item.entry.Name))
+	sb.WriteString("  ")
+	sb.WriteString(badge)
+	sb.WriteString("\n")
+
+	sepW := titleW
+	sb.WriteString(styleFaint.Render(strings.Repeat("─", sepW)))
+	sb.WriteString("\n")
+
+	// Detail fields
+	sb.WriteString(styleFaint.Render(" Status:   "))
+	sb.WriteString(string(item.result.Status))
+	sb.WriteString("\n")
+
+	sb.WriteString(styleFaint.Render(" Message:  "))
+	sb.WriteString(item.result.Message)
+	sb.WriteString("\n")
+
+	netLabel := "no"
+	if item.entry.IsNetwork {
+		netLabel = "yes"
+	}
+	sb.WriteString(styleFaint.Render(" Network:  "))
+	sb.WriteString(netLabel)
+	sb.WriteString("\n")
+
+	if item.result.Fix != "" {
+		sb.WriteString("\n")
+		sb.WriteString(styleFaint.Render(" Fix:      "))
+		sb.WriteString(item.result.Fix)
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString(styleFaint.Render(strings.Repeat("─", sepW)))
+	sb.WriteString("\n")
+
+	// Fill remaining space
+	contentLines := strings.Count(sb.String(), "\n")
+	if m.height > 0 {
+		gap := m.height - contentLines - 2
+		for i := 0; i < gap; i++ {
+			sb.WriteString("\n")
+		}
+	}
+	m.renderSeparator(&sb)
+	sb.WriteString("\n")
+
+	var helpBar strings.Builder
+	helpBar.WriteString(" ")
+	helpBar.WriteString(helpEntry("←", "back"))
+	helpBar.WriteString("  ")
+	helpBar.WriteString(helpEntry("Enter", "fix"))
+	helpBar.WriteString("  ")
+	helpBar.WriteString(helpEntry("r", "recheck"))
+	sb.WriteString(helpBar.String())
+
+	return sb.String()
+}
+
+func (m doctorTUIModel) renderSeparator(sb *strings.Builder) {
+	if m.width > 0 {
+		sb.WriteString(styleFaint.Render(strings.Repeat("─", m.width)))
+	} else {
+		sb.WriteString(styleFaint.Render(strings.Repeat("─", 74)))
+	}
+}
+
+func (m doctorTUIModel) viewList() string {
 	var sb strings.Builder
 
 	rows := m.buildVisibleRows()
@@ -462,11 +745,7 @@ func (m doctorTUIModel) View() string {
 	}
 
 	// Separator + help bar
-	if m.width > 0 {
-		sb.WriteString(styleFaint.Render(strings.Repeat("─", m.width)))
-	} else {
-		sb.WriteString(styleFaint.Render(strings.Repeat("─", 74)))
-	}
+	m.renderSeparator(&sb)
 	sb.WriteString("\n")
 
 	var helpBar strings.Builder
