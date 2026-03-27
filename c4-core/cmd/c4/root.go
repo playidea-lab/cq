@@ -279,7 +279,7 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 
 	// Step 5: If no default_tool, show selector.
 	if defaultTool == "" {
-		p := tea.NewProgram(newSelectorModel())
+		p := tea.NewProgram(newSelectorModel(), tea.WithAltScreen())
 		m, err := p.Run()
 		if err != nil {
 			return err
@@ -293,7 +293,7 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// Step 6: Show dashboard.
-	p := tea.NewProgram(newDashboardModel())
+	p := tea.NewProgram(newDashboardModel(), tea.WithAltScreen())
 	m, err := p.Run()
 	if err != nil {
 		return err
@@ -308,7 +308,7 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 	case "status":
 		return runStatus(cmd, nil)
 	case "config":
-		p2 := tea.NewProgram(newSelectorModel())
+		p2 := tea.NewProgram(newSelectorModel(), tea.WithAltScreen())
 		m2, err := p2.Run()
 		if err != nil {
 			return err
