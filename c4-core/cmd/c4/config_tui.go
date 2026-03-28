@@ -337,6 +337,7 @@ func (m *configTUIModel) handleBoolToggle() {
 }
 
 // handleEnter handles Enter on entries: toggle array expand, bool toggle, or start inline edit.
+// For sensitive keys, opens inline edit with empty input (new value entry).
 func (m *configTUIModel) handleEnter() {
 	idx := m.cursorEntryIndex()
 	if idx < 0 {
@@ -346,6 +347,15 @@ func (m *configTUIModel) handleEnter() {
 	if entry.Source == "readonly" {
 		return // read-only external tool config — not editable
 	}
+
+	// Sensitive key: enter edit mode with empty input (user types new value)
+	if isSensitiveKey(entry.Key) {
+		m.editMode = true
+		m.editInput = "" // start empty — user enters new key
+		m.editIndex = idx
+		return
+	}
+
 	switch entry.Kind {
 	case "array":
 		if m.arrayExpanded == idx {
@@ -365,11 +375,25 @@ func (m *configTUIModel) handleEnter() {
 }
 
 // handleEditSave saves the inline edit value.
+// Sensitive keys are saved via `cq secret set` (encrypted store).
 func (m *configTUIModel) handleEditSave() {
 	if m.editIndex < 0 || m.editIndex >= len(m.entries) {
 		return
 	}
 	entry := &m.entries[m.editIndex]
+
+	if isSensitiveKey(entry.Key) {
+		// Save to secret store via CLI (subprocess — avoids importing secrets package)
+		if m.editInput != "" {
+			cmd := exec.Command("cq", "secret", "set", entry.Key, m.editInput)
+			_ = cmd.Run()
+			entry.Value = m.editInput
+			entry.Source = "project"
+		}
+		m.rows = m.buildVisibleRows()
+		return
+	}
+
 	if err := saveConfigValue(entry.Key, m.editInput); err != nil {
 		return
 	}
@@ -738,12 +762,12 @@ func isSensitiveKey(key string) bool {
 	return false
 }
 
-// maskValue masks a string value, showing only the last 4 chars.
+// maskValue fully masks a string value.
 func maskValue(val string) string {
-	if len(val) <= 4 {
-		return "****"
+	if val == "" {
+		return "(미설정)"
 	}
-	return "****" + val[len(val)-4:]
+	return "••••••••"
 }
 
 // configValueString returns the display string for a config entry value.
