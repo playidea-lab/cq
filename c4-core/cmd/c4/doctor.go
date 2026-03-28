@@ -864,7 +864,7 @@ func tryFix(r *checkResult) string {
 		r.Status = checkOK
 		r.Fix = ""
 		return "c4-bridge installed via uv"
-	case "OS service":
+	case "OS service", "os-service":
 		// macOS: load plist first (may not be loaded), then start.
 		home, _ := os.UserHomeDir()
 		plist := filepath.Join(home, "Library", "LaunchAgents", "cq-serve.plist")
