@@ -213,9 +213,9 @@ func (w *WorkerComponent) executeJob(ctx context.Context, job *hub.Job) (int, er
 	// Use job workdir if specified, otherwise current directory.
 	// Expand leading ~/ to the user's home directory.
 	workdir := job.Workdir
-	if strings.HasPrefix(workdir, "~/") {
+	if strings.HasPrefix(workdir, "~") {
 		if home, err := os.UserHomeDir(); err == nil {
-			workdir = filepath.Join(home, workdir[2:])
+			workdir = filepath.Join(home, workdir[1:])
 		}
 	}
 	if workdir != "" {

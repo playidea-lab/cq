@@ -19,11 +19,15 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"strconv"
+
+	"github.com/changmin/c4-core/internal/botstore"
 	"github.com/changmin/c4-core/internal/cloud"
 	"github.com/changmin/c4-core/internal/cqdata"
 	"github.com/changmin/c4-core/internal/drive"
 	"github.com/changmin/c4-core/internal/hub"
 	"github.com/changmin/c4-core/internal/mcp/handlers/cfghandler"
+	"github.com/changmin/c4-core/internal/notify"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -874,8 +878,14 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey string, cloudTP *clou
 	if job.Command != "" {
 		cmd := exec.CommandContext(ctx, "sh", "-c", job.Command)
 		if job.Workdir != "" {
-			if info, statErr := os.Stat(job.Workdir); statErr == nil && info.IsDir() {
-				cmd.Dir = job.Workdir
+			wd := job.Workdir
+			if strings.HasPrefix(wd, "~") {
+				if home, err := os.UserHomeDir(); err == nil {
+					wd = filepath.Join(home, wd[1:])
+				}
+			}
+			if info, statErr := os.Stat(wd); statErr == nil && info.IsDir() {
+				cmd.Dir = wd
 			} else {
 				fmt.Fprintf(os.Stderr, "cq: workdir %q not found, using current dir\n", job.Workdir)
 			}
@@ -988,6 +998,44 @@ func claimAndRun(ctx context.Context, supabaseURL, anonKey string, cloudTP *clou
 			io.Copy(io.Discard, r.Body)
 			r.Body.Close()
 		}
+
+		// Send Telegram notification (best-effort, fire-and-forget).
+		sendHubJobNotification(job.Name, status, exitCode)
+	}
+}
+
+// sendHubJobNotification sends a Telegram message for hub job completion.
+// Uses the first available bot from the global botstore (~/.claude/bots/).
+// Silently skips if botstore is empty or notifications are not configured.
+func sendHubJobNotification(jobName, status string, exitCode int) {
+	var message string
+	switch status {
+	case "COMPLETE":
+		message = fmt.Sprintf("✅ Hub Job `%s` 완료 (exit 0)", jobName)
+	case "FAILED":
+		message = fmt.Sprintf("❌ Hub Job `%s` 실패 (exit %d)", jobName, exitCode)
+	default:
+		return
+	}
+
+	bs, err := botstore.New("") // global-only (no project dir)
+	if err != nil {
+		return
+	}
+	bots, err := bs.List()
+	if err != nil || len(bots) == 0 {
+		return
+	}
+	bot := bots[0]
+	if bot.Token == "" || len(bot.AllowFrom) == 0 {
+		return
+	}
+	chatID := strconv.FormatInt(bot.AllowFrom[0], 10)
+
+	notifyCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := notify.SendTelegram(notifyCtx, bot.Token, chatID, message); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: hub job notify: %v\n", err)
 	}
 }
 
