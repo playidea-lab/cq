@@ -31,6 +31,7 @@ type tuiRow struct {
 	count  int
 	// session row fields
 	tag       string
+	tool      string // "claude", "chatgpt", "gemini", "codex"
 	summary   string
 	date      string
 	rowStatus string
@@ -277,8 +278,13 @@ func buildRows(sessions map[string]namedSessionEntry, idx map[string]string, que
 			}
 			// Don't truncate here — View truncates dynamically based on terminal width
 			ideaPaths, specPath, designPath := resolveFilePaths(tag, entry)
+			tool := entry.Tool
+			if tool == "" {
+				tool = "claude"
+			}
 			rows = append(rows, tuiRow{
 				tag:        tag,
+				tool:       tool,
 				summary:    summary,
 				date:       dateStr,
 				rowStatus:  status,
@@ -1068,10 +1074,10 @@ func (m sessionTUIModel) View() string {
 	sb.WriteString("\n\n")
 
 	// Rows — display-width-aware column alignment
-	// Fixed: cursor(3) + markers(4) + tag(18) + gap(1) + badge(~14) + gap(1) + summary(dynamic) + gap(1) + date(12)
+	// Fixed: cursor(3) + markers(4) + tag(18) + gap(1) + badge(~14) + gap(1) + summary(dynamic) + gap(1) + tool(8) + gap(1) + date(12)
 	const tagColW = 18
-	// Fixed columns: cursor(3) + markers(4) + tag(18) + sp(1) + badge(13) + sp(1) + sp(1) + date(12) + margin(1)
-	fixedW := 3 + 4 + tagColW + 1 + 13 + 1 + 1 + 12 + 1
+	// Fixed columns: cursor(3) + markers(4) + tag(18) + sp(1) + badge(13) + sp(1) + sp(1) + tool(8) + sp(1) + date(12) + margin(1)
+	fixedW := 3 + 4 + tagColW + 1 + 13 + 1 + 1 + 8 + 1 + 12 + 1
 	sumColW := m.width - fixedW
 	if sumColW < 10 {
 		sumColW = 10
@@ -1182,12 +1188,23 @@ func (m sessionTUIModel) View() string {
 			markers = "    "
 		}
 
-		// Tag: truncate + pad to fixed display width (CJK-aware)
+		// Tag: strip provider prefix (shown in tool column instead)
 		tagDisplay := row.tag
+		if idx := strings.IndexByte(tagDisplay, '/'); idx >= 0 {
+			tagDisplay = tagDisplay[idx+1:]
+		}
 		if lsDispWidth(tagDisplay) > tagColW {
 			tagDisplay = lsTruncateToWidth(tagDisplay, tagColW-1) + "…"
 		}
 		tagPadded := lsPadToWidth(tagDisplay, tagColW)
+
+		// Tool badge (short label, right before date)
+		const toolColW = 8
+		toolLabel := row.tool
+		if len(toolLabel) > toolColW {
+			toolLabel = toolLabel[:toolColW]
+		}
+		toolPadded := fmt.Sprintf("%-*s", toolColW, toolLabel)
 
 		// Summary: truncate + pad (CJK-aware)
 		sumDisplay := row.summary
@@ -1200,13 +1217,16 @@ func (m sessionTUIModel) View() string {
 		markerStyleSel := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Background(lipgloss.Color("236"))
 
 		// Calculate padding between summary and date to right-align date
-		// Layout: cursor(3) + markers(4) + tag + " " + badge + " " + summary + pad + date
+		// Layout: cursor(3) + markers(4) + tag + " " + badge + " " + summary + pad + tool(8) + " " + date
 		leftUsed := 3 + 4 + tagColW + 1 + badgeW + 1 + lsDispWidth(sumDisplay)
-		dateW := len(dateStr) + 1 // +1 for right margin
+		dateW := toolColW + 1 + len(dateStr) + 1
 		midPad := m.width - leftUsed - dateW
 		if midPad < 1 {
 			midPad = 1
 		}
+
+		toolStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Faint(true)
+		toolStyleSel := lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Background(lipgloss.Color("236"))
 
 		if isSelected {
 			sb.WriteString(styleSelected.Render(cursor))
@@ -1217,6 +1237,8 @@ func (m sessionTUIModel) View() string {
 			sb.WriteString(styleSelected.Render(" "))
 			sb.WriteString(styleSelected.Render(sumDisplay))
 			sb.WriteString(styleSelected.Render(strings.Repeat(" ", midPad)))
+			sb.WriteString(toolStyleSel.Render(toolPadded))
+			sb.WriteString(styleSelected.Render(" "))
 			sb.WriteString(styleSelected.Render(dateStr))
 		} else if row.rowStatus == "done" {
 			sb.WriteString(styleTagNameDim.Render(cursor))
@@ -1227,6 +1249,8 @@ func (m sessionTUIModel) View() string {
 			sb.WriteString(" ")
 			sb.WriteString(styleSummaryDim.Render(sumDisplay))
 			sb.WriteString(strings.Repeat(" ", midPad))
+			sb.WriteString(styleFaint.Render(toolPadded))
+			sb.WriteString(" ")
 			sb.WriteString(styleDate.Render(dateStr))
 		} else {
 			sb.WriteString(cursor)
@@ -1237,6 +1261,8 @@ func (m sessionTUIModel) View() string {
 			sb.WriteString(" ")
 			sb.WriteString(styleSummary.Render(sumDisplay))
 			sb.WriteString(strings.Repeat(" ", midPad))
+			sb.WriteString(toolStyle.Render(toolPadded))
+			sb.WriteString(" ")
 			sb.WriteString(styleDate.Render(dateStr))
 		}
 		sb.WriteString("\n")
