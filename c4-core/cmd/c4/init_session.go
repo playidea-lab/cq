@@ -242,6 +242,9 @@ func launchToolNamed(tool, projectDir, name string) error {
 			if tool == "gemini" {
 				resumeID := findGeminiSessionIndex(currentUUID)
 				toolArgs = []string{"--resume", resumeID}
+			} else if tool == "codex" {
+				// codex uses subcommand: codex resume <session_id>
+				toolArgs = []string{"resume", currentUUID}
 			} else if isUUID(name) {
 				// Raw UUID: resume without --name (no named session to track)
 				toolArgs = []string{"--resume", currentUUID}
@@ -300,6 +303,27 @@ func launchToolNamed(tool, projectDir, name string) error {
 
 		runErr := cmd.Wait()
 
+		// Check session-specific reboot flag FIRST — before resume-failure logic,
+		// because SIGINT from reboot also causes non-zero exit.
+		if _, err := os.Stat(sessionRebootFile); err == nil {
+			os.Remove(sessionRebootFile)
+			isNew = false
+			fmt.Fprintf(os.Stderr, "cq: rebooting session '%s'...\n", name)
+			continue
+		}
+
+		// Check legacy global reboot flag (UUID override support).
+		if data, err := os.ReadFile(rebootFlagFile()); err == nil {
+			os.Remove(rebootFlagFile())
+			if overrideUUID := strings.TrimSpace(string(data)); overrideUUID != "" && overrideUUID != currentUUID {
+				fmt.Fprintf(os.Stderr, "cq: reboot: overriding UUID → %s\n", overrideUUID[:min(8, len(overrideUUID))])
+				currentUUID = overrideUUID
+			}
+			isNew = false
+			fmt.Fprintf(os.Stderr, "cq: rebooting session '%s'...\n", name)
+			continue
+		}
+
 		// If resume failed, retry as new session with --session-id.
 		if runErr != nil && !isNew {
 			if exitErr, ok := runErr.(*exec.ExitError); ok && exitErr.ExitCode() != 0 {
@@ -319,17 +343,6 @@ func launchToolNamed(tool, projectDir, name string) error {
 
 		// After first successful run, future iterations are resumes.
 		isNew = false
-
-		// Check reboot flag.
-		if data, err := os.ReadFile(rebootFlagFile()); err == nil {
-			os.Remove(rebootFlagFile())
-			if overrideUUID := strings.TrimSpace(string(data)); overrideUUID != "" && overrideUUID != currentUUID {
-				fmt.Fprintf(os.Stderr, "cq: reboot: overriding UUID → %s\n", overrideUUID[:min(8, len(overrideUUID))])
-				currentUUID = overrideUUID
-			}
-			fmt.Fprintf(os.Stderr, "cq: rebooting session '%s'...\n", name)
-			continue
-		}
 
 		// Remove PID file and capture session status before exiting (best-effort).
 		removeSessionPID(name)
