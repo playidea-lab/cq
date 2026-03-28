@@ -852,8 +852,8 @@ code{font-family:'SF Mono',Menlo,monospace;color:#e0e0e0}
     <p>Publish, search, and install custom skills. Share workflows across the community.</p>
   </div>
   <div class="feature">
-    <h4>Session knowledge capture</h4>
-    <p>Every session close extracts decisions and preferences. Your brain grows automatically.</p>
+    <h4>Growth Loop</h4>
+    <p>Preferences accumulate across sessions. 3x → hint, 5x → rule. AI behavior changes automatically. Not memory — growth.</p>
   </div>
 </div>
 
