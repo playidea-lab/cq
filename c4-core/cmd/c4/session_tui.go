@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -62,7 +63,7 @@ type sessionTUIModel struct {
 
 	// New session mode
 	newMode  bool
-	newInput string
+	newInput textinput.Model
 
 	// Terminal size
 	width  int
@@ -105,8 +106,14 @@ func (m *sessionTUIModel) detailPaths() []string {
 }
 
 func newSessionTUIModel() sessionTUIModel {
+	ti := textinput.New()
+	ti.Placeholder = "session name"
+	ti.Width = 40
+	ti.CharLimit = 128
+
 	m := sessionTUIModel{
 		statusFilter: "all",
+		newInput:     ti,
 	}
 	m.sessions, _ = loadNamedSessions()
 	recalcStatuses(m.sessions)
@@ -576,7 +583,7 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.newMode {
 			switch msg.Type {
 			case tea.KeyEnter:
-				name := strings.TrimSpace(m.newInput)
+				name := strings.TrimSpace(m.newInput.Value())
 				if name != "" {
 					m.selectedTag = name
 					m.newMode = false
@@ -584,14 +591,12 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case tea.KeyEsc:
 				m.newMode = false
-				m.newInput = ""
-			case tea.KeyBackspace:
-				if len(m.newInput) > 0 {
-					runes := []rune(m.newInput)
-					m.newInput = string(runes[:len(runes)-1])
-				}
-			case tea.KeyRunes:
-				m.newInput += msg.String()
+				m.newInput.Reset()
+				m.newInput.Blur()
+			default:
+				var cmd tea.Cmd
+				m.newInput, cmd = m.newInput.Update(msg)
+				return m, cmd
 			}
 			return m, nil
 		}
@@ -710,7 +715,8 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case tea.KeyCtrlN:
 			m.newMode = true
-			m.newInput = ""
+			m.newInput.SetValue("")
+			m.newInput.Focus()
 
 		case tea.KeyCtrlD:
 			idx := m.cursorRowIndex()
@@ -901,7 +907,7 @@ func (m sessionTUIModel) View() string {
 		sb.WriteString(styleTitle.Render(" New Session "))
 		sb.WriteString("\n\n")
 		sb.WriteString("  Session name: ")
-		sb.WriteString(styleSearchBar.Render(m.newInput + "▏"))
+		sb.WriteString(m.newInput.View())
 		sb.WriteString("\n\n")
 		sb.WriteString(" ")
 		sb.WriteString(helpEntry("Enter", "create & start"))
