@@ -1300,9 +1300,8 @@ func checkLLMGateway() checkResult {
 	if len(missing) > 0 {
 		return checkResult{
 			Name:    "LLM gateway",
-			Status:  checkFail,
-			Message: fmt.Sprintf("default provider %q missing env: %s", defaultProvider, strings.Join(missing, ", ")),
-			Fix:     fmt.Sprintf("export %s=<your-key>", missing[0]),
+			Status:  checkInfo,
+			Message: fmt.Sprintf("default: %s (%s not in env — Claude Code uses internal auth)", defaultProvider, strings.Join(missing, ", ")),
 		}
 	}
 
@@ -1419,9 +1418,8 @@ func checkPermissionReviewer() checkResult {
 	if os.Getenv(apiKeyEnv) == "" {
 		return checkResult{
 			Name:    "permission reviewer",
-			Status:  checkFail,
-			Message: fmt.Sprintf("enabled but %s not set", apiKeyEnv),
-			Fix:     fmt.Sprintf("export %s=<your-key>", apiKeyEnv),
+			Status:  checkInfo,
+			Message: fmt.Sprintf("enabled, %s not in env (Claude Code uses internal auth)", apiKeyEnv),
 		}
 	}
 
