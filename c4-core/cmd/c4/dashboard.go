@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"gopkg.in/yaml.v3"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -48,6 +49,14 @@ type dashboardModel struct {
 	height int
 }
 
+// cqLogo is the dot-art CQ mark.
+var cqLogo = []string{
+	" ▄▀▀▀▀▄  ▄▀▀▀▀▄ ",
+	" █      ██    ██ ",
+	" █      ██  ▄ ██ ",
+	" ▀▄▄▄▄▀  ▀▄▄▀▄▀ ",
+}
+
 func newDashboardModel() dashboardModel {
 	m := dashboardModel{
 		version:     version,
@@ -55,6 +64,16 @@ func newDashboardModel() dashboardModel {
 	}
 	if m.defaultTool == "" {
 		m.defaultTool = "claude"
+	}
+
+	// User info
+	if ac, err := newAuthClient(); err == nil {
+		if sess, err := ac.GetSession(); err == nil && sess != nil && sess.User.Name != "" {
+			m.rows = append(m.rows, dashboardRow{
+				label: "User",
+				value: sess.User.Name,
+			})
+		}
 	}
 
 	// Service health row + component details
@@ -85,7 +104,6 @@ func newDashboardModel() dashboardModel {
 			value: fmt.Sprintf("%d/%d components", okCount, len(components)),
 			badge: badge,
 		})
-		// Sort components by name for stable display
 		sort.Slice(m.components, func(i, j int) bool {
 			return m.components[i].name < m.components[j].name
 		})
@@ -109,6 +127,31 @@ func newDashboardModel() dashboardModel {
 			value: name,
 			badge: badge,
 		})
+	}
+
+	// Sessions summary
+	if sessions, err := loadNamedSessions(); err == nil && len(sessions) > 0 {
+		activeCount := 0
+		var recentTag, recentDate string
+		for tag, entry := range sessions {
+			if entry.Status == "" || entry.Status == "active" || entry.Status == "in-progress" || entry.Status == "running" {
+				activeCount++
+			}
+			if entry.Updated > recentDate {
+				recentDate = entry.Updated
+				recentTag = tag
+			}
+		}
+		m.rows = append(m.rows, dashboardRow{
+			label: "Sessions",
+			value: fmt.Sprintf("%d active / %d total", activeCount, len(sessions)),
+		})
+		if recentTag != "" {
+			m.rows = append(m.rows, dashboardRow{
+				label: "Recent",
+				value: recentTag,
+			})
+		}
 	}
 
 	// Default tool row
@@ -198,8 +241,14 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m dashboardModel) View() string {
 	var sb strings.Builder
 
-	// Title bar — same as cq sessions
-	sb.WriteString(styleTitle.Render(fmt.Sprintf(" CQ %s ", m.version)))
+	// CQ Logo
+	logoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("62")).Bold(true)
+	for _, line := range cqLogo {
+		sb.WriteString(logoStyle.Render("  " + line))
+		sb.WriteString("\n")
+	}
+	sb.WriteString("  ")
+	sb.WriteString(styleTitle.Render(fmt.Sprintf(" %s ", m.version)))
 	sb.WriteString("\n\n")
 
 	// Info rows with aligned labels + optional status badges
