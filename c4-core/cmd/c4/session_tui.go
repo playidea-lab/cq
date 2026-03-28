@@ -205,6 +205,24 @@ func resolveFilePaths(tag string, entry namedSessionEntry) (ideaPaths []string, 
 	return
 }
 
+// sanitizeSessionSummary strips newlines and markdown noise from summary text.
+func sanitizeSessionSummary(s string) string {
+	if s == "" {
+		return ""
+	}
+	// Take first line only
+	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+		s = s[:idx]
+	}
+	s = strings.TrimSpace(s)
+	// Strip leading markdown headers
+	for strings.HasPrefix(s, "#") {
+		s = strings.TrimLeft(s, "# ")
+		s = strings.TrimSpace(s)
+	}
+	return s
+}
+
 func buildRows(sessions map[string]namedSessionEntry, idx map[string]string, query, statusFilter string) []tuiRow {
 	lowerQuery := strings.ToLower(query)
 
@@ -247,9 +265,9 @@ func buildRows(sessions map[string]namedSessionEntry, idx map[string]string, que
 			if t, err := time.Parse(time.RFC3339, entry.Updated); err == nil {
 				dateStr = t.Format("Jan 02 15:04")
 			}
-			summary := entry.Summary
+			summary := sanitizeSessionSummary(entry.Summary)
 			if summary == "" {
-				summary = entry.Memo
+				summary = sanitizeSessionSummary(entry.Memo)
 			}
 			if summary == "" && entry.Idea != "" {
 				summary = entry.Idea
