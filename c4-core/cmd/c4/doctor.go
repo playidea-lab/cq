@@ -471,7 +471,7 @@ func checkPythonSidecar() checkResult {
 		}
 	}
 
-	_, err = runWithTimeout(5*time.Second, uvPath, "run", "c4-bridge", "--version")
+	_, err = runWithTimeout(5*time.Second, uvPath, "run", "c4-bridge", "--help")
 	if err != nil {
 		return checkResult{
 			Name:    "Python sidecar",
