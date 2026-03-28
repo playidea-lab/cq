@@ -174,16 +174,9 @@ func runSessionClose(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// --- 6. Persona learning ---
-	if !sessionCloseSkipPersona && (len(result.Decisions) > 0 || len(result.Preferences) > 0) {
-		suggestions := make([]string, 0, len(result.Decisions)+len(result.Preferences))
-		for _, d := range result.Decisions {
-			suggestions = append(suggestions, "[결정] "+d)
-		}
-		for _, p := range result.Preferences {
-			suggestions = append(suggestions, "[선호] "+p)
-		}
-		applySessionPersona(sessionCloseDir, suggestions)
+	// --- 6. Persona learning + Growth Loop ---
+	if !sessionCloseSkipPersona {
+		captureSessionLearnPersona(sessionCloseDir, result)
 	}
 
 	// --- 7. Mark summarized in sessions DB ---
