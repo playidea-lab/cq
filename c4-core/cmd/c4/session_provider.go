@@ -153,7 +153,7 @@ func loadGeminiSessionHistory(path string) []string {
 	var session struct {
 		Messages []struct {
 			Type    string `json:"type"`
-			Content string `json:"content"`
+			Content any    `json:"content"`
 		} `json:"messages"`
 	}
 	if err := json.Unmarshal(data, &session); err != nil {
@@ -161,14 +161,33 @@ func loadGeminiSessionHistory(path string) []string {
 	}
 	var questions []string
 	for _, msg := range session.Messages {
-		if msg.Type == "user" && msg.Content != "" {
-			text := strings.TrimSpace(msg.Content)
-			if text != "" && !strings.HasPrefix(text, "<") {
-				questions = append(questions, text)
-			}
+		if msg.Type != "user" {
+			continue
+		}
+		text := extractGeminiContentText(msg.Content)
+		if text != "" && !strings.HasPrefix(text, "<") {
+			questions = append(questions, text)
 		}
 	}
 	return questions
+}
+
+// extractGeminiContentText extracts text from Gemini content which can be
+// string or []interface{} with {"text": "..."} entries.
+func extractGeminiContentText(content any) string {
+	switch v := content.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case []interface{}:
+		for _, item := range v {
+			if m, ok := item.(map[string]interface{}); ok {
+				if t, ok := m["text"].(string); ok && t != "" {
+					return strings.TrimSpace(t)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // scanGeminiSessions discovers Gemini sessions from ~/.gemini/tmp/*/chats/.
@@ -281,7 +300,21 @@ func readGeminiSessionMeta(path string) geminiSessionMeta {
 				if msg.Type != "user" {
 					continue
 				}
-				text, _ := msg.Content.(string)
+				// Content can be string or []interface{} with {text: "..."}
+				text := ""
+				switch v := msg.Content.(type) {
+				case string:
+					text = v
+				case []interface{}:
+					for _, item := range v {
+						if m, ok := item.(map[string]interface{}); ok {
+							if t, ok := m["text"].(string); ok && t != "" {
+								text = t
+								break
+							}
+						}
+					}
+				}
 				if text == "" {
 					continue
 				}
