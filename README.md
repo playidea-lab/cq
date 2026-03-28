@@ -35,26 +35,16 @@ Update anytime: `cq update`
 Connect CQ as a remote MCP server and every AI conversation contributes to your knowledge base. ChatGPT discovers a bug root cause? Claude picks it up in the next session. Decisions, patterns, and preferences follow you everywhere.
 
 - **AI Self-Capture** — Tool descriptions engineered so AI proactively saves knowledge without being asked
-- **Session Summary** — Automatic end-of-conversation capture as a safety net
 - **Cross-Platform Search** — Vector + FTS + ilike fallback across all stored knowledge
 - **OAuth 2.1** — Secure third-party access via Cloudflare Worker MCP proxy
 
-### Plans Before Coding
+### Quality Gates — Plans Before Coding, 6-Axis Review
 
-Requirements analysis (EARS), architecture decisions (ADR), and task breakdown with Definition of Done — before a single line is written.
+Requirements analysis (EARS), architecture decisions (ADR), and task breakdown with Definition of Done — before a single line is written. 6-axis review (correctness, security, reliability, observability, testing, readability) is compiled into the binary — not optional.
 
-### Gates, Not Trust
+### Growth Loop — AI Learns Your Preferences
 
-6-axis review (correctness, security, reliability, observability, testing, readability). Compiled into the binary — not optional. Every review rejection feeds back as context for the next task.
-
-### Distributed Execution
-
-GPU workers connect via WebSocket relay through NAT. Submit training jobs from your laptop, execute on remote machines, collect results — all orchestrated through the Hub.
-
-- **Relay** — Fly.io-hosted WebSocket relay for NAT traversal (TCP keepalive, WSL2-aware)
-- **Hub** — Distributed job queue with DAG support, artifact upload, cron scheduling
-- **Drive** — Cloud file storage with TUS resumable upload, dataset versioning (content-addressable)
-- **File Index** — Search files across all connected devices
+Every review rejection, decision, and session summary feeds back as context. The AI adapts to your patterns over time, not just within a single conversation.
 
 ## Architecture
 
@@ -89,8 +79,6 @@ full:       Connected + GPU workers + research loop
 |-----------|-------------|
 | **Go MCP Server** | 169 tools (118 base + 26 Hub + 25 conditional), Registry-based |
 | **Knowledge** | FTS5 + pgvector (OpenAI 1536d) + 3-way RRF + auto-distill |
-| **Drive** | TUS resumable upload, Range-based download, dataset sync |
-| **Relay** | WebSocket NAT traversal, TCP keepalive, WSL2-aware ping |
 | **Hub** | Distributed job queue, DAG engine, artifact store, cron |
 | **Session** | Auto-summarize via LLM, context injection on startup |
 | **Research Loop** | Autonomous ML experiment cycle (plan→train→evaluate→iterate) |
@@ -98,7 +86,9 @@ full:       Connected + GPU workers + research loop
 
 ## Learn More
 
-[Installation](docs/getting-started/설치-가이드.md) | [Quick Start](docs/getting-started/빠른-시작.md) | [Architecture](docs/ARCHITECTURE.md) | [Worker Setup](docs/gpu-worker/README.md) | [Relay Guide](docs/guide/relay.md)
+[Documentation](https://cq.pilab.kr) | [Installation](https://cq.pilab.kr/guide/install) | [Quick Start](https://cq.pilab.kr/guide/quickstart) | [Architecture](https://cq.pilab.kr/reference/architecture)
+
+📖 **Full documentation at [cq.pilab.kr](https://cq.pilab.kr)**
 
 ## Development
 
