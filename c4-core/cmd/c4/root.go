@@ -323,15 +323,17 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 	nextScreen := startScreen
 	for nextScreen != screenQuit {
 		prev := nextScreen
+
+		// Auth gate: every screen except login requires authentication.
+		if nextScreen != screenLogin && !isLoggedIn() {
+			nextScreen = screenLogin
+			continue
+		}
+
 		switch nextScreen {
 		case screenLogin:
 			nextScreen = runLoginNav()
 		case screenSessions:
-			// Re-check auth on return to sessions (handles mid-session expiry).
-			if !isLoggedIn() {
-				nextScreen = screenLogin
-				continue
-			}
 			nextScreen = runSessionsNav()
 		case screenConfig:
 			nextScreen = runConfigNav()
