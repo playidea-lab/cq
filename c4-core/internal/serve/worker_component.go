@@ -63,6 +63,7 @@ func (w *WorkerComponent) Start(ctx context.Context) error {
 	// must be a separate key. "hostname" is also passed as a key.
 	caps := map[string]any{
 		"hostname": w.hostname,
+		"embedded": true, // mark as cq-serve embedded worker
 	}
 	for _, tag := range w.tags {
 		caps[tag] = true

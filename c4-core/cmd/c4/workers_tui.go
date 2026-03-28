@@ -32,9 +32,13 @@ var (
 	styleLastSeen      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 	// GPU bar colors
-	styleGPUBarHigh   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))  // green >= 60%
-	styleGPUBarMedium = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))  // yellow 30-59%
+	styleGPUBarHigh   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))   // green >= 60%
+	styleGPUBarMedium = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))   // yellow 30-59%
 	styleGPUBarLow    = lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // dim < 30%
+
+	// Worker type badge styles
+	styleTypeBadgeLocal  = lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Padding(0, 1)
+	styleTypeBadgeRemote = lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("245")).Padding(0, 1)
 )
 
 const (
@@ -555,6 +559,17 @@ func statusSymbol(status string) string {
 	}
 }
 
+// isEmbeddedWorker returns true if the worker has the "embedded" capability,
+// meaning it was registered by a local cq-serve instance.
+func isEmbeddedWorker(w hub.Worker) bool {
+	for _, cap := range w.Capabilities {
+		if cap == "embedded" {
+			return true
+		}
+	}
+	return false
+}
+
 // relaySymbol returns a relay connection symbol.
 func relaySymbol(connected bool) string {
 	if connected {
@@ -846,6 +861,14 @@ func (m *workersTUIModel) renderWorkerRow(sb *strings.Builder, w hub.Worker, isS
 		}
 		vramPadded := lsPadToWidth(vramStr, vramColW)
 
+		// Type badge (local = embedded, remote = standalone)
+		typeBadge := ""
+		if isEmbeddedWorker(w) {
+			typeBadge = styleTypeBadgeLocal.Render("local") + " "
+		} else {
+			typeBadge = styleTypeBadgeRemote.Render("remote") + " "
+		}
+
 		// Relay indicator
 		relaySym := ""
 		if m.relayURL != "" {
@@ -869,6 +892,7 @@ func (m *workersTUIModel) renderWorkerRow(sb *strings.Builder, w hub.Worker, isS
 			sb.WriteString(relaySym)
 			sb.WriteString(styleSelected.Render(hostStr + " "))
 			sb.WriteString(badge)
+			sb.WriteString(typeBadge)
 			sb.WriteString(styleSelected.Render(" " + gpuModelPadded + " "))
 			sb.WriteString(gpuBar)
 			sb.WriteString(styleSelected.Render(" " + vramPadded + " "))
@@ -881,6 +905,7 @@ func (m *workersTUIModel) renderWorkerRow(sb *strings.Builder, w hub.Worker, isS
 			sb.WriteString(" ")
 			sb.WriteString(badge)
 			sb.WriteString(" ")
+			sb.WriteString(typeBadge)
 			sb.WriteString(styleSummary.Render(gpuModelPadded))
 			sb.WriteString(" ")
 			sb.WriteString(gpuBar)
