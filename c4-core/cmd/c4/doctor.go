@@ -83,6 +83,7 @@ var doctorChecks = []doctorCheckEntry{
 	{Name: "session store", Fn: checkSessionStore},
 	{Name: "telegram", Fn: checkTelegram},
 	{Name: "migrations", Fn: checkMigrations},
+	{Name: "serve health", Fn: checkServeHealth, IsNetwork: false},
 }
 
 var doctorCmd = &cobra.Command{
@@ -1627,3 +1628,56 @@ func checkMigrations() checkResult {
 		Message: fmt.Sprintf("%d migration files, latest: %s", len(files), latest),
 	}
 }
+
+func checkServeHealth() checkResult {
+	components, err := fetchServeHealth(4140)
+	if err != nil {
+		return checkResult{
+			Name:    "serve health",
+			Status:  checkInfo,
+			Message: "serve not running",
+		}
+	}
+
+	ok, degraded, errCount, skipped := 0, 0, 0, 0
+	var details []string
+	for name, h := range components {
+		switch h.Status {
+		case "ok":
+			ok++
+		case "degraded":
+			degraded++
+		case "error":
+			errCount++
+		case "skipped":
+			skipped++
+		}
+		line := fmt.Sprintf("%s: %s", name, h.Status)
+		if h.Detail != "" {
+			line += " (" + h.Detail + ")"
+		}
+		details = append(details, line)
+	}
+	sort.Strings(details)
+
+	total := ok + degraded + errCount + skipped
+	if degraded == 0 && errCount == 0 {
+		return checkResult{
+			Name:    "serve health",
+			Status:  checkOK,
+			Message: fmt.Sprintf("%d components healthy (ok=%d, skipped=%d)", total, ok, skipped),
+		}
+	}
+
+	status := checkWarn
+	if errCount > 0 {
+		status = checkFail
+	}
+	return checkResult{
+		Name:    "serve health",
+		Status:  status,
+		Message: fmt.Sprintf("%d components: ok=%d, degraded=%d, error=%d", total, ok, degraded, errCount),
+		Fix:     strings.Join(details, "\n"),
+	}
+}
+
