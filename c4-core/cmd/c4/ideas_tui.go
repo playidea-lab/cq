@@ -289,7 +289,11 @@ func (m ideasTUIModel) View() string {
 	// Title bar
 	sb.WriteString(styleTitle.Render(" cq ideas "))
 	sb.WriteString(" ")
-	sb.WriteString(styleCount.Render(fmt.Sprintf("%d ideas", len(m.ideas))))
+	if m.query != "" {
+		sb.WriteString(styleCount.Render(fmt.Sprintf("%d / %d ideas", len(m.filtered), len(m.ideas))))
+	} else {
+		sb.WriteString(styleCount.Render(fmt.Sprintf("%d ideas", len(m.ideas))))
+	}
 	sb.WriteString("\n\n")
 
 	// Search bar
@@ -311,7 +315,34 @@ func (m ideasTUIModel) View() string {
 		titleColW = 10
 	}
 
-	for i, row := range m.filtered {
+	// Visible window: keep cursor in view
+	// Reserve lines: title(2) + search(2) + helpbar(2) + margins(2) = 8
+	maxVisible := m.height - 8
+	if maxVisible < 5 {
+		maxVisible = 5
+	}
+	viewStart := 0
+	viewEnd := len(m.filtered)
+	if len(m.filtered) > maxVisible {
+		// Center cursor in viewport
+		viewStart = m.cursor - maxVisible/2
+		if viewStart < 0 {
+			viewStart = 0
+		}
+		viewEnd = viewStart + maxVisible
+		if viewEnd > len(m.filtered) {
+			viewEnd = len(m.filtered)
+			viewStart = viewEnd - maxVisible
+		}
+	}
+
+	if viewStart > 0 {
+		sb.WriteString(styleFaint.Render(fmt.Sprintf("  ▲ %d more", viewStart)))
+		sb.WriteString("\n")
+	}
+
+	for i := viewStart; i < viewEnd; i++ {
+		row := m.filtered[i]
 		isSelected := i == m.cursor
 
 		cursor := "   "
@@ -410,6 +441,11 @@ func (m ideasTUIModel) View() string {
 				sb.WriteString("\n")
 			}
 		}
+	}
+
+	if viewEnd < len(m.filtered) {
+		sb.WriteString(styleFaint.Render(fmt.Sprintf("  ▼ %d more", len(m.filtered)-viewEnd)))
+		sb.WriteString("\n")
 	}
 
 	if len(m.filtered) == 0 {
