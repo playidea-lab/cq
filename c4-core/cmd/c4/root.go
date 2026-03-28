@@ -310,6 +310,8 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 		return err
 	case "doctor":
 		return runDoctorTUI()
+	case "ideas":
+		return runIdeasTUI()
 	case "config":
 		p2 := tea.NewProgram(newSelectorModel(), tea.WithAltScreen())
 		m2, err := p2.Run()

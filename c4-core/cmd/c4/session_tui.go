@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,10 +19,10 @@ import (
 )
 
 // statusOrder defines the display order for session groups.
-var statusOrder = []string{"running", "in-progress", "planned", "idea", "active", "done"}
+var statusOrder = []string{"running", "active", "planned", "idea", "done"}
 
 // filterCycle is the order of Tab-cycling for status filters.
-var filterCycle = []string{"all", "running", "in-progress", "planned", "idea", "active", "done"}
+var filterCycle = []string{"all", "running", "active", "planned", "idea", "done"}
 
 // tuiRow represents a single row in the TUI list.
 type tuiRow struct {
@@ -34,7 +36,7 @@ type tuiRow struct {
 	date      string
 	rowStatus string
 	// file paths for detail display
-	ideaPath   string
+	ideaPaths  []string
 	specPath   string
 	designPath string
 }
@@ -71,6 +73,12 @@ type sessionTUIModel struct {
 	historyItems  []string // user questions (first line each)
 	historyCursor int
 	historyScroll int
+
+	// External AI tool processes (not managed by CQ)
+	externalTools []aiToolProcess
+
+	// Remote sessions from Supabase (fetched once)
+	remoteFetched bool
 }
 
 // detailPaths returns the file paths for the currently selected session.
@@ -81,9 +89,7 @@ func (m *sessionTUIModel) detailPaths() []string {
 	}
 	row := m.rows[idx]
 	var paths []string
-	if row.ideaPath != "" {
-		paths = append(paths, row.ideaPath)
-	}
+	paths = append(paths, row.ideaPaths...)
 	if row.specPath != "" {
 		paths = append(paths, row.specPath)
 	}
@@ -101,6 +107,7 @@ func newSessionTUIModel() sessionTUIModel {
 	recalcStatuses(m.sessions)
 	m.searchIndex = buildSearchIndex(m.sessions)
 	m.rows = buildRows(m.sessions, m.searchIndex, m.query, m.statusFilter)
+	m.externalTools = detectRunningAITools()
 	return m
 }
 
@@ -118,13 +125,15 @@ func buildSearchIndex(sessions map[string]namedSessionEntry) map[string]string {
 			strings.ToLower(entry.Memo),
 		}
 
-		ideaSlug := entry.Idea
-		if ideaSlug == "" {
-			ideaSlug, _ = matchIdeaByTag(tag)
+		var ideaSlugs []string
+		if entry.Idea != "" {
+			ideaSlugs = []string{entry.Idea}
+		} else {
+			ideaSlugs = matchIdeasByTag(tag)
 		}
-		if ideaSlug != "" {
-			parts = append(parts, strings.ToLower(ideaSlug))
-			ideaContent, err := os.ReadFile(filepath.Join(ideasDir, ideaSlug+".md"))
+		for _, slug := range ideaSlugs {
+			parts = append(parts, strings.ToLower(slug))
+			ideaContent, err := os.ReadFile(filepath.Join(ideasDir, slug+".md"))
 			if err == nil {
 				parts = append(parts, strings.ToLower(string(ideaContent)))
 			}
@@ -153,21 +162,30 @@ func buildSearchIndex(sessions map[string]namedSessionEntry) map[string]string {
 }
 
 // resolveFilePaths finds idea/spec/design file paths for a session entry.
-func resolveFilePaths(tag string, entry namedSessionEntry) (ideaPath, specPath, designPath string) {
-	ideaSlug := entry.Idea
-	if ideaSlug == "" {
-		ideaSlug, _ = matchIdeaByTag(tag)
+func resolveFilePaths(tag string, entry namedSessionEntry) (ideaPaths []string, specPath, designPath string) {
+	var slugs []string
+	if entry.Idea != "" {
+		slugs = []string{entry.Idea}
+	} else {
+		slugs = matchIdeasByTag(tag)
 	}
-	if ideaSlug != "" {
-		p := filepath.Join(".c4", "ideas", ideaSlug+".md")
+	for _, slug := range slugs {
+		p := filepath.Join(".c4", "ideas", slug+".md")
 		if _, err := os.Stat(filepath.Join(projectDir, p)); err == nil {
-			ideaPath = p
+			ideaPaths = append(ideaPaths, p)
 		}
-		p = filepath.Join("docs", "specs", ideaSlug+".md")
+	}
+	// Use the first matched slug for spec/design lookup
+	primarySlug := entry.Idea
+	if primarySlug == "" && len(slugs) > 0 {
+		primarySlug = slugs[0]
+	}
+	if primarySlug != "" {
+		p := filepath.Join("docs", "specs", primarySlug+".md")
 		if _, err := os.Stat(filepath.Join(projectDir, p)); err == nil {
 			specPath = p
 		}
-		p = filepath.Join(".c4", "designs", ideaSlug+".md")
+		p = filepath.Join(".c4", "designs", primarySlug+".md")
 		if _, err := os.Stat(filepath.Join(projectDir, p)); err == nil {
 			designPath = p
 		}
@@ -225,13 +243,13 @@ func buildRows(sessions map[string]namedSessionEntry, idx map[string]string, que
 				summary = entry.Idea
 			}
 			// Don't truncate here — View truncates dynamically based on terminal width
-			ideaPath, specPath, designPath := resolveFilePaths(tag, entry)
+			ideaPaths, specPath, designPath := resolveFilePaths(tag, entry)
 			rows = append(rows, tuiRow{
 				tag:        tag,
 				summary:    summary,
 				date:       dateStr,
 				rowStatus:  status,
-				ideaPath:   ideaPath,
+				ideaPaths:  ideaPaths,
 				specPath:   specPath,
 				designPath: designPath,
 			})
@@ -250,8 +268,94 @@ func (m *sessionTUIModel) nonHeaderIndices() []int {
 	return out
 }
 
+// sessionTickMsg triggers periodic refresh of session data.
+type sessionTickMsg struct{}
+
+func sessionTickCmd() tea.Cmd {
+	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+		return sessionTickMsg{}
+	})
+}
+
+// remoteSessionsMsg carries fetched remote sessions from Supabase.
+type remoteSessionsMsg struct {
+	sessions []remoteSession
+}
+
+type remoteSession struct {
+	ID        string  `json:"id"`
+	Tool      string  `json:"tool"`
+	Title     *string `json:"title"`
+	Summary   *string `json:"summary"`
+	Status    string  `json:"status"`
+	CreatedAt string  `json:"created_at"`
+}
+
+// fetchRemoteSessions queries Supabase ai_sessions table.
+func fetchRemoteSessions() tea.Msg {
+	session, err := readNotifySession()
+	if err != nil {
+		return remoteSessionsMsg{}
+	}
+	sbURL := readCloudURL(projectDir)
+	if sbURL == "" {
+		return remoteSessionsMsg{}
+	}
+	anonKey := readCloudAnonKey(projectDir)
+	reqURL := sbURL + "/rest/v1/ai_sessions?select=id,tool,title,summary,status,created_at&order=created_at.desc&limit=50"
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return remoteSessionsMsg{}
+	}
+	req.Header.Set("Authorization", "Bearer "+session.AccessToken)
+	req.Header.Set("apikey", anonKey)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return remoteSessionsMsg{}
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil || resp.StatusCode != 200 {
+		return remoteSessionsMsg{}
+	}
+	var remoteSessions []remoteSession
+	if err := json.Unmarshal(respBody, &remoteSessions); err != nil {
+		return remoteSessionsMsg{}
+	}
+	return remoteSessionsMsg{sessions: remoteSessions}
+}
+
+// mergeRemoteSessions adds remote sessions to the local map with a tool prefix tag.
+func mergeRemoteSessions(local map[string]namedSessionEntry, remote []remoteSession) {
+	for _, rs := range remote {
+		if rs.Tool == "claude" {
+			continue
+		}
+		tag := fmt.Sprintf("%s/%s", rs.Tool, rs.ID[:8])
+		if _, exists := local[tag]; exists {
+			continue
+		}
+		summary := ""
+		if rs.Summary != nil {
+			summary = *rs.Summary
+		}
+		if summary == "" && rs.Title != nil {
+			summary = *rs.Title
+		}
+		local[tag] = namedSessionEntry{
+			UUID:    rs.ID,
+			Tool:    rs.Tool,
+			Status:  rs.Status,
+			Summary: summary,
+			Updated: rs.CreatedAt,
+		}
+	}
+}
+
 func (m sessionTUIModel) Init() tea.Cmd {
-	return nil
+	return tea.Batch(sessionTickCmd(), fetchRemoteSessions)
 }
 
 func (m *sessionTUIModel) isSearching() bool {
@@ -259,9 +363,25 @@ func (m *sessionTUIModel) isSearching() bool {
 }
 
 // loadHistory reads user questions from the JSONL transcript of the given session.
-func loadHistory(uuid string) []string {
-	projDir, err := claudeProjectDir(projectDir)
-	if err != nil {
+// It tries the session's own dir first, then falls back to the current projectDir.
+func loadHistory(uuid string, sessionDir string) []string {
+	// Try session's dir first, then current projectDir
+	dirs := []string{sessionDir, projectDir}
+	var projDir string
+	for _, d := range dirs {
+		if d == "" {
+			continue
+		}
+		pd, err := claudeProjectDir(d)
+		if err != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(pd, uuid+".jsonl")); err == nil {
+			projDir = pd
+			break
+		}
+	}
+	if projDir == "" {
 		return nil
 	}
 	path := filepath.Join(projDir, uuid+".jsonl")
@@ -381,6 +501,32 @@ func openFileCmd(path string) tea.Cmd {
 
 func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case remoteSessionsMsg:
+		if len(msg.sessions) > 0 {
+			mergeRemoteSessions(m.sessions, msg.sessions)
+			m.searchIndex = buildSearchIndex(m.sessions)
+			m.rebuildRows()
+			m.remoteFetched = true
+		}
+		return m, nil
+	case sessionTickMsg:
+		sessions, err := loadNamedSessions()
+		if err == nil {
+			recalcStatuses(sessions)
+			// Re-merge remote sessions if previously fetched
+			if m.remoteFetched {
+				for tag, entry := range m.sessions {
+					if entry.Dir == "" && entry.Tool != "" && entry.Tool != "claude" {
+						sessions[tag] = entry
+					}
+				}
+			}
+			m.sessions = sessions
+			m.searchIndex = buildSearchIndex(sessions)
+			m.rebuildRows()
+		}
+		m.externalTools = detectRunningAITools()
+		return m, sessionTickCmd()
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -526,7 +672,7 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if idx >= 0 {
 					tag := m.rows[idx].tag
 					entry := m.sessions[tag]
-					items := loadHistory(entry.UUID)
+					items := loadHistory(entry.UUID, entry.Dir)
 					if len(items) > 0 {
 						m.historyMode = true
 						m.historyItems = items
@@ -697,8 +843,7 @@ var (
 		"running":     lipgloss.NewStyle().Background(lipgloss.Color("2")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
 		"idea":        lipgloss.NewStyle().Background(lipgloss.Color("3")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
 		"planned":     lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
-		"in-progress": lipgloss.NewStyle().Background(lipgloss.Color("6")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
-		"active":      lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("15")).Padding(0, 1),
+		"active":      lipgloss.NewStyle().Background(lipgloss.Color("6")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
 		"done":        lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("245")).Padding(0, 1),
 	}
 )
@@ -712,7 +857,7 @@ func groupHeaderStyle(status string) lipgloss.Style {
 		col = lipgloss.Color("3")
 	case "planned":
 		col = lipgloss.Color("4")
-	case "in-progress":
+	case "active":
 		col = lipgloss.Color("6")
 	case "done":
 		col = lipgloss.Color("8")
@@ -858,6 +1003,27 @@ func (m sessionTUIModel) View() string {
 	sb.WriteString(styleTitle.Render(" cq sessions "))
 	sb.WriteString(" ")
 	sb.WriteString(styleCount.Render(fmt.Sprintf("%d sessions", total)))
+
+	// External AI tool indicator
+	if len(m.externalTools) > 0 {
+		toolCounts := make(map[string]int)
+		for _, t := range m.externalTools {
+			toolCounts[t.tool]++
+		}
+		var parts []string
+		for _, tool := range []string{"claude", "gemini", "cursor", "codex"} {
+			if c, ok := toolCounts[tool]; ok {
+				if c == 1 {
+					parts = append(parts, tool)
+				} else {
+					parts = append(parts, fmt.Sprintf("%s(%d)", tool, c))
+				}
+			}
+		}
+		runningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
+		sb.WriteString("  ")
+		sb.WriteString(runningStyle.Render("● " + strings.Join(parts, " ")))
+	}
 	sb.WriteString("\n\n")
 
 	// Search bar
@@ -922,7 +1088,7 @@ func (m sessionTUIModel) View() string {
 		if !ok {
 			bStyle = statusBadgeStyles["active"]
 		}
-		// Center status text in 11-char field (matches "in-progress" length).
+		// Center status text in a fixed-width badge field.
 		statusText := row.rowStatus
 		padTotal := 11 - len(statusText)
 		if padTotal > 0 {
@@ -940,9 +1106,9 @@ func (m sessionTUIModel) View() string {
 
 		// Doc markers: small dots indicating which documents exist
 		var markers string
-		if row.ideaPath != "" || row.specPath != "" || row.designPath != "" {
+		if len(row.ideaPaths) > 0 || row.specPath != "" || row.designPath != "" {
 			m1, m2, m3 := "·", "·", "·"
-			if row.ideaPath != "" {
+			if len(row.ideaPaths) > 0 {
 				m1 = "●"
 			}
 			if row.specPath != "" {
@@ -1034,10 +1200,11 @@ func (m sessionTUIModel) View() string {
 				pathIdx++
 			}
 			_ = paths
-			hasFiles := row.ideaPath != "" || row.specPath != "" || row.designPath != ""
+			hasFiles := len(row.ideaPaths) > 0 || row.specPath != "" || row.designPath != ""
 			if hasFiles {
-				if row.ideaPath != "" {
-					renderPath("💡", row.ideaPath, row.specPath == "" && row.designPath == "")
+				for ii, ip := range row.ideaPaths {
+					isLast := ii == len(row.ideaPaths)-1 && row.specPath == "" && row.designPath == ""
+					renderPath("💡", ip, isLast)
 				}
 				if row.specPath != "" {
 					renderPath("📄", row.specPath, row.designPath == "")

@@ -25,6 +25,7 @@ type launchToolMsg struct{ tool string }
 type changeConfigMsg struct{}
 type openSessionsMsg struct{}
 type openDoctorMsg struct{}
+type openIdeasMsg struct{}
 
 // --- Dashboard TUI Model ---
 
@@ -322,6 +323,9 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openDoctorMsg:
 		m.action = "doctor"
 		return m, tea.Quit
+	case openIdeasMsg:
+		m.action = "ideas"
+		return m, tea.Quit
 	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -354,6 +358,8 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return openSessionsMsg{} }
 			case "d":
 				return m, func() tea.Msg { return openDoctorMsg{} }
+			case "i":
+				return m, func() tea.Msg { return openIdeasMsg{} }
 			}
 		}
 	case tea.WindowSizeMsg:
@@ -504,6 +510,8 @@ func (m dashboardModel) View() string {
 	helpBar.WriteString(helpEntry("↑↓", "스크롤"))
 	helpBar.WriteString("  ")
 	helpBar.WriteString(helpEntry("s", "상태"))
+	helpBar.WriteString("  ")
+	helpBar.WriteString(helpEntry("i", "ideas"))
 	helpBar.WriteString("  ")
 	helpBar.WriteString(helpEntry("t", "sessions"))
 	helpBar.WriteString("  ")
