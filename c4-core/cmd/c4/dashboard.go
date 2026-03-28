@@ -53,6 +53,8 @@ type dashboardModel struct {
 	version     string
 	rows        []dashboardRow
 	components  []componentRow  // service health details
+	cmdRows     []cmdRow        // command reference rows
+	cmdScroll   int             // scroll offset for commands section
 	changelog   *toolChangelog  // tool changelog (nil if unavailable)
 	whatsNew    string          // "New in vX.Y.Z: ..." or ""
 	defaultTool string
@@ -63,23 +65,73 @@ type dashboardModel struct {
 	height int
 }
 
-// cqCommand is a command entry for the dashboard reference.
-type cqCommand struct {
-	name string
-	desc string
+// cmdRow is a single row in the commands reference (header or command).
+type cmdRow struct {
+	isHeader bool
+	category string // header label
+	name     string
+	desc     string
 }
 
-// cqCommands lists key CQ commands shown on the dashboard.
-// Update this list when adding/removing commands.
-var cqCommands = []cqCommand{
-	{"cq claude", "Claude Code 시작"},
-	{"cq cursor", "Cursor 시작"},
-	{"cq -t <name>", "이름 붙인 세션 시작"},
-	{"cq sessions", "세션 목록 관리"},
-	{"cq status", "서비스 + 프로젝트 상태"},
-	{"cq doctor", "설치 환경 진단"},
-	{"cq update", "CQ 최신 버전 업데이트"},
-	{"cq stop", "CQ 서비스 중지"},
+// buildCommandRows returns the full command reference with category headers.
+func buildCommandRows() []cmdRow {
+	return []cmdRow{
+		// CLI Commands
+		{isHeader: true, category: "CLI"},
+		{name: "cq claude", desc: "Claude Code 시작"},
+		{name: "cq cursor", desc: "Cursor 시작"},
+		{name: "cq codex", desc: "Codex CLI 시작"},
+		{name: "cq gemini", desc: "Gemini CLI 시작"},
+		{name: "cq -t <name>", desc: "이름 붙인 세션 시작/이어가기"},
+		{name: "cq sessions", desc: "세션 목록 관리"},
+		{name: "cq status", desc: "서비스 + 프로젝트 상태"},
+		{name: "cq doctor", desc: "설치 환경 진단"},
+		{name: "cq update", desc: "CQ 최신 버전 업데이트"},
+		{name: "cq stop", desc: "CQ 서비스 중지"},
+
+		// Slash Commands (Skills)
+		{isHeader: true, category: "Slash Commands"},
+		{name: "/pi", desc: "아이디어 발산·수렴 (plan 이전 단계)"},
+		{name: "/plan", desc: "구조화된 구현 계획 생성"},
+		{name: "/run", desc: "워커 스폰, 태스크 병렬 실행"},
+		{name: "/finish", desc: "품질 수렴 + 빌드 + 커밋"},
+		{name: "/quick", desc: "태스크 1개 빠른 실행"},
+		{name: "/status", desc: "프로젝트 상태 + 태스크 그래프"},
+		{name: "/review", desc: "6축 코드 리뷰"},
+		{name: "/help", desc: "스킬/에이전트/도구 레퍼런스"},
+		{name: "/attach", desc: "현재 세션에 이름 붙이기"},
+		{name: "/reboot", desc: "세션 재시작"},
+		{name: "/release", desc: "릴리스 노트 + 태그 생성"},
+		{name: "/simplify", desc: "변경 코드 품질·효율 점검"},
+
+		// MCP Tools (Core)
+		{isHeader: true, category: "MCP Tools — 태스크"},
+		{name: "cq_status", desc: "프로젝트 상태 조회"},
+		{name: "cq_add_todo", desc: "태스크 추가"},
+		{name: "cq_get_task", desc: "워커에 태스크 할당"},
+		{name: "cq_submit", desc: "태스크 완료 제출"},
+		{name: "cq_claim / cq_report", desc: "Direct 모드 태스크 수행"},
+		{name: "cq_task_list", desc: "태스크 목록 필터링"},
+		{name: "cq_start", desc: "EXECUTE 상태로 전환"},
+
+		// MCP Tools (Knowledge)
+		{isHeader: true, category: "MCP Tools — 지식"},
+		{name: "cq_knowledge_search", desc: "지식 베이스 검색"},
+		{name: "cq_knowledge_record", desc: "지식 문서 저장"},
+		{name: "cq_save_spec", desc: "EARS 스펙 저장"},
+		{name: "cq_save_design", desc: "설계 문서 저장"},
+		{name: "cq_lighthouse", desc: "API 계약 관리 (TDD)"},
+
+		// MCP Tools (Infra)
+		{isHeader: true, category: "MCP Tools — 인프라"},
+		{name: "cq_read_file", desc: "파일 읽기"},
+		{name: "cq_find_file", desc: "파일 검색"},
+		{name: "cq_search_for_pattern", desc: "코드 패턴 검색"},
+		{name: "cq_run_validation", desc: "lint/test 실행"},
+		{name: "cq_notify", desc: "알림 전송 (텔레그램 등)"},
+		{name: "cq_relay_call", desc: "원격 서버 MCP 호출"},
+		{name: "cq_llm_call", desc: "LLM Gateway 호출"},
+	}
 }
 
 // cqLogo is the dot-art CQ mark.
@@ -202,6 +254,9 @@ func newDashboardModel() dashboardModel {
 	// Tool changelog (cached, fetched on version change)
 	m.changelog = loadToolChangelog(m.defaultTool)
 
+	// Command reference
+	m.cmdRows = buildCommandRows()
+
 	return m
 }
 
@@ -225,6 +280,30 @@ func readProjectState() (name, phase string) {
 		phase = "idle"
 	}
 	return
+}
+
+// cmdVisibleLines returns how many command rows fit in the viewport.
+func (m dashboardModel) cmdVisibleLines() int {
+	// Estimate: total height minus logo(5) + gap(1) + version(1) + gap(1)
+	// + info rows + changelog(~7) + cmd header(1) + help bar(2) + margins
+	used := 10 + len(m.rows)
+	if m.showDetail {
+		used += len(m.components)
+	}
+	if m.changelog != nil && len(m.changelog.Items) > 0 {
+		used += 7
+	}
+	if m.whatsNew != "" {
+		used += 2
+	}
+	visible := m.height - used
+	if visible < 5 {
+		visible = 5
+	}
+	if visible > len(m.cmdRows) {
+		visible = len(m.cmdRows)
+	}
+	return visible
 }
 
 func (m dashboardModel) Init() tea.Cmd {
@@ -253,6 +332,18 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEnter:
 			return m, func() tea.Msg { return launchToolMsg{tool: m.defaultTool} }
+		case tea.KeyUp:
+			if m.cmdScroll > 0 {
+				m.cmdScroll--
+			}
+		case tea.KeyDown:
+			maxScroll := len(m.cmdRows) - m.cmdVisibleLines()
+			if maxScroll < 0 {
+				maxScroll = 0
+			}
+			if m.cmdScroll < maxScroll {
+				m.cmdScroll++
+			}
 		case tea.KeyRunes:
 			switch string(msg.Runes) {
 			case "q":
@@ -384,7 +475,11 @@ func (m dashboardModel) View() string {
 		sb.WriteString(styleFaint.Render(strings.Repeat("─", cmdRemaining)))
 	}
 	sb.WriteString("\n")
-	for _, cmd := range cqCommands {
+	for _, cmd := range m.cmdRows {
+		if cmd.isHeader {
+			sb.WriteString(styleFaint.Render(fmt.Sprintf("  [%s]\n", cmd.category)))
+			continue
+		}
 		sb.WriteString(styleHelpKey.Render(fmt.Sprintf("  %-18s", cmd.name)))
 		sb.WriteString(styleFaint.Render(cmd.desc))
 		sb.WriteString("\n")

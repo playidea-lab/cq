@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -78,6 +79,10 @@ var doctorChecks = []doctorCheckEntry{
 	{Name: "LLM gateway", Fn: checkLLMGateway},
 	{Name: "DB schema", Fn: checkDBSchema},
 	{Name: "permission reviewer", Fn: checkPermissionReviewer},
+	{Name: "config schema", Fn: checkConfigSchema},
+	{Name: "session store", Fn: checkSessionStore},
+	{Name: "telegram", Fn: checkTelegram},
+	{Name: "migrations", Fn: checkMigrations},
 }
 
 var doctorCmd = &cobra.Command{
@@ -1448,5 +1453,177 @@ func checkPermissionReviewer() checkResult {
 		Name:    "permission reviewer",
 		Status:  checkOK,
 		Message: fmt.Sprintf("model=%s, auto_approve=%s, %d allow patterns", model, autoApprove, patternCount),
+	}
+}
+
+// checkConfigSchema verifies that .c4/config.yaml has a project_id and counts known top-level sections.
+func checkConfigSchema() checkResult {
+	cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return checkResult{
+			Name:    "config schema",
+			Status:  checkOK,
+			Message: "skipped (no config.yaml)",
+		}
+	}
+	content := string(data)
+
+	// Find project_id at top level (not indented)
+	projectID := ""
+	for _, line := range strings.Split(content, "\n") {
+		if len(line) == 0 || line[0] == ' ' || line[0] == '\t' || line[0] == '#' {
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "project_id:") {
+			projectID = strings.TrimSpace(strings.TrimPrefix(trimmed, "project_id:"))
+			projectID = strings.Trim(projectID, `"'`)
+			break
+		}
+	}
+
+	knownSections := []string{"cloud", "llm_gateway", "permission_reviewer", "hub", "relay", "eventbus", "worker"}
+	sectionCount := 0
+	for _, sec := range knownSections {
+		// Check if top-level section key exists
+		for _, line := range strings.Split(content, "\n") {
+			if len(line) == 0 || line[0] == ' ' || line[0] == '\t' {
+				continue
+			}
+			trimmed := strings.TrimSpace(line)
+			if trimmed == sec+":" || strings.HasPrefix(trimmed, sec+":") {
+				sectionCount++
+				break
+			}
+		}
+	}
+
+	if projectID == "" {
+		return checkResult{
+			Name:    "config schema",
+			Status:  checkWarn,
+			Message: "project_id not set",
+			Fix:     "add project_id: <your-project-id> to .c4/config.yaml",
+		}
+	}
+	return checkResult{
+		Name:    "config schema",
+		Status:  checkOK,
+		Message: fmt.Sprintf("project_id=%s, %d sections configured", projectID, sectionCount),
+	}
+}
+
+// checkSessionStore verifies the named-sessions.json file integrity.
+func checkSessionStore() checkResult {
+	sessPath := expandTilde("~/.c4/named-sessions.json")
+	data, err := os.ReadFile(sessPath)
+	if os.IsNotExist(err) {
+		return checkResult{
+			Name:    "session store",
+			Status:  checkOK,
+			Message: "no sessions",
+		}
+	}
+	if err != nil {
+		return checkResult{
+			Name:    "session store",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("cannot read %s: %v", sessPath, err),
+		}
+	}
+	var sessions map[string]any
+	if err := json.Unmarshal(data, &sessions); err != nil {
+		return checkResult{
+			Name:    "session store",
+			Status:  checkWarn,
+			Message: "corrupt sessions file",
+			Fix:     fmt.Sprintf("rm %s", sessPath),
+		}
+	}
+	return checkResult{
+		Name:    "session store",
+		Status:  checkOK,
+		Message: fmt.Sprintf("%d named sessions", len(sessions)),
+	}
+}
+
+// checkTelegram verifies Telegram bot configuration and token availability.
+func checkTelegram() checkResult {
+	cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return checkResult{
+			Name:    "telegram",
+			Status:  checkOK,
+			Message: "not configured",
+		}
+	}
+
+	// Check for top-level telegram: section (key at column 0)
+	found := false
+	for _, line := range strings.Split(string(data), "\n") {
+		if len(line) == 0 || line[0] == ' ' || line[0] == '\t' || line[0] == '#' {
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "telegram:" || strings.HasPrefix(trimmed, "telegram:") {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return checkResult{
+			Name:    "telegram",
+			Status:  checkOK,
+			Message: "not configured",
+		}
+	}
+
+	if os.Getenv("TELEGRAM_BOT_TOKEN") != "" {
+		return checkResult{
+			Name:    "telegram",
+			Status:  checkOK,
+			Message: "configured, token set",
+		}
+	}
+	return checkResult{
+		Name:    "telegram",
+		Status:  checkWarn,
+		Message: "configured but TELEGRAM_BOT_TOKEN not set",
+		Fix:     "export TELEGRAM_BOT_TOKEN=<your-bot-token>",
+	}
+}
+
+// checkMigrations counts SQL migration files in supabase/migrations/.
+func checkMigrations() checkResult {
+	candidates := []string{
+		filepath.Join(projectDir, "supabase", "migrations", "*.sql"),
+		filepath.Join(projectDir, "..", "supabase", "migrations", "*.sql"),
+	}
+
+	var files []string
+	for _, pattern := range candidates {
+		matches, err := filepath.Glob(pattern)
+		if err == nil {
+			files = append(files, matches...)
+		}
+	}
+
+	if len(files) == 0 {
+		return checkResult{
+			Name:    "migrations",
+			Status:  checkOK,
+			Message: "no local migrations",
+		}
+	}
+
+	sort.Strings(files)
+	latest := filepath.Base(files[len(files)-1])
+	return checkResult{
+		Name:    "migrations",
+		Status:  checkOK,
+		Message: fmt.Sprintf("%d migration files, latest: %s", len(files), latest),
 	}
 }
