@@ -167,8 +167,10 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.checks[idx].loading = true
 					return m, tea.Batch(runFixCmd(idx, m.checks[idx]), tickCmd())
 				}
-			default:
+			case "n", "N", "esc":
 				m.confirmFix = false
+			default:
+				// Ignore other keys (Enter, arrows, etc.) — stay in confirm mode
 			}
 			return m, nil
 		}
