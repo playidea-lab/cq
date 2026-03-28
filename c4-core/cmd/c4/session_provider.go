@@ -224,11 +224,18 @@ func scanGeminiSessions() map[string]namedSessionEntry {
 				continue
 			}
 			tag := fmt.Sprintf("gemini/%s", meta.sessionID[:8])
+			// Check file mod time — recent sessions are likely active
+			status := "done"
+			if info, err := cf.Info(); err == nil {
+				if time.Since(info.ModTime()) < 10*time.Minute {
+					status = "active"
+				}
+			}
 			result[tag] = namedSessionEntry{
 				UUID:    meta.sessionID,
 				Dir:     projDir,
 				Tool:    "gemini",
-				Status:  "done",
+				Status:  status,
 				Summary: meta.firstMessage,
 				Updated: meta.lastUpdated,
 			}
@@ -496,11 +503,17 @@ func scanCodexSessions() map[string]namedSessionEntry {
 			summary = meta.firstMessage
 		}
 		tag := fmt.Sprintf("codex/%s", meta.id[:8])
+		status := "done"
+		if info, err := e.Info(); err == nil {
+			if time.Since(info.ModTime()) < 10*time.Minute {
+				status = "active"
+			}
+		}
 		result[tag] = namedSessionEntry{
 			UUID:    meta.id,
 			Dir:     meta.cwd,
 			Tool:    "codex",
-			Status:  "done",
+			Status:  status,
 			Summary: summary,
 			Updated: meta.timestamp,
 		}
