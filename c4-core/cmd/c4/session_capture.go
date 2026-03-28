@@ -235,6 +235,33 @@ func captureSession(name string) {
 	fmt.Fprintf(os.Stderr, "cq: session '%s' → done\n", name)
 }
 
+// captureSessionLight captures minimal session state on normal exit (no /done).
+// Only updates status→done and timestamp; skips LLM summarization.
+func captureSessionLight(name string) {
+	sessions, err := loadNamedSessions()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq: captureSessionLight: load sessions: %v\n", err)
+		return
+	}
+	entry, ok := sessions[name]
+	if !ok {
+		return
+	}
+	entry.Status = "done"
+	entry.Updated = time.Now().Format(time.RFC3339)
+	sessions[name] = entry
+	if err := saveNamedSessions(sessions); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: captureSessionLight: save sessions: %v\n", err)
+	}
+	fmt.Fprintf(os.Stderr, "cq: session '%s' → done (light)\n", name)
+}
+
+// captureSessionFull captures full session state on /done exit.
+// Runs LLM summarization, knowledge store, and persona learning (same as captureSession).
+func captureSessionFull(name string) {
+	captureSession(name)
+}
+
 // transcriptToJSONL converts a transcript to JSONL format for LLM processing.
 // Returns (path, isTempFile). For native JSONL, returns the original path with isTmp=false.
 func transcriptToJSONL(transcriptPath, tool string) (string, bool) {

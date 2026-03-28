@@ -382,7 +382,14 @@ func launchToolNamed(tool, projectDir, name string) error {
 		// Remove PID file and capture session status before exiting (best-effort).
 		removeSessionPID(name)
 		if !isUUID(name) {
-			captureSession(name)
+			// Check for .done marker: /done → full capture, /exit → light capture
+			doneMarker := filepath.Join(sessionPIDDir(), name+".done")
+			if _, err := os.Stat(doneMarker); err == nil {
+				os.Remove(doneMarker)
+				captureSessionFull(name)
+			} else {
+				captureSessionLight(name)
+			}
 		}
 		break
 	}
@@ -857,6 +864,14 @@ func init() {
 	sessionNameCmd.Flags().BoolVarP(&sessionNameForce, "force", "f", false, "overwrite existing session name without confirmation")
 	sessionNameCmd.Flags().StringVarP(&sessionNameMemo, "memo", "m", "", "short description of this session")
 	sessionNameCmd.Flags().StringVar(&sessionNameUUID, "uuid", "", "explicitly set session UUID (bypass auto-detection)")
+}
+
+// writeSessionDoneMarker creates a .done marker file for the given session name.
+// Called by the /done tool so the exit handler knows to run full capture.
+func writeSessionDoneMarker(name string) {
+	dir := sessionPIDDir()
+	_ = os.MkdirAll(dir, 0755)
+	_ = os.WriteFile(filepath.Join(dir, name+".done"), []byte("done"), 0600)
 }
 
 var sessionRmCmd = &cobra.Command{
