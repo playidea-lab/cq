@@ -1061,7 +1061,35 @@ func (m sessionTUIModel) View() string {
 	cursorRowIdx := m.cursorRowIndex()
 	nonHeaderCount := 0
 
-	for i, row := range m.rows {
+	// Viewport: keep cursor in view
+	maxVisible := m.height - 8 // title(2) + search(2) + helpbar(2) + margins(2)
+	if maxVisible < 10 {
+		maxVisible = 10
+	}
+	viewStart := 0
+	viewEnd := len(m.rows)
+	if len(m.rows) > maxVisible {
+		viewStart = cursorRowIdx - maxVisible/2
+		if viewStart < 0 {
+			viewStart = 0
+		}
+		viewEnd = viewStart + maxVisible
+		if viewEnd > len(m.rows) {
+			viewEnd = len(m.rows)
+			viewStart = viewEnd - maxVisible
+			if viewStart < 0 {
+				viewStart = 0
+			}
+		}
+	}
+
+	if viewStart > 0 {
+		sb.WriteString(styleFaint.Render(fmt.Sprintf("  ▲ %d more", viewStart)))
+		sb.WriteString("\n")
+	}
+
+	for i := viewStart; i < viewEnd; i++ {
+		row := m.rows[i]
 		if row.isHeader {
 			hs := groupHeaderStyle(row.status)
 			label := fmt.Sprintf(" ── %s (%d) ", row.status, row.count)
@@ -1212,6 +1240,11 @@ func (m sessionTUIModel) View() string {
 				}
 			}
 		}
+	}
+
+	if viewEnd < len(m.rows) {
+		sb.WriteString(styleFaint.Render(fmt.Sprintf("  ▼ %d more", len(m.rows)-viewEnd)))
+		sb.WriteString("\n")
 	}
 
 	if nonHeaderCount == 0 {
