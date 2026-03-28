@@ -52,19 +52,25 @@ func sessionCloseSummarizeLLM(jsonlPath, project, date string) *sessionCloseResu
 }
 
 // buildSessionClosePrompt creates the combined summarization + persona extraction prompt.
+// Extracts deep knowledge: why decisions were made, what failed, quantitative results.
 func buildSessionClosePrompt(project, date, conversation string) string {
 	return fmt.Sprintf(`다음은 %s 프로젝트의 %s AI 대화 세션입니다.
 
-아래 3가지를 추출해 주세요:
+아래 3가지를 추출해 주세요. **표면적 요약이 아니라 실질 지식을 추출하세요.**
 
 ## 1. 세션 요약
-이 세션에서 한 일과 결과를 3-5줄로 요약.
+이 세션에서 한 일과 결과. 반드시 포함:
+- **왜**: 이 작업을 한 동기/맥락
+- **결과**: 구체적 산출물 (수치, 파일명, 상태 변화)
+- **실패한 접근**: 시도했지만 안 된 것과 그 이유 (있다면)
+- **발견**: 예상과 달랐던 것, 새로 알게 된 사실
+5-10줄로 작성.
 
 ## 2. 결정사항
-이 세션에서 내린 기술적/설계적 결정사항을 JSON 배열로.
+기술적/설계적 결정을 "무엇을 + 왜" 형식으로. 대안이 있었다면 포함.
 결정사항이 없으면 빈 배열.
 ` + "```json" + `
-{"decisions": ["결정1", "결정2"]}
+{"decisions": ["X 대신 Y 선택: Z 때문에", "A 방식 채택: B 제약 조건으로 인해"]}
 ` + "```" + `
 
 ## 3. 선호

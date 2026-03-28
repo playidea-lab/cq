@@ -370,21 +370,28 @@ func truncateToTokens(text string, maxTokens int) string {
 }
 
 // buildSummarizationPrompt constructs the LLM prompt for session summarization.
+// Designed to extract actionable knowledge, not just surface-level summaries.
 func buildSummarizationPrompt(project, tool, date, conversation string) string {
 	return fmt.Sprintf(`다음은 %s 프로젝트에서 %s 도구를 사용한 %s 날의 AI 대화 세션입니다.
 
-아래 형식으로 핵심 내용을 요약해 주세요:
+**표면적 요약이 아니라 실질 지식을 추출하세요.** 아래 형식으로:
 
 ## 세션 요약: %s (%s, %s)
 
-### 결정사항
-- (이 세션에서 내린 주요 기술적/설계적 결정사항)
+### 결정사항과 근거
+- (무엇을 결정했는지 + 왜 그렇게 했는지. 대안이 있었다면 왜 버렸는지)
 
-### 구현/변경
-- (실제로 구현하거나 변경한 내용)
+### 실험/구현 결과
+- (구체적 수치, 성능, 상태 변화. "구현했다"가 아니라 "X를 Y로 바꿔서 Z 결과")
+
+### 실패한 접근
+- (시도했지만 안 된 것과 그 이유. 없으면 생략)
+
+### 발견
+- (예상과 달랐던 것, 새로 알게 된 사실. 다음에 같은 문제를 만나면 참고할 것)
 
 ### 미해결
-- (완료하지 못했거나 향후 해결이 필요한 문제)
+- (완료하지 못한 것과 다음 단계)
 
 ---
 대화 내용:
