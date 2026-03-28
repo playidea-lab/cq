@@ -23,6 +23,7 @@ function currentMonth(): string {
 }
 
 Deno.serve(async (req: Request) => {
+  try {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
@@ -130,12 +131,14 @@ Deno.serve(async (req: Request) => {
 
   // Increment usage counter on successful Anthropic response
   if (anthropicResp.ok) {
-    await admin.rpc("increment_llm_usage", {
-      p_user_id: user.id,
-      p_month: month,
-    }).catch(() => {
+    try {
+      await admin.rpc("increment_llm_usage", {
+        p_user_id: user.id,
+        p_month: month,
+      });
+    } catch {
       // Non-fatal: if counter fails, still return the response
-    });
+    }
   }
 
   const respBody = await anthropicResp.text();
@@ -147,4 +150,10 @@ Deno.serve(async (req: Request) => {
       "X-RateLimit-Remaining": String(remaining - (anthropicResp.ok ? 1 : 0)),
     },
   });
+  } catch (e) {
+    return new Response(JSON.stringify({ code: 500, message: String(e) }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 });
