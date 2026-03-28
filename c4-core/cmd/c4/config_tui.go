@@ -850,7 +850,34 @@ func (m configTUIModel) View() string {
 
 	nonHeaderCount := 0
 
-	for i, row := range rows {
+	// Viewport: keep cursor visible (sessions pattern)
+	maxVisible := m.height - 8
+	if maxVisible < 10 {
+		maxVisible = 10
+	}
+	viewStart := 0
+	viewEnd := len(rows)
+	if len(rows) > maxVisible {
+		viewEnd = viewStart + maxVisible
+		if cursorIdx >= viewEnd {
+			viewStart = cursorIdx - maxVisible + 3
+			if viewStart < 0 {
+				viewStart = 0
+			}
+			viewEnd = viewStart + maxVisible
+			if viewEnd > len(rows) {
+				viewEnd = len(rows)
+			}
+		}
+	}
+
+	if viewStart > 0 {
+		sb.WriteString(styleFaint.Render(fmt.Sprintf("  ▲ %d more", viewStart)))
+		sb.WriteString("\n")
+	}
+
+	for i := viewStart; i < viewEnd; i++ {
+		row := rows[i]
 		if row.isHeader {
 			hs := configSectionHeaderStyle(row.section)
 			label := fmt.Sprintf(" \u2500\u2500 %s (%d) ", row.section, row.count)
@@ -967,6 +994,11 @@ func (m configTUIModel) View() string {
 				sb.WriteString("\n")
 			}
 		}
+	}
+
+	if viewEnd < len(rows) {
+		sb.WriteString(styleFaint.Render(fmt.Sprintf("  ▼ %d more", len(rows)-viewEnd)))
+		sb.WriteString("\n")
 	}
 
 	if nonHeaderCount == 0 {
