@@ -29,13 +29,15 @@ func sessionCloseSummarizeLLM(jsonlPath, project, date string) *sessionCloseResu
 
 	gw, err := buildSessionCloseGateway()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq: session close gateway build failed: %v\n", err)
 		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	resp, err := gw.Chat(ctx, "session_close", &llm.ChatRequest{
+	resp, err := gw.Chat(ctx, "session_summarize", &llm.ChatRequest{
+		Model:     "cq-proxy/claude-haiku-4-5-20251001",
 		MaxTokens: 1024,
 		Messages: []llm.Message{
 			{Role: "user", Content: prompt},

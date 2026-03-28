@@ -57,6 +57,11 @@ func init() {
 
 func runSessionClose(cmd *cobra.Command, args []string) error {
 	// --- 1. Resolve session info ---
+	// Ensure projectDir is set for LLM gateway (cloud auth resolution)
+	if sessionCloseDir != "" && projectDir == "" {
+		projectDir = sessionCloseDir
+	}
+
 	var sessionID, jsonlPath, project string
 
 	if sessionCloseID != "" {
