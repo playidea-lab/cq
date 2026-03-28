@@ -224,13 +224,7 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Normal mode — check global nav keys first.
-		inputActive := m.confirmFix || m.detailMode || m.query != ""
-		if next, ok := handleGlobalKey(msg, inputActive); ok {
-			m.nextScreen = next
-			return m, tea.Quit
-		}
-
+		// Normal mode
 		switch msg.Type {
 		case tea.KeyUp:
 			m.moveCursor(-1)
@@ -272,6 +266,7 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 				return m, nil
 			}
+			m.nextScreen = screenDashboard
 			return m, tea.Quit
 		case tea.KeyBackspace:
 			if len(m.query) > 0 {
@@ -854,8 +849,6 @@ func (m doctorTUIModel) viewList() string {
 	helpBar.WriteString("  ")
 	helpBar.WriteString(helpEntry("q", "quit"))
 	sb.WriteString(helpBar.String())
-	sb.WriteString("\n")
-	sb.WriteString(renderNavBar(screenDoctor, m.width))
 
 	return sb.String()
 }

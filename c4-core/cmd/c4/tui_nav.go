@@ -40,7 +40,7 @@ func handleGlobalKey(msg tea.KeyMsg, inputMode bool) (string, bool) {
 
 	switch msg.Type {
 	case tea.KeyEsc:
-		return screenSessions, true
+		return screenDashboard, true
 	case tea.KeyCtrlC:
 		return screenQuit, true
 	case tea.KeyRunes:

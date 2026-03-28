@@ -22,7 +22,7 @@ func TestHandleGlobalKey_Mapping(t *testing.T) {
 		{"i → ideas", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}}, false, screenIdeas, true},
 		{"? → dashboard", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}, false, screenDashboard, true},
 		{"q → quit", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}, false, screenQuit, true},
-		{"Esc → sessions", tea.KeyMsg{Type: tea.KeyEsc}, false, screenSessions, true},
+		{"Esc → dashboard", tea.KeyMsg{Type: tea.KeyEsc}, false, screenDashboard, true},
 		{"Ctrl+C → quit", tea.KeyMsg{Type: tea.KeyCtrlC}, false, screenQuit, true},
 		// inputMode ignores all
 		{"t ignored in inputMode", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}}, true, "", false},

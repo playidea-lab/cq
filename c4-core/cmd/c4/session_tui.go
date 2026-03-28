@@ -655,17 +655,7 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Normal mode — check global nav keys first (when not searching).
-		if next, ok := handleGlobalKey(msg, m.isSearching()); ok {
-			if next == screenSessions {
-				// Already on sessions; Esc = quit when not searching.
-				m.nextScreen = screenQuit
-			} else {
-				m.nextScreen = next
-			}
-			return m, tea.Quit
-		}
-
+		// Normal mode
 		switch msg.Type {
 		case tea.KeyEnter:
 			idx := m.cursorRowIndex()
@@ -680,7 +670,7 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.rebuildRows()
 				return m, nil
 			}
-			m.nextScreen = screenQuit
+			m.nextScreen = screenDashboard
 			return m, tea.Quit
 
 		case tea.KeyUp:
@@ -1359,7 +1349,7 @@ func (m sessionTUIModel) View() string {
 	contentLines := strings.Count(content, "\n")
 	if m.height > 0 {
 		// -3 for separator + help bar + nav bar
-		gap := m.height - contentLines - 3
+		gap := m.height - contentLines - 2
 		for i := 0; i < gap; i++ {
 			sb.WriteString("\n")
 		}
@@ -1372,8 +1362,6 @@ func (m sessionTUIModel) View() string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString(helpBar.String())
-	sb.WriteString("\n")
-	sb.WriteString(renderNavBar(screenSessions, m.width))
 
 	return sb.String()
 }
@@ -1384,6 +1372,7 @@ func runSessionsNav() string {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq: sessions TUI error: %v\n", err)
 		return screenQuit
 	}
 	final, ok := result.(sessionTUIModel)
@@ -1402,6 +1391,7 @@ func runSessionsNav() string {
 		_ = resumeSelectedSession(final.selectedTag, tool)
 		return screenSessions
 	}
+	// No explicit action — user quit sessions (Esc/q without nav key).
 	return screenQuit
 }
 

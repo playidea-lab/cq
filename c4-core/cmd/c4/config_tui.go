@@ -204,13 +204,7 @@ func (m configTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		// Normal mode — check global nav keys first.
-		inputActive := m.editMode || m.arrayAddMode || m.arrayExpanded >= 0 || m.query != ""
-		if next, ok := handleGlobalKey(msg, inputActive); ok {
-			m.nextScreen = next
-			return m, tea.Quit
-		}
-
+		// Normal mode
 		switch msg.Type {
 		case tea.KeyUp:
 			m.moveCursorConfig(-1)
@@ -227,6 +221,7 @@ func (m configTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.rows = m.buildVisibleRows()
 				return m, nil
 			}
+			m.nextScreen = screenDashboard
 			return m, tea.Quit
 		case tea.KeyBackspace:
 			if len(m.query) > 0 {
@@ -1088,8 +1083,6 @@ func (m configTUIModel) View() string {
 	sb.WriteString("\n")
 
 	sb.WriteString(m.configHelpBar())
-	sb.WriteString("\n")
-	sb.WriteString(renderNavBar(screenConfig, m.width))
 
 	return sb.String()
 }

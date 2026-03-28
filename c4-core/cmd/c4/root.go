@@ -305,9 +305,10 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 		writeGlobalConfig("onboarded", "true")
 	}
 
-	// Step 7: Main navigation loop — sessions is the home screen.
-	nextScreen := screenSessions
+	// Step 7: Main navigation loop — dashboard is the landing page.
+	nextScreen := screenDashboard
 	for nextScreen != screenQuit {
+		prev := nextScreen
 		switch nextScreen {
 		case screenSessions:
 			nextScreen = runSessionsNav()
@@ -327,6 +328,9 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 			nextScreen = screenSessions
 		default:
 			nextScreen = screenQuit
+		}
+		if verbose {
+			fmt.Fprintf(os.Stderr, "cq: nav %s → %s\n", prev, nextScreen)
 		}
 	}
 	return nil

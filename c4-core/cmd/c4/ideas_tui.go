@@ -256,12 +256,7 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Normal mode — check global nav keys first.
-		if next, ok := handleGlobalKey(msg, m.query != ""); ok {
-			m.nextScreen = next
-			return m, tea.Quit
-		}
-
+		// Normal mode
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			m.nextScreen = screenQuit
@@ -295,6 +290,7 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.filtered = m.ideas
 				m.cursor = 0
 			} else {
+				m.nextScreen = screenDashboard
 				return m, tea.Quit
 			}
 
@@ -586,7 +582,7 @@ func (m ideasTUIModel) View() string {
 	content := sb.String()
 	contentLines := strings.Count(content, "\n")
 	if m.height > 0 {
-		gap := m.height - contentLines - 3
+		gap := m.height - contentLines - 2
 		for i := 0; i < gap; i++ {
 			sb.WriteString("\n")
 		}
@@ -599,8 +595,6 @@ func (m ideasTUIModel) View() string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString(helpBar.String())
-	sb.WriteString("\n")
-	sb.WriteString(renderNavBar(screenIdeas, m.width))
 
 	return sb.String()
 }
