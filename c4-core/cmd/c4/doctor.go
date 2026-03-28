@@ -864,6 +864,21 @@ func tryFix(r *checkResult) string {
 		r.Status = checkOK
 		r.Fix = ""
 		return "c4-bridge installed via uv"
+	case "OS service":
+		// Try to start the service via launchctl (macOS) or systemctl (Linux).
+		if out, err := exec.Command("launchctl", "start", "cq-serve").CombinedOutput(); err == nil {
+			r.Status = checkOK
+			r.Fix = ""
+			return "service started via launchctl"
+		} else if out2, err2 := exec.Command("systemctl", "--user", "start", "cq-serve").CombinedOutput(); err2 == nil {
+			r.Status = checkOK
+			r.Fix = ""
+			return "service started via systemctl"
+		} else {
+			_ = out
+			_ = out2
+			return ""
+		}
 	case "standards":
 		lock, err := standards.ReadLock(projectDir)
 		if err != nil {
@@ -1674,8 +1689,7 @@ func checkServeHealth() checkResult {
 	return checkResult{
 		Name:    "serve health",
 		Status:  status,
-		Message: fmt.Sprintf("%d components: ok=%d, degraded=%d, error=%d", total, ok, degraded, errCount),
-		Fix:     strings.Join(details, "\n"),
+		Message: fmt.Sprintf("%d components: ok=%d, degraded=%d, error=%d — %s", total, ok, degraded, errCount, strings.Join(details, "; ")),
 	}
 }
 
