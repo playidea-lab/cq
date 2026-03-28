@@ -31,6 +31,7 @@ var providers = []sessionProvider{
 	claudeProvider(),
 	geminiProvider(),
 	codexProvider(),
+	chatgptProvider(),
 }
 
 // findProviderByTool returns the provider for the given tool name, or nil.
@@ -546,4 +547,148 @@ func readCodexSessionMeta(path string) codexSessionMeta {
 		}
 	}
 	return meta
+}
+
+// --- ChatGPT Provider ---
+
+func chatgptProvider() sessionProvider {
+	return sessionProvider{
+		Tool: "chatgpt",
+		FindTranscript: func(dir, uuid string) string {
+			return findChatGPTTranscript(uuid)
+		},
+		LoadHistory: loadChatGPTHistory,
+		ScanSessions: scanChatGPTSessions,
+	}
+}
+
+// scanChatGPTSessions reads sessions from ~/.c4/imports/chatgpt/sessions.json.
+// These are pre-built by `cq import chatgpt`.
+func scanChatGPTSessions() map[string]namedSessionEntry {
+	homeDir, _ := os.UserHomeDir()
+	if homeDir == "" {
+		return nil
+	}
+	path := filepath.Join(homeDir, ".c4", "imports", "chatgpt", "sessions.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var sessions map[string]namedSessionEntry
+	if err := json.Unmarshal(data, &sessions); err != nil {
+		return nil
+	}
+	return sessions
+}
+
+// findChatGPTTranscript locates the conversation file containing a given UUID.
+// Returns "filepath|uuid" composite key for loadChatGPTHistory to parse.
+func findChatGPTTranscript(uuid string) string {
+	if uuid == "" {
+		return ""
+	}
+	homeDir, _ := os.UserHomeDir()
+	if homeDir == "" {
+		return ""
+	}
+	convDir := filepath.Join(homeDir, ".c4", "imports", "chatgpt", "conversations")
+	entries, err := os.ReadDir(convDir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(convDir, e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(data), uuid) {
+			return path + "|" + uuid // composite key: filepath|uuid
+		}
+	}
+	return ""
+}
+
+// loadChatGPTHistory extracts user messages from a ChatGPT conversation.
+// The path argument is a "filepath|uuid" composite from findChatGPTTranscript.
+func loadChatGPTHistory(path string) []string {
+	parts := strings.SplitN(path, "|", 2)
+	if len(parts) != 2 {
+		return nil
+	}
+	filePath, uuid := parts[0], parts[1]
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil
+	}
+
+	var convs []chatGPTConversation
+	if err := json.Unmarshal(data, &convs); err != nil {
+		return nil
+	}
+
+	// Find the conversation matching uuid
+	for _, conv := range convs {
+		if conv.ID != uuid {
+			continue
+		}
+		return extractChatGPTUserMessages(conv)
+	}
+	return nil
+}
+
+// extractChatGPTUserMessages walks the conversation tree from current_node
+// to root, reverses to chronological order, and extracts user message text.
+func extractChatGPTUserMessages(conv chatGPTConversation) []string {
+	if conv.CurrentNode == "" {
+		return nil
+	}
+
+	// Walk from current_node to root collecting node IDs
+	var nodePath []string
+	node := conv.CurrentNode
+	for node != "" {
+		nodePath = append(nodePath, node)
+		n, ok := conv.Mapping[node]
+		if !ok {
+			break
+		}
+		node = n.Parent
+	}
+
+	// Reverse to chronological order
+	for i, j := 0, len(nodePath)-1; i < j; i, j = i+1, j-1 {
+		nodePath[i], nodePath[j] = nodePath[j], nodePath[i]
+	}
+
+	var messages []string
+	for _, nodeID := range nodePath {
+		n, ok := conv.Mapping[nodeID]
+		if !ok || n.Message == nil {
+			continue
+		}
+		if n.Message.Author.Role != "user" {
+			continue
+		}
+		text := extractChatGPTPartText(n.Message.Content.Parts)
+		if text != "" {
+			messages = append(messages, text)
+		}
+	}
+	return messages
+}
+
+// extractChatGPTPartText extracts text from ChatGPT message content parts.
+func extractChatGPTPartText(parts []interface{}) string {
+	var texts []string
+	for _, p := range parts {
+		if s, ok := p.(string); ok && s != "" {
+			texts = append(texts, strings.TrimSpace(s))
+		}
+	}
+	return strings.Join(texts, "\n")
 }
