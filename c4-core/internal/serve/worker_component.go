@@ -252,10 +252,14 @@ func (w *WorkerComponent) executeJob(ctx context.Context, job *hub.Job) (int, er
 		return 1, err
 	}
 
-	// Scan stdout, tee to stderr and parse metrics.
+	// Scan stdout, tee to stderr, parse @key=value metrics, and send to hub_metrics.
+	// Circuit breaker: 3 consecutive LogMetricsSupabase failures disables further uploads.
 	if pipeErr == nil {
 		jobID := job.GetID()
 		step := 0
+		consecutiveFails := 0
+		const maxMetricFails = 3
+		metricDisabled := false
 		primaryMetric := job.PrimaryMetric
 		lowerIsBetter := job.LowerIsBetter
 		var bestMetric *float64
@@ -265,8 +269,16 @@ func (w *WorkerComponent) executeJob(ctx context.Context, job *hub.Job) (int, er
 			fmt.Fprintln(os.Stderr, line)
 			if metrics := hub.ParseMetrics(line); metrics != nil {
 				step++
-				if err := w.client.LogMetricsSupabase(jobID, step, metrics); err != nil {
-					fmt.Fprintf(os.Stderr, "cq serve: metric log: %v\n", err)
+				if !metricDisabled {
+					if err := w.client.LogMetricsSupabase(jobID, step, metrics); err != nil {
+						consecutiveFails++
+						if consecutiveFails >= maxMetricFails {
+							metricDisabled = true
+							fmt.Fprintf(os.Stderr, "cq serve: metric circuit breaker: %d consecutive failures, disabling. last: %v\n", maxMetricFails, err)
+						}
+					} else {
+						consecutiveFails = 0
+					}
 				}
 				// Update best_metric if primary_metric and lower_is_better are both set.
 				if primaryMetric != "" && lowerIsBetter != nil {
