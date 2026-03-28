@@ -139,6 +139,8 @@ var (
 	hubPruneDryRun       bool
 	hubJobLogFollow      bool
 	hubJobLogOffset      int
+	hubSubmitPrimaryMetric  string
+	hubSubmitLowerIsBetter  bool
 )
 
 func init() {
@@ -153,6 +155,8 @@ func init() {
 	hubSubmitCmd.Flags().StringVar(&hubSubmitTarget, "target", "", "route job to a specific worker ID")
 	hubSubmitCmd.Flags().StringVar(&hubSubmitCapability, "capability", "", "require worker capability (e.g. gpu, cuda)")
 	hubSubmitCmd.Flags().StringVar(&hubSubmitRequiredTags, "tags", "", "comma-separated worker tags required (e.g. gpu,a100)")
+	hubSubmitCmd.Flags().StringVar(&hubSubmitPrimaryMetric, "primary-metric", "", "metric name to track as the primary metric (e.g. val_loss, accuracy)")
+	hubSubmitCmd.Flags().BoolVar(&hubSubmitLowerIsBetter, "lower-is-better", false, "whether lower primary metric value is better (e.g. loss)")
 
 	hubWorkersCmd.Flags().BoolVar(&hubWorkersAll, "all", false, "include offline workers")
 	hubWorkersPruneCmd.Flags().BoolVar(&hubPruneDryRun, "dry-run", false, "show what would be pruned without deleting")
@@ -668,6 +672,29 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--run flag is required or set `run` in cq.yaml")
 	}
 
+	// Load config for primary_metric/lower_is_better defaults.
+	var cfgPrimaryMetric string
+	var cfgLowerIsBetter *bool
+	if cfgMgr, err := config.New(projectDir, config.CloudDefaults{
+		URL:     builtinSupabaseURL,
+		AnonKey: builtinSupabaseKey,
+	}); err == nil {
+		hubCfg := cfgMgr.GetConfig().Hub
+		cfgPrimaryMetric = hubCfg.PrimaryMetric
+		cfgLowerIsBetter = hubCfg.LowerIsBetter
+	}
+
+	// CLI overrides config: use CLI flag if explicitly set.
+	primaryMetric := cfgPrimaryMetric
+	if cmd.Flags().Changed("primary-metric") {
+		primaryMetric = hubSubmitPrimaryMetric
+	}
+	var lowerIsBetter *bool = cfgLowerIsBetter
+	if cmd.Flags().Changed("lower-is-better") {
+		v := hubSubmitLowerIsBetter
+		lowerIsBetter = &v
+	}
+
 	client, err := newHubClient()
 	if err != nil {
 		return err
@@ -698,6 +725,8 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 		ProjectID:           getActiveProjectID(projectDir),
 		TargetWorker:        hubSubmitTarget,
 		Capability:          hubSubmitCapability,
+		PrimaryMetric:       primaryMetric,
+		LowerIsBetter:       lowerIsBetter,
 	}
 	if hubSubmitRequiredTags != "" {
 		req.RequiredTags = strings.Split(hubSubmitRequiredTags, ",")

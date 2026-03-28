@@ -148,8 +148,10 @@ type HubConfig struct {
 	APIKey     string   `mapstructure:"api_key"      yaml:"api_key"`
 	APIKeyEnv  string   `mapstructure:"api_key_env"  yaml:"api_key_env"`
 	TeamID     string   `mapstructure:"team_id"      yaml:"team_id"`
-	AutoWorker bool     `mapstructure:"auto_worker"  yaml:"auto_worker"` // auto-register as Hub worker on cq serve start
-	WorkerTags []string `mapstructure:"worker_tags"  yaml:"worker_tags"` // capabilities for job matching (e.g. ["gpu", "ml"])
+	AutoWorker    bool     `mapstructure:"auto_worker"    yaml:"auto_worker"`    // auto-register as Hub worker on cq serve start
+	WorkerTags    []string `mapstructure:"worker_tags"    yaml:"worker_tags"`    // capabilities for job matching (e.g. ["gpu", "ml"])
+	PrimaryMetric string   `mapstructure:"primary_metric" yaml:"primary_metric"` // default metric name for best_metric tracking
+	LowerIsBetter *bool    `mapstructure:"lower_is_better" yaml:"lower_is_better"` // whether lower metric value is better (e.g. loss)
 }
 
 // WorkerConfig controls automatic Hub job execution via cq serve.
