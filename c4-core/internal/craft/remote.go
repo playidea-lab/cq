@@ -346,6 +346,11 @@ func prependSourceComment(data []byte, url string) []byte {
 	return append(comment, data...)
 }
 
+// FindSourceURL scans the primary file for a "# source:" line and returns the URL.
+func FindSourceURL(name, homeDir string) (string, error) {
+	return findSourceURL(name, homeDir)
+}
+
 // findSourceURL scans the primary file for a "# source:" line and returns the URL.
 func findSourceURL(name, homeDir string) (string, error) {
 	candidates := []string{
