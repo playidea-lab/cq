@@ -865,20 +865,24 @@ func tryFix(r *checkResult) string {
 		r.Fix = ""
 		return "c4-bridge installed via uv"
 	case "OS service":
-		// Try to start the service via launchctl (macOS) or systemctl (Linux).
-		if out, err := exec.Command("launchctl", "start", "cq-serve").CombinedOutput(); err == nil {
-			r.Status = checkOK
-			r.Fix = ""
-			return "service started via launchctl"
-		} else if out2, err2 := exec.Command("systemctl", "--user", "start", "cq-serve").CombinedOutput(); err2 == nil {
+		// macOS: load plist first (may not be loaded), then start.
+		home, _ := os.UserHomeDir()
+		plist := filepath.Join(home, "Library", "LaunchAgents", "cq-serve.plist")
+		if _, statErr := os.Stat(plist); statErr == nil {
+			_ = exec.Command("launchctl", "load", plist).Run()
+			if err := exec.Command("launchctl", "start", "cq-serve").Run(); err == nil {
+				r.Status = checkOK
+				r.Fix = ""
+				return "service started via launchctl"
+			}
+		}
+		// Linux: systemctl
+		if err := exec.Command("systemctl", "--user", "start", "cq-serve").Run(); err == nil {
 			r.Status = checkOK
 			r.Fix = ""
 			return "service started via systemctl"
-		} else {
-			_ = out
-			_ = out2
-			return ""
 		}
+		return ""
 	case "standards":
 		lock, err := standards.ReadLock(projectDir)
 		if err != nil {
