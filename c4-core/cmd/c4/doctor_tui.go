@@ -135,8 +135,12 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.checks[msg.index].loading = false
 			m.checks[msg.index].result = msg.result
 			m.checks[msg.index].completedAt = time.Now()
-			if msg.result.Fix != "" {
-				m.checks[msg.index].detail = msg.result.Fix
+			if msg.result.Status == checkOK {
+				m.checks[msg.index].detail = "fix applied successfully"
+			} else {
+				m.checks[msg.index].detail = "fix attempted — " + msg.result.Message
+				// Auto-open detail view so user sees why fix didn't resolve
+				m.detailMode = true
 			}
 		}
 		return m, nil
