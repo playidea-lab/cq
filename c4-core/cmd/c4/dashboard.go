@@ -134,12 +134,10 @@ func buildCommandRows() []cmdRow {
 	}
 }
 
-// cqLogo is the dot-art CQ mark.
+// cqLogo is a compact 2-line dot-art CQ mark.
 var cqLogo = []string{
-	" ▄▀▀▀▀▄  ▄▀▀▀▀▄ ",
-	" █      ██    ██ ",
-	" █      ██  ▄ ██ ",
-	" ▀▄▄▄▄▀  ▀▄▄▀▄▀ ",
+	"▄▀▀▀ ▄▀▀▀▄",
+	"▀▄▄▄ ▀▄▄▀▄",
 }
 
 func newDashboardModel() dashboardModel {
@@ -368,13 +366,11 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m dashboardModel) View() string {
 	var sb strings.Builder
 
-	// CQ Logo
+	// CQ Logo + version inline
 	logoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("62")).Bold(true)
-	for _, line := range cqLogo {
-		sb.WriteString(logoStyle.Render("  " + line))
-		sb.WriteString("\n")
-	}
+	sb.WriteString(logoStyle.Render("  " + cqLogo[0]))
 	sb.WriteString("\n")
+	sb.WriteString(logoStyle.Render("  " + cqLogo[1]))
 	sb.WriteString("  ")
 	sb.WriteString(styleTitle.Render(fmt.Sprintf(" %s ", m.version)))
 	sb.WriteString("\n\n")
