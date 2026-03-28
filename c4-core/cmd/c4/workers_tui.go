@@ -66,17 +66,32 @@ type activeJobMsg struct {
 	err      error
 }
 
+// workerFocusPanel enumerates which panel has keyboard focus.
+type workerFocusPanel int
+
+const (
+	focusFleet   workerFocusPanel = iota // fleet list (default)
+	focusMetrics                         // metrics panel
+	focusLog                             // log panel
+)
+
 // workersTUIModel is the bubbletea model for the workers TUI.
 type workersTUIModel struct {
 	workers      []hub.Worker
 	cursor       int
 	query        string
+	searchMode   bool // true when the user pressed "/" and is typing
 	width        int
 	height       int
 	loading      bool
 	err          error
 	tickCount    int
 	relayConnected map[string]bool // worker ID -> connected to relay
+
+	// Panel focus and display state.
+	focusPanel workerFocusPanel
+	logScroll  int  // scroll offset for log panel (lines from bottom)
+	detailMode bool // true when metrics panel is expanded to full chart
 
 	// Metrics panel state for the selected worker.
 	selectedWorkerJobID string               // active job ID of selected worker
@@ -192,6 +207,8 @@ func (m *workersTUIModel) resetMetricState() {
 	m.metricBest = make(map[string]float64)
 	m.lastLogID = 0
 	m.logLines = nil
+	m.logScroll = 0
+	m.detailMode = false
 }
 
 // selectedWorkerID returns the ID of the currently selected worker, or "".
@@ -295,27 +312,94 @@ func (m workersTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// If in search mode, handle search input first.
+		if m.searchMode {
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.searchMode = false
+				m.query = ""
+				m.cursor = 0
+				return m, nil
+			case tea.KeyEnter:
+				m.searchMode = false
+				return m, nil
+			case tea.KeyBackspace:
+				if len(m.query) > 0 {
+					runes := []rune(m.query)
+					m.query = string(runes[:len(runes)-1])
+					m.cursor = 0
+				}
+				return m, nil
+			case tea.KeyRunes:
+				m.query += msg.String()
+				m.cursor = 0
+				return m, nil
+			}
+			return m, nil
+		}
+
 		switch msg.Type {
+		case tea.KeyTab:
+			// Cycle focus: fleet → metrics → log → fleet.
+			switch m.focusPanel {
+			case focusFleet:
+				m.focusPanel = focusMetrics
+			case focusMetrics:
+				m.focusPanel = focusLog
+			case focusLog:
+				m.focusPanel = focusFleet
+			}
+			return m, nil
+
+		case tea.KeyEnter:
+			// Toggle detail mode when metrics panel is focused.
+			if m.focusPanel == focusMetrics {
+				m.detailMode = !m.detailMode
+			}
+			return m, nil
+
 		case tea.KeyUp:
-			visible := m.visibleWorkers()
-			if m.cursor > 0 {
-				m.cursor--
-				m.resetMetricState()
-				if wid := m.selectedWorkerID(); wid != "" {
-					return m, fetchActiveJobCmd(m.hubClient, wid)
+			switch m.focusPanel {
+			case focusFleet:
+				if m.cursor > 0 {
+					m.cursor--
+					m.resetMetricState()
+					if wid := m.selectedWorkerID(); wid != "" {
+						return m, fetchActiveJobCmd(m.hubClient, wid)
+					}
+				}
+			case focusLog:
+				// Scroll log panel up (toward older lines).
+				maxScroll := len(m.logLines) - 1
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+				if m.logScroll < maxScroll {
+					m.logScroll++
 				}
 			}
-			_ = visible
 		case tea.KeyDown:
-			visible := m.visibleWorkers()
-			if m.cursor < len(visible)-1 {
-				m.cursor++
-				m.resetMetricState()
-				if wid := m.selectedWorkerID(); wid != "" {
-					return m, fetchActiveJobCmd(m.hubClient, wid)
+			switch m.focusPanel {
+			case focusFleet:
+				visible := m.visibleWorkers()
+				if m.cursor < len(visible)-1 {
+					m.cursor++
+					m.resetMetricState()
+					if wid := m.selectedWorkerID(); wid != "" {
+						return m, fetchActiveJobCmd(m.hubClient, wid)
+					}
+				}
+			case focusLog:
+				// Scroll log panel down (toward newer lines).
+				if m.logScroll > 0 {
+					m.logScroll--
 				}
 			}
 		case tea.KeyEsc:
+			if m.detailMode {
+				m.detailMode = false
+				return m, nil
+			}
 			if m.query != "" {
 				m.query = ""
 				m.cursor = 0
@@ -331,8 +415,12 @@ func (m workersTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyRunes:
 			ch := msg.String()
 			switch ch {
+			case "/":
+				// Enter search mode.
+				m.searchMode = true
+				return m, nil
 			case "k":
-				if m.query == "" {
+				if m.focusPanel == focusFleet {
 					if m.cursor > 0 {
 						m.cursor--
 						m.resetMetricState()
@@ -341,11 +429,18 @@ func (m workersTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 					return m, nil
+				} else if m.focusPanel == focusLog {
+					maxScroll := len(m.logLines) - 1
+					if maxScroll < 0 {
+						maxScroll = 0
+					}
+					if m.logScroll < maxScroll {
+						m.logScroll++
+					}
+					return m, nil
 				}
-				m.query += ch
-				m.cursor = 0
 			case "j":
-				if m.query == "" {
+				if m.focusPanel == focusFleet {
 					visible := m.visibleWorkers()
 					if m.cursor < len(visible)-1 {
 						m.cursor++
@@ -355,22 +450,18 @@ func (m workersTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 					return m, nil
+				} else if m.focusPanel == focusLog {
+					if m.logScroll > 0 {
+						m.logScroll--
+					}
+					return m, nil
 				}
-				m.query += ch
-				m.cursor = 0
 			case "q":
-				if m.query == "" {
-					return m, tea.Quit
-				}
-				m.query += ch
-				m.cursor = 0
+				return m, tea.Quit
 			case "r":
-				// Manual refresh
+				// Manual refresh.
 				m.loading = true
 				return m, tea.Batch(fetchWorkersCmd(m.hubClient), fetchRelayHealthCmd(m.relayURL), workerTickCmd())
-			default:
-				m.query += ch
-				m.cursor = 0
 			}
 		}
 	}
@@ -511,12 +602,15 @@ func (m workersTUIModel) View() string {
 	sb.WriteString("\n")
 
 	// Search bar
-	if m.query != "" {
+	if m.searchMode {
 		sb.WriteString("  ")
-		sb.WriteString(styleSearchBar.Render(fmt.Sprintf(" 🔍 %s▏ ", m.query)))
+		sb.WriteString(styleSearchBar.Render(fmt.Sprintf(" / %s▏ ", m.query)))
+	} else if m.query != "" {
+		sb.WriteString("  ")
+		sb.WriteString(styleSearchBar.Render(fmt.Sprintf(" / %s ", m.query)))
 	} else {
 		sb.WriteString("  ")
-		sb.WriteString(styleSearchPlaceholder.Render(" 🔍 type to search... "))
+		sb.WriteString(styleSearchPlaceholder.Render(" / to search... "))
 	}
 	sb.WriteString("\n\n")
 
@@ -531,10 +625,20 @@ func (m workersTUIModel) View() string {
 			sb.WriteString(styleFaint.Render("  No workers found."))
 			sb.WriteString("\n")
 		} else {
+			// Fleet panel header with focus indicator.
+			fleetTitle := "fleet"
+			if m.focusPanel == focusFleet {
+				fleetTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true).Render("fleet")
+			} else {
+				fleetTitle = styleFaint.Render("fleet")
+			}
+			sb.WriteString("  " + fleetTitle + "\n")
+
 			m.renderWorkerRows(&sb, visible)
-			// Render metrics panel for selected worker when in full layout.
+			// Render metrics + log panels for selected worker when in full layout.
 			if m.layoutMode() == layoutFull {
-				m.renderMetricsPanel(&sb)
+				m.renderMetricsPanelFocused(&sb)
+				m.renderLogPanel(&sb)
 			}
 		}
 	}
@@ -555,11 +659,23 @@ func (m workersTUIModel) View() string {
 
 	var helpBar strings.Builder
 	helpBar.WriteString(" ")
-	helpBar.WriteString(helpEntry("↑↓", "navigate"))
-	helpBar.WriteString("  ")
-	helpBar.WriteString(helpEntry("r", "refresh"))
-	helpBar.WriteString("  ")
-	helpBar.WriteString(helpEntry("q", "quit"))
+	if m.searchMode {
+		helpBar.WriteString(helpEntry("Enter", "confirm"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Esc", "cancel"))
+	} else {
+		helpBar.WriteString(helpEntry("↑↓/jk", "navigate"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Tab", "focus"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("/", "search"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Enter", "detail"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("r", "refresh"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("q", "quit"))
+	}
 	sb.WriteString(helpBar.String())
 
 	return sb.String()
@@ -837,11 +953,44 @@ func renderSparkline(values []float64, width int) string {
 	return sb.String()
 }
 
-// renderMetricsPanel writes the metrics panel for the selected worker into sb.
-func (m *workersTUIModel) renderMetricsPanel(sb *strings.Builder) {
+// sortedMetricNames returns metric names sorted: loss-like first, then alphabetical.
+func sortedMetricNames(metricData map[string][]float64) []string {
+	names := make([]string, 0, len(metricData))
+	for k := range metricData {
+		names = append(names, k)
+	}
+	for i := 0; i < len(names); i++ {
+		for j := i + 1; j < len(names); j++ {
+			li := metricLowerIsBetter(names[i])
+			lj := metricLowerIsBetter(names[j])
+			if lj && !li {
+				names[i], names[j] = names[j], names[i]
+			} else if li == lj && names[i] > names[j] {
+				names[i], names[j] = names[j], names[i]
+			}
+		}
+	}
+	return names
+}
+
+// renderMetricsPanelFocused writes the metrics panel with focus-aware border/title.
+// When m.detailMode is true, renders a larger ASCII chart for the first metric.
+func (m *workersTUIModel) renderMetricsPanelFocused(sb *strings.Builder) {
 	sb.WriteString("\n")
-	sb.WriteString(styleFaint.Render("  metrics"))
-	sb.WriteString("\n")
+
+	// Panel title with focus indicator.
+	metricsTitle := "metrics"
+	if m.focusPanel == focusMetrics {
+		metricsTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true).Render("metrics")
+		if m.detailMode {
+			metricsTitle += lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Render(" [detail] Esc/Enter to close")
+		} else {
+			metricsTitle += styleFaint.Render(" Enter for detail")
+		}
+	} else {
+		metricsTitle = styleFaint.Render("metrics")
+	}
+	sb.WriteString("  " + metricsTitle + "\n")
 
 	if m.selectedWorkerJobID == "" {
 		sb.WriteString(styleFaint.Render("  No active job"))
@@ -855,24 +1004,46 @@ func (m *workersTUIModel) renderMetricsPanel(sb *strings.Builder) {
 		return
 	}
 
-	// Sort metric names for stable rendering.
-	names := make([]string, 0, len(m.metricData))
-	for k := range m.metricData {
-		names = append(names, k)
-	}
-	// Sort: loss-like first (lower-is-better), then alphabetical.
-	for i := 0; i < len(names); i++ {
-		for j := i + 1; j < len(names); j++ {
-			li := metricLowerIsBetter(names[i])
-			lj := metricLowerIsBetter(names[j])
-			if lj && !li {
-				names[i], names[j] = names[j], names[i]
-			} else if li == lj && names[i] > names[j] {
-				names[i], names[j] = names[j], names[i]
+	names := sortedMetricNames(m.metricData)
+
+	if m.detailMode && len(names) > 0 {
+		// Expanded detail view: render ASCII line chart for first metric.
+		name := names[0]
+		vals := m.metricData[name]
+		best := m.metricBest[name]
+		latest := vals[len(vals)-1]
+		dir := "↑"
+		if metricLowerIsBetter(name) {
+			dir = "↓"
+		}
+		chartW := m.width - 12
+		if chartW < 20 {
+			chartW = 20
+		}
+		sb.WriteString(fmt.Sprintf("  %s  latest: %.4f  %s best: %.4f  (%d points)\n", name, latest, dir, best, len(vals)))
+		sb.WriteString(renderASCIIChart(vals, chartW, 6))
+		// Show remaining metrics as compact sparklines below the chart.
+		if len(names) > 1 {
+			sb.WriteString("\n")
+			sparkW := 12
+			for _, n := range names[1:] {
+				v := m.metricData[n]
+				spark := renderSparkline(v, sparkW)
+				lat := v[len(v)-1]
+				b := m.metricBest[n]
+				d := "↑"
+				if metricLowerIsBetter(n) {
+					d = "↓"
+				}
+				line := fmt.Sprintf("  %-12s %s  %.4f  %s best: %.4f", n, spark, lat, d, b)
+				sb.WriteString(styleSummary.Render(line))
+				sb.WriteString("\n")
 			}
 		}
+		return
 	}
 
+	// Compact sparkline view.
 	sparkW := 12
 	for _, name := range names {
 		vals := m.metricData[name]
@@ -883,11 +1054,146 @@ func (m *workersTUIModel) renderMetricsPanel(sb *strings.Builder) {
 		if metricLowerIsBetter(name) {
 			dir = "↓"
 		}
-		// Format: "  loss    ▁▂▃▅▇█  0.023  ↓ best: 0.019"
 		line := fmt.Sprintf("  %-12s %s  %.4f  %s best: %.4f", name, spark, latest, dir, best)
 		sb.WriteString(styleSummary.Render(line))
 		sb.WriteString("\n")
 	}
+}
+
+// renderLogPanel writes the last N log lines with scroll support.
+// @key=value lines are highlighted.
+func (m *workersTUIModel) renderLogPanel(sb *strings.Builder) {
+	sb.WriteString("\n")
+
+	// Panel title with focus indicator.
+	logTitle := "log"
+	if m.focusPanel == focusLog {
+		logTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true).Render("log")
+		logTitle += styleFaint.Render(" ↑↓/jk scroll")
+	} else {
+		logTitle = styleFaint.Render("log")
+	}
+	sb.WriteString("  " + logTitle + "\n")
+
+	if len(m.logLines) == 0 {
+		sb.WriteString(styleFaint.Render("  No log output yet."))
+		sb.WriteString("\n")
+		return
+	}
+
+	const maxLogDisplay = 8
+	lines := m.logLines
+
+	// Apply scroll: logScroll=0 means show the last maxLogDisplay lines.
+	total := len(lines)
+	endIdx := total - m.logScroll
+	if endIdx > total {
+		endIdx = total
+	}
+	if endIdx < 0 {
+		endIdx = 0
+	}
+	startIdx := endIdx - maxLogDisplay
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
+	displayLines := lines[startIdx:endIdx]
+	styleMetricLine := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	styleNormalLine := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+
+	for _, line := range displayLines {
+		// Truncate long lines.
+		maxW := m.width - 4
+		if maxW < 20 {
+			maxW = 20
+		}
+		if lsDispWidth(line) > maxW {
+			line = lsTruncateToWidth(line, maxW-1) + "…"
+		}
+		// Highlight lines with @key=value metrics.
+		if strings.Contains(line, "@") && hub.ParseMetrics(line) != nil {
+			sb.WriteString("  " + styleMetricLine.Render(line))
+		} else {
+			sb.WriteString("  " + styleNormalLine.Render(line))
+		}
+		sb.WriteString("\n")
+	}
+
+	// Scroll position indicator.
+	if m.logScroll > 0 {
+		sb.WriteString(styleFaint.Render(fmt.Sprintf("  ... %d more lines below (↓ to scroll down)", m.logScroll)))
+		sb.WriteString("\n")
+	}
+}
+
+// renderASCIIChart renders a simple ASCII line chart with Y-axis labels.
+// chartW is the width of the chart area; chartH is the number of rows.
+func renderASCIIChart(values []float64, chartW, chartH int) string {
+	if len(values) == 0 || chartW < 4 || chartH < 2 {
+		return ""
+	}
+
+	// Use last chartW values.
+	display := values
+	if len(display) > chartW {
+		display = display[len(display)-chartW:]
+	}
+
+	mn, mx := display[0], display[0]
+	for _, v := range display {
+		if v < mn {
+			mn = v
+		}
+		if v > mx {
+			mx = v
+		}
+	}
+	// Avoid divide-by-zero.
+	if mx == mn {
+		mx = mn + 1
+	}
+
+	// Build a 2D grid of characters (row 0 = top).
+	grid := make([][]rune, chartH)
+	for r := range grid {
+		grid[r] = make([]rune, chartW)
+		for c := range grid[r] {
+			grid[r][c] = ' '
+		}
+	}
+
+	// Plot points.
+	for c, v := range display {
+		row := int((mx - v) / (mx - mn) * float64(chartH-1))
+		if row < 0 {
+			row = 0
+		}
+		if row >= chartH {
+			row = chartH - 1
+		}
+		grid[row][c] = '●'
+	}
+
+	// Render with Y-axis labels (8 chars wide).
+	const yLabelW = 9
+	var sb strings.Builder
+	for r := 0; r < chartH; r++ {
+		// Y-axis label.
+		yVal := mx - float64(r)*(mx-mn)/float64(chartH-1)
+		label := fmt.Sprintf("%8.4f│", yVal)
+		sb.WriteString("  ")
+		sb.WriteString(styleFaint.Render(label))
+		// Row content.
+		sb.WriteString(styleSummary.Render(string(grid[r])))
+		sb.WriteString("\n")
+		_ = yLabelW
+	}
+	// X-axis.
+	sb.WriteString("  ")
+	sb.WriteString(styleFaint.Render(strings.Repeat(" ", 8) + "└" + strings.Repeat("─", chartW)))
+	sb.WriteString("\n")
+	return sb.String()
 }
 
 func (m workersTUIModel) renderSeparator(sb *strings.Builder) {

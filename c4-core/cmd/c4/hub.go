@@ -136,6 +136,8 @@ var (
 	hubSubmitCapability   string
 	hubSubmitRequiredTags string
 	hubWorkersAll        bool
+	hubWorkersNoTUI      bool
+	hubWorkersJSON       bool
 	hubPruneDryRun       bool
 	hubJobLogFollow      bool
 	hubJobLogOffset      int
@@ -159,6 +161,8 @@ func init() {
 	hubSubmitCmd.Flags().BoolVar(&hubSubmitLowerIsBetter, "lower-is-better", false, "whether lower primary metric value is better (e.g. loss)")
 
 	hubWorkersCmd.Flags().BoolVar(&hubWorkersAll, "all", false, "include offline workers")
+	hubWorkersCmd.Flags().BoolVar(&hubWorkersNoTUI, "no-tui", false, "disable interactive TUI, print table instead")
+	hubWorkersCmd.Flags().BoolVar(&hubWorkersJSON, "json", false, "output workers as JSON")
 	hubWorkersPruneCmd.Flags().BoolVar(&hubPruneDryRun, "dry-run", false, "show what would be pruned without deleting")
 	hubWorkersCmd.AddCommand(hubWorkersPruneCmd)
 
@@ -322,6 +326,31 @@ func runHubWorkers(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// JSON output mode.
+	if hubWorkersJSON {
+		workers, err := client.ListWorkers(!hubWorkersAll)
+		if err != nil {
+			return fmt.Errorf("list workers: %w", err)
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(workers)
+	}
+
+	// TUI mode (default unless --no-tui).
+	if !hubWorkersNoTUI {
+		// Resolve relay URL from config (best-effort; empty string is fine).
+		relayURL := ""
+		if cfgMgr, err2 := config.New(projectDir, config.CloudDefaults{
+			URL:     builtinSupabaseURL,
+			AnonKey: builtinSupabaseKey,
+		}); err2 == nil {
+			relayURL = cfgMgr.GetConfig().Relay.URL
+		}
+		return runWorkersTUI(client, relayURL)
+	}
+
+	// Table output mode (--no-tui).
 	workers, err := client.ListWorkers(!hubWorkersAll)
 	if err != nil {
 		return fmt.Errorf("list workers: %w", err)
