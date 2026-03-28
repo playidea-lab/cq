@@ -797,6 +797,32 @@ func (c *Client) GetMetrics(jobID string, limit int) (*MetricsResponse, error) {
 	return &resp, nil
 }
 
+// FetchJobLogs returns raw log rows from hub_job_logs for a job starting after sinceID.
+// Uses Supabase PostgREST. Returns up to 100 rows ordered by id ascending.
+func (c *Client) FetchJobLogs(jobID string, sinceID int64) ([]JobLog, error) {
+	path := fmt.Sprintf("/rest/v1/hub_job_logs?job_id=eq.%s&id=gt.%d&order=id.asc&limit=100", jobID, sinceID)
+	var rows []JobLog
+	if err := c.supabaseGet(path, &rows); err != nil {
+		return nil, fmt.Errorf("fetch job logs: %w", err)
+	}
+	return rows, nil
+}
+
+// FetchRunningJobForWorker returns the ID of the currently RUNNING job for a worker, or "" if none.
+func (c *Client) FetchRunningJobForWorker(workerID string) (string, error) {
+	path := fmt.Sprintf("/rest/v1/hub_jobs?worker_id=eq.%s&status=eq.RUNNING&select=id&limit=1", workerID)
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if err := c.supabaseGet(path, &rows); err != nil {
+		return "", fmt.Errorf("fetch running job: %w", err)
+	}
+	if len(rows) == 0 {
+		return "", nil
+	}
+	return rows[0].ID, nil
+}
+
 // GetJobLogs returns log lines for a job.
 func (c *Client) GetJobLogs(jobID string, offset, limit int) (*JobLogsResponse, error) {
 	path := fmt.Sprintf("/jobs/%s/logs?offset=%d&limit=%d", jobID, offset, limit)

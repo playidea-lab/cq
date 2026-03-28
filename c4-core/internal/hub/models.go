@@ -210,6 +210,14 @@ type JobRetryResponse struct {
 	OriginalJobID string `json:"original_job_id"`
 }
 
+// JobLog represents a single log line from hub_job_logs table.
+type JobLog struct {
+	ID     int64  `json:"id"`
+	JobID  string `json:"job_id"`
+	Line   string `json:"line"`
+	Stream string `json:"stream"`
+}
+
 // JobEstimateResponse is the response from GET /jobs/{id}/estimate.
 // Confidence may be string ("high"/"medium"/"low") from Hub server
 // or float (0.0-1.0) from PiQ daemon.

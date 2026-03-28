@@ -55,6 +55,17 @@ type relayHealthMsg struct {
 	err          error
 }
 
+type jobLogsMsg struct {
+	logs []hub.JobLog
+	err  error
+}
+
+type activeJobMsg struct {
+	workerID string
+	jobID    string
+	err      error
+}
+
 // workersTUIModel is the bubbletea model for the workers TUI.
 type workersTUIModel struct {
 	workers      []hub.Worker
@@ -67,16 +78,25 @@ type workersTUIModel struct {
 	tickCount    int
 	relayConnected map[string]bool // worker ID -> connected to relay
 
+	// Metrics panel state for the selected worker.
+	selectedWorkerJobID string               // active job ID of selected worker
+	metricData          map[string][]float64 // metric_name -> time series values
+	metricBest          map[string]float64   // metric_name -> best value
+	lastLogID           int64                // for incremental fetch
+	logLines            []string             // raw log lines for log panel
+
 	hubClient *hub.Client
 	relayURL  string
 }
 
 func newWorkersTUIModel(client *hub.Client, relayURL string) workersTUIModel {
 	return workersTUIModel{
-		loading:      true,
-		hubClient:    client,
-		relayURL:     relayURL,
+		loading:        true,
+		hubClient:      client,
+		relayURL:       relayURL,
 		relayConnected: make(map[string]bool),
+		metricData:     make(map[string][]float64),
+		metricBest:     make(map[string]float64),
 	}
 }
 
@@ -135,12 +155,53 @@ func fetchRelayHealthCmd(relayURL string) tea.Cmd {
 	}
 }
 
+// fetchActiveJobCmd returns a tea.Cmd that finds the running job for a worker.
+func fetchActiveJobCmd(client *hub.Client, workerID string) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil || workerID == "" {
+			return activeJobMsg{workerID: workerID}
+		}
+		jobID, err := client.FetchRunningJobForWorker(workerID)
+		return activeJobMsg{workerID: workerID, jobID: jobID, err: err}
+	}
+}
+
+// fetchJobLogsCmd returns a tea.Cmd that fetches logs incrementally for a job.
+func fetchJobLogsCmd(client *hub.Client, jobID string, sinceID int64) tea.Cmd {
+	return func() tea.Msg {
+		if client == nil || jobID == "" {
+			return jobLogsMsg{}
+		}
+		logs, err := client.FetchJobLogs(jobID, sinceID)
+		return jobLogsMsg{logs: logs, err: err}
+	}
+}
+
 func (m workersTUIModel) Init() tea.Cmd {
 	return tea.Batch(
 		fetchWorkersCmd(m.hubClient),
 		fetchRelayHealthCmd(m.relayURL),
 		workerTickCmd(),
 	)
+}
+
+// resetMetricState clears metric/log state for a new worker selection.
+func (m *workersTUIModel) resetMetricState() {
+	m.selectedWorkerJobID = ""
+	m.metricData = make(map[string][]float64)
+	m.metricBest = make(map[string]float64)
+	m.lastLogID = 0
+	m.logLines = nil
+}
+
+// selectedWorkerID returns the ID of the currently selected worker, or "".
+func (m *workersTUIModel) selectedWorkerID() string {
+	visible := m.visibleWorkers()
+	c := m.cursor
+	if c < 0 || c >= len(visible) {
+		return ""
+	}
+	return visible[c].ID
 }
 
 func (m workersTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -153,6 +214,55 @@ func (m workersTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = nil
 			m.workers = msg.workers
 		}
+		// Kick off active job fetch for selected worker if we don't have one yet.
+		if m.selectedWorkerJobID == "" {
+			if wid := m.selectedWorkerID(); wid != "" {
+				return m, fetchActiveJobCmd(m.hubClient, wid)
+			}
+		}
+		return m, nil
+
+	case activeJobMsg:
+		// Only apply if this is still the selected worker.
+		if msg.workerID == m.selectedWorkerID() && msg.err == nil {
+			if msg.jobID != m.selectedWorkerJobID {
+				// New job — reset state.
+				m.resetMetricState()
+				m.selectedWorkerJobID = msg.jobID
+			}
+			if m.selectedWorkerJobID != "" {
+				return m, fetchJobLogsCmd(m.hubClient, m.selectedWorkerJobID, m.lastLogID)
+			}
+		}
+		return m, nil
+
+	case jobLogsMsg:
+		if msg.err == nil && len(msg.logs) > 0 {
+			for _, log := range msg.logs {
+				m.logLines = append(m.logLines, log.Line)
+				if log.ID > m.lastLogID {
+					m.lastLogID = log.ID
+				}
+				// Parse @key=value metrics from each line.
+				if metrics := hub.ParseMetrics(log.Line); metrics != nil {
+					for k, v := range metrics {
+						m.metricData[k] = append(m.metricData[k], v)
+						// Update best value.
+						if prev, ok := m.metricBest[k]; !ok {
+							m.metricBest[k] = v
+						} else if metricLowerIsBetter(k) {
+							if v < prev {
+								m.metricBest[k] = v
+							}
+						} else {
+							if v > prev {
+								m.metricBest[k] = v
+							}
+						}
+					}
+				}
+			}
+		}
 		return m, nil
 
 	case relayHealthMsg:
@@ -163,12 +273,21 @@ func (m workersTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case workerTickMsg:
 		m.tickCount++
-		// Refresh every tick (3s interval)
-		return m, tea.Batch(
+		cmds := []tea.Cmd{
 			fetchWorkersCmd(m.hubClient),
 			fetchRelayHealthCmd(m.relayURL),
 			workerTickCmd(),
-		)
+		}
+		// Also refresh active job and logs on tick.
+		if wid := m.selectedWorkerID(); wid != "" {
+			if m.selectedWorkerJobID == "" {
+				cmds = append(cmds, fetchActiveJobCmd(m.hubClient, wid))
+			} else {
+				cmds = append(cmds, fetchJobLogsCmd(m.hubClient, m.selectedWorkerJobID, m.lastLogID))
+			}
+		}
+		// Refresh every tick (3s interval)
+		return m, tea.Batch(cmds...)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -181,12 +300,20 @@ func (m workersTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			visible := m.visibleWorkers()
 			if m.cursor > 0 {
 				m.cursor--
+				m.resetMetricState()
+				if wid := m.selectedWorkerID(); wid != "" {
+					return m, fetchActiveJobCmd(m.hubClient, wid)
+				}
 			}
 			_ = visible
 		case tea.KeyDown:
 			visible := m.visibleWorkers()
 			if m.cursor < len(visible)-1 {
 				m.cursor++
+				m.resetMetricState()
+				if wid := m.selectedWorkerID(); wid != "" {
+					return m, fetchActiveJobCmd(m.hubClient, wid)
+				}
 			}
 		case tea.KeyEsc:
 			if m.query != "" {
@@ -208,6 +335,10 @@ func (m workersTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.query == "" {
 					if m.cursor > 0 {
 						m.cursor--
+						m.resetMetricState()
+						if wid := m.selectedWorkerID(); wid != "" {
+							return m, fetchActiveJobCmd(m.hubClient, wid)
+						}
 					}
 					return m, nil
 				}
@@ -218,6 +349,10 @@ func (m workersTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					visible := m.visibleWorkers()
 					if m.cursor < len(visible)-1 {
 						m.cursor++
+						m.resetMetricState()
+						if wid := m.selectedWorkerID(); wid != "" {
+							return m, fetchActiveJobCmd(m.hubClient, wid)
+						}
 					}
 					return m, nil
 				}
@@ -397,6 +532,10 @@ func (m workersTUIModel) View() string {
 			sb.WriteString("\n")
 		} else {
 			m.renderWorkerRows(&sb, visible)
+			// Render metrics panel for selected worker when in full layout.
+			if m.layoutMode() == layoutFull {
+				m.renderMetricsPanel(&sb)
+			}
 		}
 	}
 
@@ -634,6 +773,119 @@ func (m *workersTUIModel) renderWorkerRow(sb *strings.Builder, w hub.Worker, isS
 			sb.WriteString(" ")
 			sb.WriteString(lastSeen)
 		}
+		sb.WriteString("\n")
+	}
+}
+
+// metricLowerIsBetter returns true if a metric name suggests lower is better.
+func metricLowerIsBetter(name string) bool {
+	lname := strings.ToLower(name)
+	for _, kw := range []string{"loss", "error", "mse", "mae", "rmse", "mape"} {
+		if strings.Contains(lname, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// sparklineChars are block elements from sparse to full.
+var sparklineChars = []rune{'▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
+
+// renderSparkline renders a compact sparkline string from a float64 series.
+// width is the number of characters to render.
+func renderSparkline(values []float64, width int) string {
+	if len(values) == 0 || width <= 0 {
+		return strings.Repeat(" ", width)
+	}
+	// Find min/max.
+	mn, mx := values[0], values[0]
+	for _, v := range values {
+		if v < mn {
+			mn = v
+		}
+		if v > mx {
+			mx = v
+		}
+	}
+
+	// Use the last `width` values.
+	display := values
+	if len(display) > width {
+		display = display[len(display)-width:]
+	}
+
+	var sb strings.Builder
+	for _, v := range display {
+		var idx int
+		if mx == mn {
+			idx = len(sparklineChars) / 2
+		} else {
+			idx = int((v - mn) / (mx - mn) * float64(len(sparklineChars)-1))
+		}
+		if idx < 0 {
+			idx = 0
+		}
+		if idx >= len(sparklineChars) {
+			idx = len(sparklineChars) - 1
+		}
+		sb.WriteRune(sparklineChars[idx])
+	}
+	// Pad with spaces if fewer values than width.
+	for sb.Len() < width {
+		sb.WriteString(" ")
+	}
+	return sb.String()
+}
+
+// renderMetricsPanel writes the metrics panel for the selected worker into sb.
+func (m *workersTUIModel) renderMetricsPanel(sb *strings.Builder) {
+	sb.WriteString("\n")
+	sb.WriteString(styleFaint.Render("  metrics"))
+	sb.WriteString("\n")
+
+	if m.selectedWorkerJobID == "" {
+		sb.WriteString(styleFaint.Render("  No active job"))
+		sb.WriteString("\n")
+		return
+	}
+
+	if len(m.metricData) == 0 {
+		sb.WriteString(styleFaint.Render(fmt.Sprintf("  job: %s — no @key=value metrics yet", m.selectedWorkerJobID)))
+		sb.WriteString("\n")
+		return
+	}
+
+	// Sort metric names for stable rendering.
+	names := make([]string, 0, len(m.metricData))
+	for k := range m.metricData {
+		names = append(names, k)
+	}
+	// Sort: loss-like first (lower-is-better), then alphabetical.
+	for i := 0; i < len(names); i++ {
+		for j := i + 1; j < len(names); j++ {
+			li := metricLowerIsBetter(names[i])
+			lj := metricLowerIsBetter(names[j])
+			if lj && !li {
+				names[i], names[j] = names[j], names[i]
+			} else if li == lj && names[i] > names[j] {
+				names[i], names[j] = names[j], names[i]
+			}
+		}
+	}
+
+	sparkW := 12
+	for _, name := range names {
+		vals := m.metricData[name]
+		spark := renderSparkline(vals, sparkW)
+		latest := vals[len(vals)-1]
+		best := m.metricBest[name]
+		dir := "↑"
+		if metricLowerIsBetter(name) {
+			dir = "↓"
+		}
+		// Format: "  loss    ▁▂▃▅▇█  0.023  ↓ best: 0.019"
+		line := fmt.Sprintf("  %-12s %s  %.4f  %s best: %.4f", name, spark, latest, dir, best)
+		sb.WriteString(styleSummary.Render(line))
 		sb.WriteString("\n")
 	}
 }
