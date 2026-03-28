@@ -224,50 +224,97 @@ type geminiSessionMeta struct {
 }
 
 func readGeminiSessionMeta(path string) geminiSessionMeta {
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return geminiSessionMeta{}
 	}
-	// Only parse the fields we need (file can be huge)
-	var raw struct {
-		SessionID   string `json:"sessionId"`
-		LastUpdated string `json:"lastUpdated"`
-		Messages    []struct {
-			Type    string `json:"type"`
-			Content string `json:"content"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
+	defer f.Close()
+
+	// Stream-parse: read only top-level fields + first user message.
+	// Avoids loading entire file (can be >10MB) into memory.
+	dec := json.NewDecoder(f)
+
+	// Read opening '{'
+	t, err := dec.Token()
+	if err != nil || t != json.Delim('{') {
 		return geminiSessionMeta{}
 	}
-	first := ""
-	for _, m := range raw.Messages {
-		if m.Type == "user" && m.Content != "" {
-			msg := strings.TrimSpace(m.Content)
-			// Skip markdown headers and IDE context
-			if strings.HasPrefix(msg, "# ") || strings.HasPrefix(msg, "## ") || strings.HasPrefix(msg, "# Context") {
-				continue
+
+	var meta geminiSessionMeta
+	for dec.More() {
+		// Read key
+		t, err := dec.Token()
+		if err != nil {
+			break
+		}
+		key, ok := t.(string)
+		if !ok {
+			break
+		}
+
+		switch key {
+		case "sessionId":
+			var v string
+			if dec.Decode(&v) == nil {
+				meta.sessionID = v
 			}
-			// Take first line only
-			if idx := strings.IndexByte(msg, '\n'); idx > 0 {
-				msg = msg[:idx]
+		case "lastUpdated":
+			var v string
+			if dec.Decode(&v) == nil {
+				meta.lastUpdated = v
 			}
-			msg = strings.TrimSpace(msg)
-			if msg == "" {
-				continue
+		case "messages":
+			// Stream through messages array, stop at first user message
+			t2, err := dec.Token() // '['
+			if err != nil || t2 != json.Delim('[') {
+				break
 			}
-			if len(msg) > 80 {
-				msg = msg[:80] + "..."
+			for dec.More() {
+				var msg struct {
+					Type    string `json:"type"`
+					Content any    `json:"content"`
+				}
+				if dec.Decode(&msg) != nil {
+					break
+				}
+				if msg.Type != "user" {
+					continue
+				}
+				text, _ := msg.Content.(string)
+				if text == "" {
+					continue
+				}
+				text = strings.TrimSpace(text)
+				if strings.HasPrefix(text, "# ") || strings.HasPrefix(text, "## ") {
+					continue
+				}
+				if idx := strings.IndexByte(text, '\n'); idx > 0 {
+					text = text[:idx]
+				}
+				text = strings.TrimSpace(text)
+				if text == "" {
+					continue
+				}
+				if len(text) > 80 {
+					text = text[:80] + "..."
+				}
+				meta.firstMessage = text
+				break
 			}
-			first = msg
+			// Don't parse remaining messages — skip to end of array
+			// (decoder will skip when we move to next key)
+		default:
+			// Skip unknown fields
+			var skip json.RawMessage
+			dec.Decode(&skip)
+		}
+
+		// Early exit if we have everything
+		if meta.sessionID != "" && meta.firstMessage != "" {
 			break
 		}
 	}
-	return geminiSessionMeta{
-		sessionID:    raw.SessionID,
-		firstMessage: first,
-		lastUpdated:  raw.LastUpdated,
-	}
+	return meta
 }
 
 // resolveGeminiProjectDir finds the actual project path from ~/.gemini/history/.

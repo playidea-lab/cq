@@ -518,12 +518,9 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.remoteFetched && len(m.remoteSessions) > 0 {
 				mergeRemoteSessions(sessions, m.remoteSessions)
 			}
-			// Merge local provider sessions (Gemini, Codex)
-			for _, p := range providers {
-				if p.ScanSessions == nil {
-					continue
-				}
-				for tag, entry := range p.ScanSessions() {
+			// Re-use cached provider sessions on every tick, but only re-scan every ~30s
+			for tag, entry := range m.sessions {
+				if entry.Tool != "" && entry.Tool != "claude" {
 					if _, exists := sessions[tag]; !exists {
 						sessions[tag] = entry
 					}
