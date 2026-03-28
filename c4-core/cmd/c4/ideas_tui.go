@@ -126,15 +126,26 @@ func (m ideasTUIModel) Init() tea.Cmd {
 }
 
 // rebuildFiltered returns a new filtered list based on query.
+// Space-separated tokens are AND-matched (all must appear in corpus).
 func rebuildIdeasFiltered(ideas []ideaRow, index map[string]string, query string) []ideaRow {
 	if query == "" {
 		return ideas
 	}
-	lowerQuery := strings.ToLower(query)
+	tokens := strings.Fields(strings.ToLower(query))
+	if len(tokens) == 0 {
+		return ideas
+	}
 	var out []ideaRow
 	for _, row := range ideas {
 		corpus := index[row.slug]
-		if strings.Contains(corpus, lowerQuery) {
+		match := true
+		for _, tok := range tokens {
+			if !strings.Contains(corpus, tok) {
+				match = false
+				break
+			}
+		}
+		if match {
 			out = append(out, row)
 		}
 	}
