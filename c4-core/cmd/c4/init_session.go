@@ -312,7 +312,8 @@ func launchToolNamed(tool, projectDir, name string) error {
 		// Write PID file so cq sessions can detect running sessions.
 		writeSessionPID(name, cmd.Process.Pid)
 
-		// Watch for session-specific .reboot-{name} file — only this session responds.
+		// Watch for session-specific .reboot-{name} or .done marker — only this session responds.
+		sessionDoneFile := filepath.Join(sessionPIDDir(), name+".done")
 		rebootDetected := make(chan struct{}, 1)
 		go func() {
 			ticker := time.NewTicker(2 * time.Second)
@@ -325,6 +326,13 @@ func launchToolNamed(tool, projectDir, name string) error {
 						case rebootDetected <- struct{}{}:
 						default:
 						}
+						if cmd.Process != nil {
+							_ = cmd.Process.Signal(os.Interrupt)
+						}
+						return
+					}
+					// /done marker: trigger graceful exit (full capture on exit).
+					if _, err := os.Stat(sessionDoneFile); err == nil {
 						if cmd.Process != nil {
 							_ = cmd.Process.Signal(os.Interrupt)
 						}
