@@ -461,27 +461,42 @@ func (m dashboardModel) View() string {
 		}
 	}
 
-	// Commands reference
+	// Commands reference (scrollable)
 	sb.WriteString("\n")
-	cmdHeader := " ── Commands "
-	hs2 := groupHeaderStyle("active")
-	sb.WriteString(hs2.Render(cmdHeader))
-	cmdHeaderW := m.width
-	if cmdHeaderW < 74 {
-		cmdHeaderW = 74
+	visible := m.cmdVisibleLines()
+	end := m.cmdScroll + visible
+	if end > len(m.cmdRows) {
+		end = len(m.cmdRows)
 	}
-	cmdRemaining := cmdHeaderW - lipgloss.Width(cmdHeader)
-	if cmdRemaining > 0 {
-		sb.WriteString(styleFaint.Render(strings.Repeat("─", cmdRemaining)))
+
+	if m.cmdScroll > 0 {
+		sb.WriteString(styleFaint.Render("  ▲ more"))
+		sb.WriteString("\n")
 	}
-	sb.WriteString("\n")
-	for _, cmd := range m.cmdRows {
-		if cmd.isHeader {
-			sb.WriteString(styleFaint.Render(fmt.Sprintf("  [%s]\n", cmd.category)))
-			continue
+
+	for _, row := range m.cmdRows[m.cmdScroll:end] {
+		if row.isHeader {
+			header := fmt.Sprintf(" ── %s ", row.category)
+			hs2 := groupHeaderStyle("active")
+			sb.WriteString(hs2.Render(header))
+			hdrW := m.width
+			if hdrW < 74 {
+				hdrW = 74
+			}
+			rem := hdrW - lipgloss.Width(header)
+			if rem > 0 {
+				sb.WriteString(styleFaint.Render(strings.Repeat("─", rem)))
+			}
+			sb.WriteString("\n")
+		} else {
+			sb.WriteString(styleHelpKey.Render(fmt.Sprintf("  %-24s", row.name)))
+			sb.WriteString(styleFaint.Render(row.desc))
+			sb.WriteString("\n")
 		}
-		sb.WriteString(styleHelpKey.Render(fmt.Sprintf("  %-18s", cmd.name)))
-		sb.WriteString(styleFaint.Render(cmd.desc))
+	}
+
+	if end < len(m.cmdRows) {
+		sb.WriteString(styleFaint.Render("  ▼ more"))
 		sb.WriteString("\n")
 	}
 
@@ -489,6 +504,8 @@ func (m dashboardModel) View() string {
 	var helpBar strings.Builder
 	helpBar.WriteString(" ")
 	helpBar.WriteString(helpEntry("Enter", m.defaultTool+" 시작"))
+	helpBar.WriteString("  ")
+	helpBar.WriteString(helpEntry("↑↓", "스크롤"))
 	helpBar.WriteString("  ")
 	helpBar.WriteString(helpEntry("s", "상태"))
 	helpBar.WriteString("  ")
