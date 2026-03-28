@@ -107,6 +107,28 @@ var hubWorkersCmd = &cobra.Command{
 	RunE:  runHubWorkers,
 }
 
+// workersRootCmd mirrors hubWorkersCmd at the root level so users can run
+// `cq workers` instead of `cq hub workers`. hubWorkersCmd is kept for
+// backward compatibility.
+var workersRootCmd = &cobra.Command{
+	Use:   "workers",
+	Short: "List and monitor workers",
+	Long:  "Interactive TUI dashboard for monitoring Hub workers. Same as 'cq hub workers'.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Forward local flags into the shared hub vars that runHubWorkers reads.
+		if cmd.Flags().Changed("no-tui") {
+			hubWorkersNoTUI, _ = cmd.Flags().GetBool("no-tui")
+		}
+		if cmd.Flags().Changed("json") {
+			hubWorkersJSON, _ = cmd.Flags().GetBool("json")
+		}
+		if cmd.Flags().Changed("all") {
+			hubWorkersAll, _ = cmd.Flags().GetBool("all")
+		}
+		return runHubWorkers(cmd, args)
+	},
+}
+
 var hubWorkersPruneCmd = &cobra.Command{
 	Use:   "prune",
 	Short: "Remove offline zombie workers",
@@ -179,6 +201,12 @@ func init() {
 	hubCmd.AddCommand(hubJobCmd)
 	hubCmd.AddCommand(hubTransferCmd)
 	rootCmd.AddCommand(hubCmd)
+
+	// Register `cq workers` as a root-level shortcut for `cq hub workers`.
+	workersRootCmd.Flags().Bool("no-tui", false, "disable interactive TUI, print table instead")
+	workersRootCmd.Flags().Bool("json", false, "output workers as JSON")
+	workersRootCmd.Flags().Bool("all", false, "include offline workers")
+	rootCmd.AddCommand(workersRootCmd)
 }
 
 // newHubClient creates a Hub client from project config.
