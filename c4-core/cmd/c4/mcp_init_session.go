@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/changmin/c4-core/internal/persona"
 	"github.com/changmin/c4-core/internal/session"
 )
 
@@ -44,6 +46,9 @@ func initSession(ctx *initContext) error {
 	// Store the monitor on initContext for shutdown cleanup.
 	ctx.sessionMonitor = mon
 
+	// Show newly promoted rules since last session (Growth Loop notification).
+	showNewRules()
+
 	count := mon.ActiveCount()
 	limit := cfg.Sessions.Limit
 	// Windows stub returns 0 → warning never fires (correct behavior).
@@ -54,6 +59,43 @@ func initSession(ctx *initContext) error {
 	}
 
 	return nil
+}
+
+// showNewRules checks the preference ledger for recently promoted rules
+// and displays a notification at session start.
+func showNewRules() {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	ledgerPath := filepath.Join(homeDir, ".c4", "preference_ledger.yaml")
+	ledger, err := persona.LoadLedgerAt(ledgerPath)
+	if err != nil {
+		return
+	}
+
+	// Find entries promoted in the last 24 hours.
+	cutoff := time.Now().Add(-24 * time.Hour)
+	var recent []string
+	for key, entry := range ledger {
+		if entry.Suppressed {
+			continue
+		}
+		if entry.Count >= 3 && entry.LastSeen.After(cutoff) {
+			recent = append(recent, key)
+		}
+	}
+	if len(recent) == 0 {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "cq: 🧠 Growth Loop — %d rule(s) learned recently:\n", len(recent))
+	for _, r := range recent {
+		if len(r) > 60 {
+			r = r[:57] + "..."
+		}
+		fmt.Fprintf(os.Stderr, "cq:   • %s\n", r)
+	}
 }
 
 // shutdownSession stops the session monitor, removing this process's lock file.

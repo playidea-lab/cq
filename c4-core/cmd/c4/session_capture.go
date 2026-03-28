@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/changmin/c4-core/internal/knowledge"
+	"github.com/changmin/c4-core/internal/persona"
 	_ "modernc.org/sqlite"
 )
 
@@ -326,7 +327,8 @@ func captureSessionSaveKnowledge(dir, project, date, summaryText string) {
 	}
 }
 
-// captureSessionLearnPersona extracts decisions/preferences and applies persona learning.
+// captureSessionLearnPersona extracts decisions/preferences, applies persona learning,
+// accumulates preference counts in the ledger, and promotes hints/rules when thresholds are met.
 func captureSessionLearnPersona(dir string, result *sessionCloseResult) {
 	if result == nil || (len(result.Decisions) == 0 && len(result.Preferences) == 0) {
 		return
@@ -339,6 +341,40 @@ func captureSessionLearnPersona(dir string, result *sessionCloseResult) {
 		suggestions = append(suggestions, "[선호] "+p)
 	}
 	applySessionPersona(dir, suggestions)
+
+	// Growth Loop A: accumulate preference counts + promote hints/rules.
+	allKeys := append(result.Decisions, result.Preferences...)
+	if err := persona.IncrementAndSave(allKeys); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: preference ledger: %v\n", err)
+		return
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	ledgerPath := filepath.Join(homeDir, ".c4", "preference_ledger.yaml")
+	ledger, err := persona.LoadLedgerAt(ledgerPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq: load ledger for promotion: %v\n", err)
+		return
+	}
+
+	// Promote hints (count>=3) to claude.md
+	claudeMdPath := filepath.Join(dir, "CLAUDE.md")
+	if _, err := os.Stat(claudeMdPath); os.IsNotExist(err) {
+		// Try project-level .claude/ path
+		claudeMdPath = filepath.Join(dir, ".claude", "CLAUDE.md")
+	}
+	if hints, err := persona.PromoteHints(ledger, claudeMdPath); err == nil && len(hints) > 0 {
+		fmt.Fprintf(os.Stderr, "cq: promoted %d hint(s) to claude.md\n", len(hints))
+	}
+
+	// Promote rules (count>=5) to .claude/rules/auto-learned.md
+	rulesDir := filepath.Join(dir, ".claude", "rules")
+	if rules, err := persona.PromoteRules(ledger, rulesDir); err == nil && len(rules) > 0 {
+		fmt.Fprintf(os.Stderr, "cq: promoted %d rule(s) to auto-learned.md\n", len(rules))
+	}
 }
 
 // inferStatus determines the lifecycle status of a session using a 3-step hybrid:
