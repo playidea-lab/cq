@@ -63,6 +63,25 @@ type dashboardModel struct {
 	height int
 }
 
+// cqCommand is a command entry for the dashboard reference.
+type cqCommand struct {
+	name string
+	desc string
+}
+
+// cqCommands lists key CQ commands shown on the dashboard.
+// Update this list when adding/removing commands.
+var cqCommands = []cqCommand{
+	{"cq claude", "Claude Code 시작"},
+	{"cq cursor", "Cursor 시작"},
+	{"cq -t <name>", "이름 붙인 세션 시작"},
+	{"cq sessions", "세션 목록 관리"},
+	{"cq status", "서비스 + 프로젝트 상태"},
+	{"cq doctor", "설치 환경 진단"},
+	{"cq update", "CQ 최신 버전 업데이트"},
+	{"cq stop", "CQ 서비스 중지"},
+}
+
 // cqLogo is the dot-art CQ mark.
 var cqLogo = []string{
 	" ▄▀▀▀▀▄  ▄▀▀▀▀▄ ",
@@ -130,7 +149,7 @@ func newDashboardModel() dashboardModel {
 		badge := "active"
 		switch strings.ToLower(phase) {
 		case "execute":
-			badge = "in-progress"
+			badge = "active"
 		case "plan", "design", "discovery":
 			badge = "planned"
 		case "complete":
@@ -148,7 +167,7 @@ func newDashboardModel() dashboardModel {
 		activeCount := 0
 		var recentTag, recentDate string
 		for tag, entry := range sessions {
-			if entry.Status == "" || entry.Status == "active" || entry.Status == "in-progress" || entry.Status == "running" {
+			if entry.Status == "" || entry.Status == "active" || entry.Status == "running" {
 				activeCount++
 			}
 			if entry.Updated > recentDate {
@@ -330,7 +349,7 @@ func (m dashboardModel) View() string {
 	if m.changelog != nil && len(m.changelog.Items) > 0 {
 		sb.WriteString("\n")
 		header := fmt.Sprintf(" ── %s %s ", m.changelog.ToolName, m.changelog.Version)
-		hs := groupHeaderStyle("in-progress")
+		hs := groupHeaderStyle("active")
 		sb.WriteString(hs.Render(header))
 		headerW := m.width
 		if headerW < 74 {
@@ -349,6 +368,26 @@ func (m dashboardModel) View() string {
 			sb.WriteString(styleSummary.Render("  • " + item))
 			sb.WriteString("\n")
 		}
+	}
+
+	// Commands reference
+	sb.WriteString("\n")
+	cmdHeader := " ── Commands "
+	hs2 := groupHeaderStyle("active")
+	sb.WriteString(hs2.Render(cmdHeader))
+	cmdHeaderW := m.width
+	if cmdHeaderW < 74 {
+		cmdHeaderW = 74
+	}
+	cmdRemaining := cmdHeaderW - lipgloss.Width(cmdHeader)
+	if cmdRemaining > 0 {
+		sb.WriteString(styleFaint.Render(strings.Repeat("─", cmdRemaining)))
+	}
+	sb.WriteString("\n")
+	for _, cmd := range cqCommands {
+		sb.WriteString(styleHelpKey.Render(fmt.Sprintf("  %-18s", cmd.name)))
+		sb.WriteString(styleFaint.Render(cmd.desc))
+		sb.WriteString("\n")
 	}
 
 	// Build help bar
