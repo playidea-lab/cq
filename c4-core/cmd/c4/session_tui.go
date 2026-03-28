@@ -1365,15 +1365,26 @@ func (m sessionTUIModel) View() string {
 	return sb.String()
 }
 
-func runSessionsTUI() (string, error) {
+// runSessionsTUI returns (selectedTag, tool, error).
+// tool is the AI tool name for the selected session (claude/gemini/codex/chatgpt).
+func runSessionsTUI() (string, string, error) {
 	m := newSessionTUIModel()
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	result, err := p.Run()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if final, ok := result.(sessionTUIModel); ok {
-		return final.selectedTag, nil
+		tool := ""
+		if final.selectedTag != "" {
+			if entry, ok := final.sessions[final.selectedTag]; ok && entry.Tool != "" {
+				tool = entry.Tool
+			}
+			if tool == "" {
+				tool = "claude"
+			}
+		}
+		return final.selectedTag, tool, nil
 	}
-	return "", nil
+	return "", "", nil
 }

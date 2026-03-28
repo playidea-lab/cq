@@ -433,7 +433,7 @@ var sessionsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		isTerminal := term.IsTerminal(int(os.Stdout.Fd()))
 		if !sessionsPlain && isTerminal {
-			tag, err := runSessionsTUI()
+			tag, tool, err := runSessionsTUI()
 			if err != nil {
 				return err
 			}
@@ -444,7 +444,7 @@ var sessionsCmd = &cobra.Command{
 					sessions[tag] = entry
 					_ = saveNamedSessions(sessions)
 				}
-				return launchToolNamed("claude", projectDir, tag)
+				return launchToolNamed(tool, projectDir, tag)
 			}
 			return nil
 		}
