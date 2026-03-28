@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/mcp/handlers/cfghandler"
 	"github.com/spf13/cobra"
@@ -148,13 +149,14 @@ func scanConfigEntries(dir string) ([]configEntry, error) {
 
 // runConfigTUI launches the interactive config TUI.
 func runConfigTUI() error {
-	// TODO(T-907): implement bubbletea TUI
 	entries, err := scanConfigEntries(projectDir)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%d config entries\n", len(entries))
-	return nil
+	m := newConfigTUIModel(entries)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	_, err = p.Run()
+	return err
 }
 
 var configCmd = &cobra.Command{
