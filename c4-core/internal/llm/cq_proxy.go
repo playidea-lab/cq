@@ -19,6 +19,7 @@ var _ Provider = (*CQProxyProvider)(nil)
 type CQProxyProvider struct {
 	baseURL   string
 	tokenFunc func() string
+	anonKey   string // Supabase anon key for API Gateway passthrough
 	client    *http.Client
 }
 
@@ -30,6 +31,13 @@ func NewCQProxyProvider(baseURL string, tokenFunc func() string) *CQProxyProvide
 		tokenFunc: tokenFunc,
 		client:    &http.Client{Timeout: 120 * time.Second},
 	}
+}
+
+// SetAnonKey sets the Supabase anon key for API Gateway passthrough.
+// When set, requests include both Authorization (JWT) and apikey headers,
+// allowing the API Gateway to pass through while the Edge Function verifies the JWT.
+func (p *CQProxyProvider) SetAnonKey(key string) {
+	p.anonKey = key
 }
 
 func (p *CQProxyProvider) Name() string { return "cq-proxy" }
@@ -71,7 +79,15 @@ func (p *CQProxyProvider) Chat(ctx context.Context, req *ChatRequest) (*ChatResp
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.tokenFunc())
+	token := p.tokenFunc()
+	if p.anonKey != "" {
+		// API Gateway authenticates via anon key in Authorization header;
+		// JWT goes in x-user-token for Edge Function to verify internally.
+		httpReq.Header.Set("Authorization", "Bearer "+p.anonKey)
+		httpReq.Header.Set("x-user-token", token)
+	} else {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {

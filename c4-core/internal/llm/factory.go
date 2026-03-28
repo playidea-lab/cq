@@ -9,6 +9,7 @@ type GatewayProviderConfig struct {
 	BaseURL      string
 	DefaultModel string
 	TokenFunc    func() string // used by cq-proxy instead of APIKey
+	AnonKey      string        // Supabase anon key for cq-proxy API Gateway passthrough
 }
 
 // GatewayConfig holds settings needed to construct a Gateway.
@@ -60,7 +61,11 @@ func NewGatewayFromConfig(cfg GatewayConfig) *Gateway {
 		case "ollama":
 			gw.Register(NewOllamaProvider(baseURL))
 		case "cq-proxy":
-			gw.Register(NewCQProxyProvider(baseURL, provCfg.TokenFunc))
+			p := NewCQProxyProvider(baseURL, provCfg.TokenFunc)
+			if provCfg.AnonKey != "" {
+				p.SetAnonKey(provCfg.AnonKey)
+			}
+			gw.Register(p)
 		}
 	}
 

@@ -30,27 +30,35 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Extract JWT
+  // Extract JWT — prefer x-user-token (API Gateway passthrough), fallback to Authorization
+  const userToken = req.headers.get("x-user-token");
   const authHeader = req.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return new Response(JSON.stringify({ error: "Missing authorization header" }), {
+  let jwt: string;
+  if (userToken) {
+    jwt = userToken;
+  } else if (authHeader && authHeader.startsWith("Bearer ")) {
+    jwt = authHeader.slice("Bearer ".length);
+  } else {
+    return new Response(JSON.stringify({ code: 401, message: "Missing authorization header" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }
-  const jwt = authHeader.slice("Bearer ".length);
 
-  // Verify JWT via Supabase Auth
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    global: { headers: { Authorization: `Bearer ${jwt}` } },
+  // Verify JWT via Supabase GoTrue directly (avoids API Gateway JWT re-validation)
+  const verifyResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: {
+      "Authorization": `Bearer ${jwt}`,
+      "apikey": SUPABASE_ANON_KEY,
+    },
   });
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+  if (!verifyResp.ok) {
+    return new Response(JSON.stringify({ code: 401, message: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }
+  const user = await verifyResp.json();
 
   // Rate limit check (service_role client for llm_usage table)
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);

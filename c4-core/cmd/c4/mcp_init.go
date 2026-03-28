@@ -865,6 +865,11 @@ var coreMCPTools = []string{
 
 	// Lighthouse
 	"cq_lighthouse",
+
+	// Research loop
+	"cq_research_loop_start",
+	"cq_research_loop_stop",
+	"cq_research_loop_status",
 }
 
 // providerDefaultEnvVar returns the default environment variable name for a provider's API key.
@@ -923,12 +928,13 @@ func toLLMGatewayConfig(cfgMgr *config.Manager, ss *secrets.Store, cloudTP *clou
 				apiKey = os.Getenv(envVar)
 			}
 		}
-		// Ollama does not require an API key; all other providers need one.
-		if apiKey == "" && name != "ollama" {
+		// Ollama and cq-proxy do not require an API key (cq-proxy uses JWT via TokenFunc).
+		noKeyOK := name == "ollama" || name == "cq-proxy"
+		if apiKey == "" && !noKeyOK {
 			slog.Warn("no API key for provider; provider disabled", "provider", name)
 		}
 		providers[name] = llm.GatewayProviderConfig{
-			Enabled:      p.Enabled && (apiKey != "" || name == "ollama"),
+			Enabled:      p.Enabled && (apiKey != "" || noKeyOK),
 			APIKey:       apiKey,
 			BaseURL:      p.BaseURL,
 			DefaultModel: p.DefaultModel,
@@ -945,11 +951,16 @@ func toLLMGatewayConfig(cfgMgr *config.Manager, ss *secrets.Store, cloudTP *clou
 			baseURL = strings.TrimRight(builtinSupabaseURL, "/") + "/functions/v1/llm-proxy"
 		}
 		if baseURL != "" && cloudTP.Token() != "" {
+			ak := builtinSupabaseKey
+			if ak == "" {
+				ak = cfg.Cloud.AnonKey
+			}
 			providers["cq-proxy"] = llm.GatewayProviderConfig{
 				Enabled:      true,
 				TokenFunc:    cloudTP.Token,
 				BaseURL:      baseURL,
 				DefaultModel: "claude-haiku-4-5-20251001",
+				AnonKey:      ak,
 			}
 		}
 	}

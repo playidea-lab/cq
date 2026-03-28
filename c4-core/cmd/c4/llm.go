@@ -203,6 +203,7 @@ func buildLLMGateway() (*llmGatewayResult, error) {
 				TokenFunc:    cloudTP.Token,
 				BaseURL:      proxyBaseURL,
 				DefaultModel: "claude-haiku-4-5-20251001",
+				AnonKey:      anonKey,
 			}
 		}
 	}
