@@ -738,6 +738,136 @@ class McpApiHandler extends WorkerEntrypoint<Env> {
 
 // ---- Default handler: OAuth UI routes + GitHub callback + legacy auth ----
 
+// ---- Landing page HTML ----
+
+const LANDING_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CQ — External Brain for AI</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0a;color:#e0e0e0;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:2rem 1rem}
+h1{font-size:2.5rem;font-weight:700;margin-bottom:.25rem}
+h1 span{color:#00d4aa}
+.tagline{color:#888;font-size:1.1rem;margin-bottom:2rem}
+.tabs{display:flex;gap:.5rem;margin-bottom:1.5rem;flex-wrap:wrap;justify-content:center}
+.tab{padding:.5rem 1rem;border:1px solid #333;border-radius:6px;background:#1a1a1a;color:#aaa;cursor:pointer;font-size:.9rem;transition:all .2s}
+.tab:hover{border-color:#555;color:#fff}
+.tab.active{border-color:#00d4aa;color:#00d4aa;background:#0d2e26}
+.panel{display:none;width:100%;max-width:600px;background:#111;border:1px solid #222;border-radius:8px;padding:1.5rem;margin-bottom:1.5rem}
+.panel.active{display:block}
+.panel h3{font-size:1rem;margin-bottom:.75rem;color:#ccc}
+.panel p{font-size:.85rem;color:#888;margin-bottom:.75rem;line-height:1.5}
+pre{background:#0a0a0a;border:1px solid #222;border-radius:6px;padding:1rem;overflow-x:auto;font-size:.8rem;line-height:1.5;position:relative}
+code{font-family:'SF Mono',Menlo,monospace;color:#e0e0e0}
+.copy-btn{position:absolute;top:.5rem;right:.5rem;padding:.3rem .6rem;background:#1a1a1a;border:1px solid #333;border-radius:4px;color:#888;cursor:pointer;font-size:.75rem}
+.copy-btn:hover{color:#00d4aa;border-color:#00d4aa}
+.copy-btn.copied{color:#00d4aa;border-color:#00d4aa}
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1rem;width:100%;max-width:600px;margin-bottom:2rem}
+.feature{background:#111;border:1px solid #222;border-radius:8px;padding:1rem}
+.feature h4{font-size:.9rem;margin-bottom:.5rem;color:#00d4aa}
+.feature p{font-size:.8rem;color:#888;line-height:1.4}
+.links{display:flex;gap:1.5rem;flex-wrap:wrap;justify-content:center;margin-top:1rem}
+.links a{color:#888;text-decoration:none;font-size:.85rem;transition:color .2s}
+.links a:hover{color:#00d4aa}
+.badge{display:inline-block;padding:.15rem .4rem;background:#0d2e26;color:#00d4aa;border-radius:3px;font-size:.7rem;margin-left:.5rem}
+</style>
+</head>
+<body>
+<h1><span>CQ</span> External Brain</h1>
+<p class="tagline">Connect any AI to your persistent knowledge base</p>
+
+<div class="tabs">
+  <div class="tab active" onclick="show('cursor')">Cursor</div>
+  <div class="tab" onclick="show('chatgpt')">ChatGPT</div>
+  <div class="tab" onclick="show('claude')">Claude Desktop</div>
+  <div class="tab" onclick="show('windsurf')">Windsurf</div>
+  <div class="tab" onclick="show('bridge')">Zed / Cline</div>
+</div>
+
+<div class="panel active" id="p-cursor">
+  <h3>Cursor <span class="badge">Verified</span></h3>
+  <p>Add to <code>~/.cursor/mcp.json</code> under <code>mcpServers</code>:</p>
+  <pre><code id="c-cursor">"cq-brain": {
+  "url": "https://mcp.pilab.kr/mcp",
+  "type": "streamable-http"
+}</code><button class="copy-btn" onclick="copy('c-cursor',this)">Copy</button></pre>
+  <p>Restart Cursor &rarr; Settings &rarr; Tools & MCP &rarr; OAuth popup &rarr; Done.</p>
+</div>
+
+<div class="panel" id="p-chatgpt">
+  <h3>ChatGPT <span class="badge">Verified</span></h3>
+  <p>1. Enable <strong>Developer Mode</strong> in ChatGPT settings.</p>
+  <p>2. Add MCP Server with this URL:</p>
+  <pre><code id="c-chatgpt">https://mcp.pilab.kr/mcp</code><button class="copy-btn" onclick="copy('c-chatgpt',this)">Copy</button></pre>
+  <p>3. Authorize with GitHub when prompted.</p>
+</div>
+
+<div class="panel" id="p-claude">
+  <h3>Claude Desktop <span class="badge">Verified</span></h3>
+  <p>Add to <code>claude_desktop_config.json</code>:</p>
+  <pre><code id="c-claude">"cq-brain": {
+  "url": "https://mcp.pilab.kr/mcp"
+}</code><button class="copy-btn" onclick="copy('c-claude',this)">Copy</button></pre>
+  <p>macOS: <code>~/Library/Application Support/Claude/claude_desktop_config.json</code></p>
+</div>
+
+<div class="panel" id="p-windsurf">
+  <h3>Windsurf</h3>
+  <p>Add to your MCP configuration:</p>
+  <pre><code id="c-windsurf">"cq-brain": {
+  "url": "https://mcp.pilab.kr/mcp",
+  "type": "streamable-http"
+}</code><button class="copy-btn" onclick="copy('c-windsurf',this)">Copy</button></pre>
+</div>
+
+<div class="panel" id="p-bridge">
+  <h3>Zed / Cline / Continue.dev</h3>
+  <p>These tools need a local bridge (<code>mcp-remote</code>):</p>
+  <pre><code id="c-bridge">npx mcp-remote https://mcp.pilab.kr/mcp</code><button class="copy-btn" onclick="copy('c-bridge',this)">Copy</button></pre>
+  <p>Use this as the stdio command in your MCP client config.</p>
+</div>
+
+<div class="features">
+  <div class="feature">
+    <h4>Search prior context</h4>
+    <p>AI automatically searches your knowledge base at conversation start. No redundant work.</p>
+  </div>
+  <div class="feature">
+    <h4>Record discoveries</h4>
+    <p>AI proactively saves decisions, patterns, and insights during conversation.</p>
+  </div>
+  <div class="feature">
+    <h4>Session summaries</h4>
+    <p>Full conversation summary captured before session ends. Safety net across all AI tools.</p>
+  </div>
+</div>
+
+<div class="links">
+  <a href="https://github.com/PlayIdea-Lab/cq">GitHub</a>
+  <a href="https://playidea-lab.github.io/cq/">Documentation</a>
+  <a href="https://github.com/PlayIdea-Lab/cq/discussions">Discussions</a>
+  <a href="https://playidea-lab.github.io/cq/guide/install">Install CQ CLI</a>
+</div>
+
+<script>
+function show(id){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('p-'+id).classList.add('active');
+  event.target.classList.add('active');
+}
+function copy(id,btn){
+  navigator.clipboard.writeText(document.getElementById(id).textContent);
+  btn.textContent='Copied!';btn.classList.add('copied');
+  setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied')},2000);
+}
+</script>
+</body>
+</html>`;
+
 const defaultHandler = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async fetch(request: Request, env: any, _ctx: ExecutionContext): Promise<Response> {
@@ -772,6 +902,13 @@ const defaultHandler = {
       if (legacyKey && (urlToken === legacyKey || apiKey === legacyKey)) {
         return proxyToEdgeFunction(request, env, { legacyAuth: true });
       }
+    }
+
+    // Landing page — connection guide for MCP clients
+    if (url.pathname === "/" || url.pathname === "") {
+      return new Response(LANDING_HTML, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
     }
 
     return new Response("Not found", { status: 404 });
