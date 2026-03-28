@@ -843,6 +843,18 @@ code{font-family:'SF Mono',Menlo,monospace;color:#e0e0e0}
     <h4>Session summaries</h4>
     <p>Full conversation summary captured before session ends. Safety net across all AI tools.</p>
   </div>
+  <div class="feature">
+    <h4>Multi-AI sessions</h4>
+    <p>Resume Claude, Codex, Gemini, ChatGPT sessions from one dashboard. Knowledge flows between all tools.</p>
+  </div>
+  <div class="feature">
+    <h4>Skill marketplace</h4>
+    <p>Publish, search, and install custom skills. Share workflows across the community.</p>
+  </div>
+  <div class="feature">
+    <h4>Session knowledge capture</h4>
+    <p>Every session close extracts decisions and preferences. Your brain grows automatically.</p>
+  </div>
 </div>
 
 <div class="links">
@@ -877,7 +889,7 @@ const defaultHandler = {
 
     // Health check
     if (url.pathname === "/health") {
-      return new Response(JSON.stringify({ status: "ok", version: "3.0.0" }), {
+      return new Response(JSON.stringify({ status: "ok", version: "3.1.0" }), {
         headers: { "Content-Type": "application/json" },
       });
     }
