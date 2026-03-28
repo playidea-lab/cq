@@ -191,6 +191,11 @@ func launchToolNamed(tool, projectDir, name string) error {
 					fmt.Fprintf(os.Stderr, "cq: warning: markFirstRun: %v\n", err)
 				}
 			}
+			// Inject initial prompt from CQ_APPEND_PROMPT (e.g., /pi from ideas TUI)
+			if appendPrompt := os.Getenv("CQ_APPEND_PROMPT"); appendPrompt != "" && tool == "claude" {
+				toolArgs = append(toolArgs, "--append-system-prompt", appendPrompt)
+				os.Unsetenv("CQ_APPEND_PROMPT")
+			}
 		} else {
 			fmt.Fprintf(os.Stderr, "cq: resuming %s session '%s' (%s...)...\n", tool, name, currentUUID[:8])
 			if tool == "gemini" {
@@ -418,7 +423,7 @@ func jsonlLastTimestamp(path string) time.Time {
 var sessionsPlain bool
 
 // sessionsCmd lists named sessions with enhanced status-aware formatting.
-// Active sessions (idea/planned/in-progress/active) get full 3-4 line format.
+// Active sessions (idea/planned/active) get full 3-4 line format.
 // Done sessions appear in compact form below a separator (max 5 recent).
 // When stdout is a TTY and --plain is not set, opens an interactive TUI dashboard.
 var sessionsCmd = &cobra.Command{
@@ -452,6 +457,7 @@ var sessionsCmd = &cobra.Command{
 			fmt.Println("No named sessions. Use 'cq claude -t <name>' to create one.")
 			return nil
 		}
+		recalcStatuses(sessions)
 		// Detect current session UUID: prefer env var, fall back to filesystem.
 		curUUID := os.Getenv("CQ_SESSION_UUID")
 		if curUUID == "" {
@@ -500,7 +506,7 @@ var sessionsCmd = &cobra.Command{
 		}
 
 		// --- Active sessions: full format ---
-		counts := map[string]int{"idea": 0, "planned": 0, "in-progress": 0, "active": 0, "done": 0}
+		counts := map[string]int{"idea": 0, "planned": 0, "active": 0, "done": 0}
 		for i, n := range activeNames {
 			entry := sessions[n]
 			t, tErr := time.Parse(time.RFC3339, entry.Updated)
@@ -592,7 +598,7 @@ var sessionsCmd = &cobra.Command{
 		total := len(sessions)
 		fmt.Printf("\n%d sessions", total)
 		parts := []string{}
-		for _, k := range []string{"idea", "planned", "in-progress", "active", "done"} {
+		for _, k := range []string{"idea", "planned", "active", "done"} {
 			if counts[k] > 0 {
 				parts = append(parts, fmt.Sprintf("%d %s", counts[k], k))
 			}

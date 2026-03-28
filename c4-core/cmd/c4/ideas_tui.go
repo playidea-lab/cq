@@ -33,6 +33,8 @@ type ideasTUIModel struct {
 	detailCursor int
 	selectedSlug string   // set on Enter — slug of selected idea
 	selectedSessions []string // sessions linked to selected idea
+	newMode     bool     // ^N: new idea input mode
+	newInput    string   // new idea session name
 	width       int
 	height      int
 }
@@ -180,6 +182,33 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, nil
 	case tea.KeyMsg:
+		// New idea input mode
+		if m.newMode {
+			switch msg.Type {
+			case tea.KeyEnter:
+				name := strings.TrimSpace(m.newInput)
+				if name != "" {
+					m.selectedSlug = "__new__"
+					m.selectedSessions = []string{name}
+					m.newMode = false
+					return m, tea.Quit
+				}
+			case tea.KeyEsc:
+				m.newMode = false
+				m.newInput = ""
+			case tea.KeyBackspace:
+				if len(m.newInput) > 0 {
+					runes := []rune(m.newInput)
+					m.newInput = string(runes[:len(runes)-1])
+				}
+			case tea.KeySpace:
+				m.newInput += " "
+			case tea.KeyRunes:
+				m.newInput += msg.String()
+			}
+			return m, nil
+		}
+
 		// Detail mode
 		if m.detailMode {
 			paths := m.detailPaths()
@@ -228,6 +257,10 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
+
+		case tea.KeyCtrlN:
+			m.newMode = true
+			m.newInput = ""
 
 		case tea.KeyEnter:
 			if m.cursor >= 0 && m.cursor < len(m.filtered) {
@@ -331,6 +364,24 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m ideasTUIModel) View() string {
 	var sb strings.Builder
+
+	// New idea input mode
+	if m.newMode {
+		sb.WriteString("\n")
+		sb.WriteString(styleTitle.Render(" New Idea Session "))
+		sb.WriteString("\n\n")
+		sb.WriteString("  Session name: ")
+		sb.WriteString(styleSearchBar.Render(m.newInput + "▏"))
+		sb.WriteString("\n\n")
+		sb.WriteString(styleFaint.Render("  /pi가 자동으로 주입됩니다"))
+		sb.WriteString("\n\n")
+		sb.WriteString(" ")
+		sb.WriteString(helpEntry("Enter", "create & start"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("Esc", "cancel"))
+		sb.WriteString("\n")
+		return sb.String()
+	}
 
 	// Title bar
 	sb.WriteString(styleTitle.Render(" cq ideas "))
@@ -517,6 +568,8 @@ func (m ideasTUIModel) View() string {
 		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("→", "details"))
 		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("^N", "new idea"))
+		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("Esc", "quit/clear"))
 	}
 
@@ -558,6 +611,14 @@ func runIdeasTUI() error {
 	tool := readGlobalConfig("default_tool")
 	if tool == "" {
 		tool = "claude"
+	}
+
+	// New idea mode: create session with /pi prompt
+	if im.selectedSlug == "__new__" && len(im.selectedSessions) == 1 {
+		name := im.selectedSessions[0]
+		fmt.Fprintf(os.Stderr, "cq: creating new idea session '%s' with /pi...\n", name)
+		os.Setenv("CQ_APPEND_PROMPT", "/pi "+name)
+		return launchToolNamed(tool, projectDir, name)
 	}
 
 	if len(im.selectedSessions) == 1 {
