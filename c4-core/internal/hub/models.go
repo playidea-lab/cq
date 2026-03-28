@@ -44,6 +44,8 @@ type Job struct {
 	InputArtifacts  json.RawMessage   `json:"input_artifacts,omitempty"`
 	OutputArtifacts json.RawMessage   `json:"output_artifacts,omitempty"`
 	BestMetric      *float64          `json:"best_metric,omitempty"`
+	PrimaryMetric   string            `json:"primary_metric,omitempty"`
+	LowerIsBetter   *bool             `json:"lower_is_better,omitempty"`
 	Capability      string            `json:"capability,omitempty"`
 	Result          json.RawMessage   `json:"result,omitempty"`
 	Datasets        []string          `json:"datasets,omitempty"`
@@ -89,6 +91,8 @@ type JobSubmitRequest struct {
 	TargetWorker        string            `json:"target_worker,omitempty"`
 	Params              map[string]any    `json:"params,omitempty"`
 	Datasets            []string          `json:"datasets,omitempty"`
+	PrimaryMetric       string            `json:"primary_metric,omitempty"`
+	LowerIsBetter       *bool             `json:"lower_is_better,omitempty"`
 }
 
 // JobSubmitResponse is the response from POST /v1/jobs/submit.
