@@ -14,10 +14,11 @@ import (
 
 // sourceBadgeStyles maps config source to colored badge styles.
 var sourceBadgeStyles = map[string]lipgloss.Style{
-	"default": lipgloss.NewStyle().Faint(true).Padding(0, 1),
-	"project": lipgloss.NewStyle().Background(lipgloss.Color("2")).Foreground(lipgloss.Color("0")).Padding(0, 1),
-	"global":  lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Padding(0, 1),
-	"env":     lipgloss.NewStyle().Background(lipgloss.Color("3")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
+	"default":  lipgloss.NewStyle().Faint(true).Padding(0, 1),
+	"project":  lipgloss.NewStyle().Background(lipgloss.Color("2")).Foreground(lipgloss.Color("0")).Padding(0, 1),
+	"global":   lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Padding(0, 1),
+	"env":      lipgloss.NewStyle().Background(lipgloss.Color("3")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
+	"readonly": lipgloss.NewStyle().Background(lipgloss.Color("240")).Foreground(lipgloss.Color("252")).Padding(0, 1),
 }
 
 // configTUIModel is the bubbletea model for the config TUI.
@@ -80,8 +81,9 @@ func (m configTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case editorFinishedMsg:
-		// Re-scan entries after editor exit
+		// Re-scan entries after editor exit, preserving external tool entries
 		if entries, err := scanConfigEntries(projectDir); err == nil {
+			entries = append(entries, scanExternalToolEntries()...)
 			m.entries = entries
 			m.arrayExpanded = -1
 			m.rows = m.buildVisibleRows()
@@ -316,6 +318,9 @@ func (m *configTUIModel) handleBoolToggle() {
 		return
 	}
 	entry := &m.entries[idx]
+	if entry.Source == "readonly" {
+		return // read-only external tool config — not editable
+	}
 	if entry.Kind != "bool" {
 		return
 	}
@@ -338,6 +343,9 @@ func (m *configTUIModel) handleEnter() {
 		return
 	}
 	entry := &m.entries[idx]
+	if entry.Source == "readonly" {
+		return // read-only external tool config — not editable
+	}
 	switch entry.Kind {
 	case "array":
 		if m.arrayExpanded == idx {
@@ -881,6 +889,9 @@ func (m configTUIModel) View() string {
 			valDisplay = m.editInput + "\u2581" // block cursor
 		} else {
 			valDisplay = configValueString(entry)
+			if entry.Source == "readonly" {
+				valDisplay = "\U0001F512 " + valDisplay // lock icon prefix for read-only entries
+			}
 		}
 		if lsDispWidth(valDisplay) > valColW {
 			valDisplay = lsTruncateToWidth(valDisplay, valColW-1) + "\u2026"

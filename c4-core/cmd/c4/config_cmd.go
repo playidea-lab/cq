@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -147,12 +149,174 @@ func scanConfigEntries(dir string) ([]configEntry, error) {
 	return entries, nil
 }
 
+// parseSimpleTOML reads key = value pairs from TOML content.
+// Handles: string ("..."), int, bool. Skips [sections] and comments.
+// Only top-level keys are parsed; nested [section] blocks are ignored.
+func parseSimpleTOML(data []byte) map[string]any {
+	result := make(map[string]any)
+	for _, rawLine := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(rawLine)
+		// skip blank, comments, section headers
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "[") {
+			continue
+		}
+		idx := strings.IndexByte(line, '=')
+		if idx < 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:idx])
+		val := strings.TrimSpace(line[idx+1:])
+		// strip inline comment
+		if ci := strings.Index(val, " #"); ci >= 0 {
+			val = strings.TrimSpace(val[:ci])
+		}
+		if strings.HasPrefix(val, `"`) && strings.HasSuffix(val, `"`) {
+			result[key] = val[1 : len(val)-1]
+		} else if val == "true" {
+			result[key] = true
+		} else if val == "false" {
+			result[key] = false
+		} else if n, err := strconv.Atoi(val); err == nil {
+			result[key] = n
+		} else {
+			result[key] = val
+		}
+	}
+	return result
+}
+
+// inferKind returns the configEntry Kind for a value from an external tool config.
+func inferKind(v any) string {
+	switch v.(type) {
+	case bool:
+		return "bool"
+	case int, int64, float64:
+		return "int"
+	default:
+		return "string"
+	}
+}
+
+// flattenJSON walks a map[string]any and emits dot-notation key/value pairs into out.
+// Only string, bool, and numeric leaf values are included; nested maps are recursed.
+func flattenJSON(m map[string]any, prefix string, out map[string]any) {
+	for k, v := range m {
+		key := k
+		if prefix != "" {
+			key = prefix + "." + k
+		}
+		switch child := v.(type) {
+		case map[string]any:
+			flattenJSON(child, key, out)
+		case string, bool, float64, int, int64:
+			out[key] = child
+		}
+	}
+}
+
+// scanExternalToolEntries reads settings from Claude Code, Gemini CLI, and Codex CLI.
+// These entries are read-only (Source = "readonly"). Missing files are silently skipped.
+func scanExternalToolEntries() []configEntry {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+
+	type toolSpec struct {
+		section  string
+		path     string
+		isTOML   bool
+		topKeys  []string // only these top-level keys (empty = all)
+	}
+
+	specs := []toolSpec{
+		{
+			section: "claude",
+			path:    filepath.Join(home, ".claude", "settings.json"),
+			topKeys: []string{"permissions", "env", "model"},
+		},
+		{
+			section: "gemini",
+			path:    filepath.Join(home, ".gemini", "settings.json"),
+			topKeys: []string{"theme", "selectedAuthType", "general"},
+		},
+		{
+			section: "codex",
+			path:    filepath.Join(home, ".codex", "config.toml"),
+			isTOML:  true,
+			topKeys: []string{"model", "personality", "approval_policy", "model_reasoning_effort"},
+		},
+	}
+
+	var entries []configEntry
+
+	for _, spec := range specs {
+		data, err := os.ReadFile(spec.path)
+		if err != nil {
+			continue // file absent or unreadable — skip silently
+		}
+
+		flat := make(map[string]any)
+
+		if spec.isTOML {
+			parsed := parseSimpleTOML(data)
+			if len(spec.topKeys) > 0 {
+				for _, tk := range spec.topKeys {
+					if v, ok := parsed[tk]; ok {
+						flat[tk] = v
+					}
+				}
+			} else {
+				flat = parsed
+			}
+		} else {
+			var raw map[string]any
+			if err := json.Unmarshal(data, &raw); err != nil {
+				continue
+			}
+			if len(spec.topKeys) > 0 {
+				filtered := make(map[string]any)
+				for _, tk := range spec.topKeys {
+					if v, ok := raw[tk]; ok {
+						filtered[tk] = v
+					}
+				}
+				flattenJSON(filtered, "", flat)
+			} else {
+				flattenJSON(raw, "", flat)
+			}
+		}
+
+		// Sort keys for deterministic ordering
+		keys := make([]string, 0, len(flat))
+		for k := range flat {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			v := flat[k]
+			entries = append(entries, configEntry{
+				Key:     k,
+				Section: spec.section,
+				Value:   v,
+				Source:  "readonly",
+				Kind:    inferKind(v),
+			})
+		}
+	}
+
+	return entries
+}
+
 // runConfigTUI launches the interactive config TUI.
 func runConfigTUI() error {
 	entries, err := scanConfigEntries(projectDir)
 	if err != nil {
 		return err
 	}
+	externalEntries := scanExternalToolEntries()
+	entries = append(entries, externalEntries...)
 	m := newConfigTUIModel(entries)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err = p.Run()
