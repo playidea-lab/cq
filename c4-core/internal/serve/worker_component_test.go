@@ -377,3 +377,218 @@ func TestWorkerComponent_NotifyFunc(t *testing.T) {
 		t.Fatal("notifyFunc was not called within timeout")
 	}
 }
+
+func TestWorkerComponent_BestMetric_Updated(t *testing.T) {
+	// Job with primary_metric="loss" and lower_is_better=true.
+	// Script prints @loss=0.5, then @loss=0.3 → best_metric should be updated twice.
+	var completed atomic.Bool
+
+	bestMetricUpdates := make(chan float64, 10)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rest/v1/rpc/register_worker", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"worker_id": "w-best"})
+	})
+	mux.HandleFunc("/rest/v1/rpc/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	jobServed := make(chan struct{}, 1)
+	lowerIsBetter := true
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case jobServed <- struct{}{}:
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"lease_id": "lease-best-001",
+				"job": map[string]any{
+					"job_id":          "job-best-001",
+					"command":         `sh -c 'echo "@loss=0.5"; echo "@loss=0.3"'`,
+					"primary_metric":  "loss",
+					"lower_is_better": lowerIsBetter,
+				},
+			})
+		default:
+			time.Sleep(100 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(nil)
+		}
+	})
+
+	mux.HandleFunc("/rest/v1/rpc/complete_job", func(w http.ResponseWriter, r *http.Request) {
+		completed.Store(true)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "{}")
+	})
+
+	mux.HandleFunc("/rest/v1/rpc/renew_lease", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"renewed": true})
+	})
+
+	mux.HandleFunc("/rest/v1/hub_metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprint(w, "{}")
+	})
+
+	// Capture PATCH to hub_jobs (best_metric update).
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+				if v, ok := body["best_metric"].(float64); ok {
+					bestMetricUpdates <- v
+				}
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "[]")
+	})
+
+	client := newHubWorkerTestClient(t, mux)
+	comp := NewWorker(client, []string{"test"}, "test-host")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := comp.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer comp.Stop(context.Background())
+
+	// Wait for completion.
+	deadline := time.After(4 * time.Second)
+	for !completed.Load() {
+		select {
+		case <-deadline:
+			t.Fatal("job not completed within timeout")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	// Drain updates channel.
+	var updates []float64
+	timeout := time.After(500 * time.Millisecond)
+drain:
+	for {
+		select {
+		case v := <-bestMetricUpdates:
+			updates = append(updates, v)
+		case <-timeout:
+			break drain
+		}
+	}
+
+	if len(updates) < 2 {
+		t.Fatalf("expected at least 2 best_metric updates, got %d: %v", len(updates), updates)
+	}
+	// First update: 0.5 (first value always sets best).
+	if updates[0] != 0.5 {
+		t.Errorf("first best_metric update = %v, want 0.5", updates[0])
+	}
+	// Second update: 0.3 (lower, so improved).
+	if updates[1] != 0.3 {
+		t.Errorf("second best_metric update = %v, want 0.3", updates[1])
+	}
+}
+
+func TestWorkerComponent_BestMetric_NotUpdated_WhenNoPrimaryMetric(t *testing.T) {
+	// Job without primary_metric → best_metric should never be updated.
+	var completed atomic.Bool
+
+	bestMetricUpdated := make(chan struct{}, 1)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rest/v1/rpc/register_worker", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"worker_id": "w-noprimary"})
+	})
+	mux.HandleFunc("/rest/v1/rpc/heartbeat", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	jobServed := make(chan struct{}, 1)
+	mux.HandleFunc("/rest/v1/rpc/claim_job", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case jobServed <- struct{}{}:
+			w.Header().Set("Content-Type", "application/json")
+			// No primary_metric field.
+			json.NewEncoder(w).Encode(map[string]any{
+				"lease_id": "lease-noprimary-001",
+				"job": map[string]any{
+					"job_id":  "job-noprimary-001",
+					"command": `echo "@loss=0.5"`,
+				},
+			})
+		default:
+			time.Sleep(100 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(nil)
+		}
+	})
+
+	mux.HandleFunc("/rest/v1/rpc/complete_job", func(w http.ResponseWriter, r *http.Request) {
+		completed.Store(true)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "{}")
+	})
+
+	mux.HandleFunc("/rest/v1/rpc/renew_lease", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"renewed": true})
+	})
+
+	mux.HandleFunc("/rest/v1/hub_metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		fmt.Fprint(w, "{}")
+	})
+
+	// Detect any PATCH to hub_jobs with best_metric.
+	mux.HandleFunc("/rest/v1/hub_jobs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+				if _, hasBest := body["best_metric"]; hasBest {
+					select {
+					case bestMetricUpdated <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "[]")
+	})
+
+	client := newHubWorkerTestClient(t, mux)
+	comp := NewWorker(client, []string{"test"}, "test-host")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := comp.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer comp.Stop(context.Background())
+
+	// Wait for completion.
+	deadline := time.After(4 * time.Second)
+	for !completed.Load() {
+		select {
+		case <-deadline:
+			t.Fatal("job not completed within timeout")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	// Give a short window for any unexpected PATCH to arrive.
+	select {
+	case <-bestMetricUpdated:
+		t.Error("best_metric was updated but primary_metric was not set")
+	case <-time.After(300 * time.Millisecond):
+		// Good: no update.
+	}
+}

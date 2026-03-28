@@ -256,6 +256,9 @@ func (w *WorkerComponent) executeJob(ctx context.Context, job *hub.Job) (int, er
 	if pipeErr == nil {
 		jobID := job.GetID()
 		step := 0
+		primaryMetric := job.PrimaryMetric
+		lowerIsBetter := job.LowerIsBetter
+		var bestMetric *float64
 		scanner := bufio.NewScanner(stdoutPipe)
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -264,6 +267,26 @@ func (w *WorkerComponent) executeJob(ctx context.Context, job *hub.Job) (int, er
 				step++
 				if err := w.client.LogMetricsSupabase(jobID, step, metrics); err != nil {
 					fmt.Fprintf(os.Stderr, "cq serve: metric log: %v\n", err)
+				}
+				// Update best_metric if primary_metric and lower_is_better are both set.
+				if primaryMetric != "" && lowerIsBetter != nil {
+					if val, ok := metrics[primaryMetric]; ok {
+						improved := false
+						if bestMetric == nil {
+							improved = true
+						} else if *lowerIsBetter {
+							improved = val < *bestMetric
+						} else {
+							improved = val > *bestMetric
+						}
+						if improved {
+							v := val
+							bestMetric = &v
+							if err := w.client.UpdateBestMetric(jobID, val); err != nil {
+								fmt.Fprintf(os.Stderr, "cq serve: best metric update: %v\n", err)
+							}
+						}
+					}
 				}
 			}
 		}

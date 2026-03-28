@@ -523,6 +523,16 @@ func (c *Client) CancelJob(jobID string) error {
 	return nil
 }
 
+// UpdateBestMetric updates the best_metric field of a job via Supabase PATCH.
+// This is best-effort: callers should log and continue on error.
+func (c *Client) UpdateBestMetric(jobID string, value float64) error {
+	body := map[string]any{"best_metric": value}
+	if err := c.supabasePatch("/rest/v1/hub_jobs?id=eq."+jobID, body, nil); err != nil {
+		return fmt.Errorf("update best metric: %w", err)
+	}
+	return nil
+}
+
 // CompleteJob reports job completion via Supabase RPC.
 func (c *Client) CompleteJob(jobID, status string, exitCode int) error {
 	body := map[string]any{
