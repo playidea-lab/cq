@@ -44,6 +44,15 @@ var craftRemoveCmd = &cobra.Command{
 	RunE:  runCraftRemove,
 }
 
+// craftUpdateCmd implements `cq update <name>`.
+var craftUpdateCmd = &cobra.Command{
+	Use:   "update <name>",
+	Short: "원격 설치 스킬 업데이트",
+	Long:  "cq add <url>로 설치한 스킬/에이전트/룰을 최신 버전으로 업데이트합니다.",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runCraftUpdate,
+}
+
 func init() {
 	craftAddCmd.Flags().BoolVar(&craftListFlag, "list", false, "프리셋 목록만 출력")
 	craftListCmd.Flags().BoolVar(&craftMineFlag, "mine", false, "설치된 커스텀 도구만 출력")
@@ -52,6 +61,7 @@ func init() {
 	rootCmd.AddCommand(craftAddCmd)
 	rootCmd.AddCommand(craftListCmd)
 	rootCmd.AddCommand(craftRemoveCmd)
+	rootCmd.AddCommand(craftUpdateCmd)
 }
 
 // runCraftAdd handles `cq add` and `cq add <name>` and `cq add --list`.
@@ -71,11 +81,28 @@ func runCraftAdd(cmd *cobra.Command, args []string) error {
 		return runCraftTUI(homeDir)
 	}
 
-	// `cq add <name>` — install
-	name := args[0]
-	preset, err := craft.Find(name)
+	// `cq add <url-or-name>` — install
+	arg := args[0]
+
+	// Route to remote installer if arg looks like a GitHub URL or shorthand.
+	if craft.IsRemoteSource(arg) {
+		src, err := craft.ParseGitHubURL(arg)
+		if err != nil {
+			return fmt.Errorf("URL 파싱 실패: %w", err)
+		}
+		dest, err := craft.FetchAndInstall(src, homeDir)
+		if err != nil {
+			return fmt.Errorf("원격 설치 실패: %w", err)
+		}
+		name := dest // use dest path as display; skillName extracted inside
+		fmt.Printf("✓ 설치 (remote) → %s\n  source: %s\n", name, src.URL)
+		return nil
+	}
+
+	// Local preset from embedded catalog.
+	preset, err := craft.Find(arg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "프리셋 '%s'을 찾을 수 없습니다. cq add로 목록을 확인하세요.\n", name)
+		fmt.Fprintf(os.Stderr, "프리셋 '%s'을 찾을 수 없습니다. cq add로 목록을 확인하세요.\n", arg)
 		return nil
 	}
 
@@ -84,9 +111,21 @@ func runCraftAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("설치 실패: %w", err)
 	}
 
-	fmt.Printf("✓ %s 설치 → %s\n", name, dest)
-	fmt.Printf("  %s\n", craftUsageHint(preset.Type, name))
+	fmt.Printf("✓ %s 설치 → %s\n", arg, dest)
+	fmt.Printf("  %s\n", craftUsageHint(preset.Type, arg))
 	return nil
+}
+
+// runCraftUpdate handles `cq update <name>`.
+func runCraftUpdate(cmd *cobra.Command, args []string) error {
+	name := args[0]
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("홈 디렉토리 확인 실패: %w", err)
+	}
+
+	return craft.Update(name, homeDir)
 }
 
 // runCraftList handles `cq list --mine`.
@@ -219,19 +258,19 @@ func printInstalledByCategory(items []craft.InstalledItem) {
 	if len(skills) > 0 {
 		fmt.Println("Skills:")
 		for _, it := range skills {
-			fmt.Printf("  %s\n", it.Name)
+			fmt.Printf("  %s\n", installedItemLabel(it))
 		}
 	}
 	if len(agents) > 0 {
 		fmt.Println("Agents:")
 		for _, it := range agents {
-			fmt.Printf("  %s\n", it.Name)
+			fmt.Printf("  %s\n", installedItemLabel(it))
 		}
 	}
 	if len(rules) > 0 {
 		fmt.Println("Rules:")
 		for _, it := range rules {
-			fmt.Printf("  %s\n", it.Name)
+			fmt.Printf("  %s\n", installedItemLabel(it))
 		}
 	}
 
@@ -240,6 +279,15 @@ func printInstalledByCategory(items []craft.InstalledItem) {
 		fmt.Println("CLAUDE.md:")
 		fmt.Println("  ./CLAUDE.md")
 	}
+}
+
+// installedItemLabel formats a name with a "(remote)" badge when the item
+// was installed from a remote URL.
+func installedItemLabel(it craft.InstalledItem) string {
+	if it.Source != "" {
+		return it.Name + " (remote)"
+	}
+	return it.Name
 }
 
 // runCraftTUI launches the interactive preset picker TUI and installs the

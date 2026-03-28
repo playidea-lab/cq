@@ -11,9 +11,10 @@ import (
 
 // InstalledItem represents a preset that has been installed into ~/.claude/.
 type InstalledItem struct {
-	Name string
-	Type PresetType
-	Path string // absolute path on disk
+	Name   string
+	Type   PresetType
+	Path   string // absolute path on disk
+	Source string // remote source URL if installed via cq add <url>, else empty
 }
 
 // Install copies a preset into the user's ~/.claude/ directory.
@@ -116,9 +117,10 @@ func ListInstalled(homeDir string) ([]InstalledItem, error) {
 			skillFile := filepath.Join(skillsDir, e.Name(), "SKILL.md")
 			if _, err := os.Stat(skillFile); err == nil {
 				items = append(items, InstalledItem{
-					Name: e.Name(),
-					Type: TypeSkill,
-					Path: skillFile,
+					Name:   e.Name(),
+					Type:   TypeSkill,
+					Path:   skillFile,
+					Source: readSourceComment(skillFile),
 				})
 			}
 		}
@@ -185,12 +187,30 @@ func scanMarkdownDir(dir string, t PresetType) []InstalledItem {
 			return nil
 		}
 		name := strings.TrimSuffix(filepath.Base(p), ".md")
+		absPath := filepath.Join(dir, p)
 		items = append(items, InstalledItem{
-			Name: name,
-			Type: t,
-			Path: filepath.Join(dir, p),
+			Name:   name,
+			Type:   t,
+			Path:   absPath,
+			Source: readSourceComment(absPath),
 		})
 		return nil
 	})
 	return items
+}
+
+// readSourceComment reads the first "# source: <url>" line from a file.
+// Returns an empty string if the file cannot be read or no such line exists.
+func readSourceComment(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.SplitN(string(data), "\n", 10) {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "# source:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "# source:"))
+		}
+	}
+	return ""
 }
