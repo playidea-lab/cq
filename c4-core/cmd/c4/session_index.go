@@ -39,7 +39,7 @@ func init() {
 }
 
 func runSessionIndex(cmd *cobra.Command, args []string) error {
-	db, err := openDB()
+	db, err := openSessionDB()
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}

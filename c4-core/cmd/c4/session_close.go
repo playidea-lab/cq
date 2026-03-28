@@ -68,8 +68,8 @@ func runSessionClose(cmd *cobra.Command, args []string) error {
 		sessionID = sessionCloseID
 	}
 
-	// Try to find session in DB
-	db, err := openDB()
+	// Try to find session in DB (global fallback for non-C4 projects)
+	db, err := openSessionDB()
 	if err == nil {
 		defer db.Close()
 		if sessionID != "" {
@@ -145,19 +145,31 @@ func runSessionClose(cmd *cobra.Command, args []string) error {
 	}
 
 	if result == nil || result.Summary == "" {
-		// LLM unavailable — done status already set, summarizer polling will handle (R6)
-		fmt.Fprintf(os.Stderr, "cq: LLM unavailable, summary deferred to background summarizer\n")
+		// LLM unavailable — save metadata-only knowledge so session existence is recorded.
+		// Background summarizer will enrich with full summary later.
+		fmt.Fprintf(os.Stderr, "cq: LLM unavailable, saving metadata knowledge + deferring summary\n")
+		knowledgeDir := resolveKnowledgeDir(sessionCloseDir, jsonlPath)
+		if ks, err := knowledge.NewStore(knowledgeDir); err == nil {
+			title := fmt.Sprintf("세션: %s (%s)", project, date)
+			metaContent := fmt.Sprintf("session_id: %s\ntool: claude-code\nproject: %s\njsonl_path: %s\nstatus: unsummarized",
+				sessionID, project, jsonlPath)
+			meta := map[string]any{
+				"title":  title,
+				"domain": "session",
+				"tags":   []string{"session", "unsummarized"},
+			}
+			if id, err := ks.Create(knowledge.TypeInsight, meta, metaContent); err == nil {
+				// Mark in sessions DB with doc_id but no summarized_at
+				if db != nil {
+					db.Exec("UPDATE sessions SET summary_doc_id = ? WHERE session_id = ?", id, sessionID)
+				}
+			}
+		}
 		return nil
 	}
 
 	// --- 5. Save to knowledge store ---
-	knowledgeDir := filepath.Join(filepath.Dir(filepath.Dir(jsonlPath)), "knowledge")
-	if sessionCloseDir != "" {
-		knowledgeDir = filepath.Join(sessionCloseDir, ".c4", "knowledge")
-	} else {
-		homeDir, _ := os.UserHomeDir()
-		knowledgeDir = filepath.Join(homeDir, ".c4", "knowledge")
-	}
+	knowledgeDir := resolveKnowledgeDir(sessionCloseDir, jsonlPath)
 
 	var docID string
 	if ks, err := knowledge.NewStore(knowledgeDir); err == nil {
@@ -279,6 +291,18 @@ func applySessionPersona(projectDir string, suggestions []string) {
 	if err := os.WriteFile(soulPath, []byte(content), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "cq: persona write failed: %v\n", err)
 	}
+}
+
+// resolveKnowledgeDir picks the best knowledge directory:
+// project .c4/knowledge if closeDir has .c4/, otherwise global ~/.c4/knowledge.
+func resolveKnowledgeDir(closeDir, jsonlPath string) string {
+	if closeDir != "" {
+		if fi, err := os.Stat(filepath.Join(closeDir, ".c4")); err == nil && fi.IsDir() {
+			return filepath.Join(closeDir, ".c4", "knowledge")
+		}
+	}
+	homeDir, _ := os.UserHomeDir()
+	return filepath.Join(homeDir, ".c4", "knowledge")
 }
 
 // readTeamUsername reads the active username from team.yaml.

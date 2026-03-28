@@ -222,6 +222,35 @@ func openDB() (*sql.DB, error) {
 	return db, nil
 }
 
+// globalC4Dir returns ~/.c4, creating it if needed.
+func globalC4Dir() string {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".c4")
+	os.MkdirAll(dir, 0755)
+	return dir
+}
+
+// openSessionDB opens a DB for session commands (index, close).
+// Uses the project .c4/c4.db if it exists, otherwise falls back to ~/.c4/c4.db.
+// This ensures sessions are captured even in projects without .c4/ initialized.
+func openSessionDB() (*sql.DB, error) {
+	projectC4 := filepath.Join(projectDir, ".c4")
+	var path string
+	if fi, err := os.Stat(projectC4); err == nil && fi.IsDir() {
+		path = filepath.Join(projectC4, "c4.db")
+	} else {
+		path = filepath.Join(globalC4Dir(), "c4.db")
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	db.Exec("PRAGMA journal_mode=WAL")
+	db.Exec("PRAGMA busy_timeout=30000")
+	return db, nil
+}
+
 // applyCommandVisibility assigns groups to visible commands and hides the rest.
 func applyCommandVisibility() {
 	aiTools := map[string]bool{"claude": true, "cursor": true, "codex": true, "gemini": true}
