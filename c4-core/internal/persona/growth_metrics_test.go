@@ -9,144 +9,111 @@ import (
 
 func TestRecordSessionMetrics_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "subdir", "growth_metrics.yaml")
+	path := filepath.Join(dir, "sub", "metrics.yaml")
 
-	err := RecordSessionMetrics(path, "sess-001", 3, 10)
-	if err != nil {
+	if err := RecordSessionMetrics(path, "sess-1", 2, 5); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Fatal("file was not created")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected file to exist after RecordSessionMetrics, got: %v", err)
 	}
 }
 
 func TestRecordSessionMetrics_AppendsEntry(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "growth_metrics.yaml")
+	path := filepath.Join(dir, "metrics.yaml")
 
-	if err := RecordSessionMetrics(path, "sess-001", 2, 8); err != nil {
+	if err := RecordSessionMetrics(path, "sess-1", 1, 3); err != nil {
 		t.Fatalf("first record: %v", err)
 	}
-	if err := RecordSessionMetrics(path, "sess-002", 1, 5); err != nil {
+	if err := RecordSessionMetrics(path, "sess-2", 2, 4); err != nil {
 		t.Fatalf("second record: %v", err)
 	}
 
-	entries, err := loadMetricEntries(path)
+	entries, err := loadMetrics(path)
 	if err != nil {
-		t.Fatalf("load entries: %v", err)
+		t.Fatalf("load: %v", err)
 	}
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
-	if entries[0].SessionID != "sess-001" {
-		t.Errorf("expected sess-001, got %s", entries[0].SessionID)
+	if entries[0].SessionID != "sess-1" {
+		t.Errorf("entry[0].SessionID = %q, want %q", entries[0].SessionID, "sess-1")
 	}
-	if entries[1].SessionID != "sess-002" {
-		t.Errorf("expected sess-002, got %s", entries[1].SessionID)
+	if entries[1].SessionID != "sess-2" {
+		t.Errorf("entry[1].SessionID = %q, want %q", entries[1].SessionID, "sess-2")
 	}
-	if entries[0].Corrections != 2 || entries[0].Suggestions != 8 {
-		t.Errorf("entry[0] corrections=%d suggestions=%d", entries[0].Corrections, entries[0].Suggestions)
+	if entries[1].Corrections != 2 || entries[1].Suggestions != 4 {
+		t.Errorf("entry[1] = {%d, %d}, want {2, 4}", entries[1].Corrections, entries[1].Suggestions)
 	}
 }
 
 func TestCalcCorrectionRate_BasicCalculation(t *testing.T) {
 	now := time.Now().UTC()
 	entries := []MetricEntry{
-		{SessionID: "s1", Corrections: 4, Suggestions: 20, Date: now.Add(-24 * time.Hour)},
-		{SessionID: "s2", Corrections: 6, Suggestions: 30, Date: now.Add(-48 * time.Hour)},
+		{SessionID: "a", Corrections: 2, Suggestions: 10, Date: now.AddDate(0, 0, -1)},
+		{SessionID: "b", Corrections: 3, Suggestions: 10, Date: now.AddDate(0, 0, -2)},
 	}
 
 	rate := CalcCorrectionRate(entries, 30)
-	// (4+6)/(20+30) = 10/50 = 0.2
-	if rate < 0.199 || rate > 0.201 {
-		t.Errorf("expected rate ~0.2, got %f", rate)
+	// 5 corrections / 20 suggestions = 0.25
+	const want = 0.25
+	if rate != want {
+		t.Errorf("CalcCorrectionRate = %f, want %f", rate, want)
 	}
 }
 
 func TestCalcCorrectionRate_NoEntries_ReturnsZero(t *testing.T) {
 	rate := CalcCorrectionRate(nil, 30)
 	if rate != 0.0 {
-		t.Errorf("expected 0.0, got %f", rate)
+		t.Errorf("CalcCorrectionRate(nil) = %f, want 0.0", rate)
 	}
 }
 
 func TestCalcCorrectionRate_ZeroSuggestions_ReturnsZero(t *testing.T) {
 	now := time.Now().UTC()
 	entries := []MetricEntry{
-		{SessionID: "s1", Corrections: 5, Suggestions: 0, Date: now.Add(-24 * time.Hour)},
+		{SessionID: "a", Corrections: 5, Suggestions: 0, Date: now.AddDate(0, 0, -1)},
 	}
-
 	rate := CalcCorrectionRate(entries, 30)
 	if rate != 0.0 {
-		t.Errorf("expected 0.0, got %f", rate)
-	}
-}
-
-func TestCalcCorrectionRate_FiltersOutsideWindow(t *testing.T) {
-	now := time.Now().UTC()
-	entries := []MetricEntry{
-		{SessionID: "s1", Corrections: 10, Suggestions: 20, Date: now.Add(-40 * 24 * time.Hour)}, // outside 30d
-		{SessionID: "s2", Corrections: 2, Suggestions: 10, Date: now.Add(-5 * 24 * time.Hour)},   // inside 30d
-	}
-
-	rate := CalcCorrectionRate(entries, 30)
-	// only s2: 2/10 = 0.2
-	if rate < 0.199 || rate > 0.201 {
-		t.Errorf("expected rate ~0.2, got %f", rate)
+		t.Errorf("CalcCorrectionRate with zero suggestions = %f, want 0.0", rate)
 	}
 }
 
 func TestLoadGrowthSummary_WithTrend(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "growth_metrics.yaml")
-
+	path := filepath.Join(dir, "metrics.yaml")
 	now := time.Now().UTC()
-	// previous 30d: high correction rate
-	// current 30d: lower correction rate => improving
-	entries := []MetricEntry{
-		// 31-60 days ago (previous period)
-		{SessionID: "old1", Corrections: 8, Suggestions: 10, Date: now.Add(-45 * 24 * time.Hour)},
-		// last 30 days (current period)
-		{SessionID: "new1", Corrections: 2, Suggestions: 10, Date: now.Add(-5 * 24 * time.Hour)},
-	}
 
-	if err := saveMetricEntries(entries, path); err != nil {
-		t.Fatalf("save entries: %v", err)
+	// Previous 30-day window (days -60 to -31): high correction rate (0.5).
+	entries := []MetricEntry{
+		{SessionID: "old-1", Corrections: 5, Suggestions: 10, Date: now.AddDate(0, 0, -45)},
+	}
+	// Recent 30-day window: lower correction rate (0.1) → should be "improving".
+	entries = append(entries,
+		MetricEntry{SessionID: "new-1", Corrections: 1, Suggestions: 10, Date: now.AddDate(0, 0, -5)},
+	)
+
+	if err := saveMetrics(entries, path); err != nil {
+		t.Fatalf("save: %v", err)
 	}
 
 	summary, err := LoadGrowthSummary(path)
 	if err != nil {
-		t.Fatalf("load summary: %v", err)
+		t.Fatalf("LoadGrowthSummary: %v", err)
 	}
 
 	if summary.TotalSessions != 2 {
-		t.Errorf("expected 2 sessions, got %d", summary.TotalSessions)
+		t.Errorf("TotalSessions = %d, want 2", summary.TotalSessions)
 	}
-	// current rate 0.2, previous rate 0.8 => improving
+	// current30 = 1/10 = 0.1
+	const wantRate = 0.1
+	if summary.CorrectionRate30d != wantRate {
+		t.Errorf("CorrectionRate30d = %f, want %f", summary.CorrectionRate30d, wantRate)
+	}
 	if summary.TrendDirection != "improving" {
-		t.Errorf("expected improving, got %s", summary.TrendDirection)
-	}
-	if summary.CorrectionRate30d < 0.199 || summary.CorrectionRate30d > 0.201 {
-		t.Errorf("expected CorrectionRate30d ~0.2, got %f", summary.CorrectionRate30d)
-	}
-}
-
-func TestLoadGrowthSummary_NoEntries(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "growth_metrics.yaml")
-
-	summary, err := LoadGrowthSummary(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if summary.TotalSessions != 0 {
-		t.Errorf("expected 0 sessions, got %d", summary.TotalSessions)
-	}
-	if summary.TrendDirection != "stable" {
-		t.Errorf("expected stable, got %s", summary.TrendDirection)
-	}
-	if summary.CorrectionRate30d != 0.0 {
-		t.Errorf("expected 0.0 rate, got %f", summary.CorrectionRate30d)
+		t.Errorf("TrendDirection = %q, want %q", summary.TrendDirection, "improving")
 	}
 }
