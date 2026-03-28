@@ -125,31 +125,24 @@ func (m ideasTUIModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m *ideasTUIModel) rebuildFiltered() {
-	if m.query == "" {
-		m.filtered = m.ideas
-		return
+// rebuildFiltered returns a new filtered list based on query.
+func rebuildIdeasFiltered(ideas []ideaRow, index map[string]string, query string) []ideaRow {
+	if query == "" {
+		return ideas
 	}
-	lowerQuery := strings.ToLower(m.query)
+	lowerQuery := strings.ToLower(query)
 	var out []ideaRow
-	for _, row := range m.ideas {
-		corpus := m.searchIndex[row.slug]
+	for _, row := range ideas {
+		corpus := index[row.slug]
 		if strings.Contains(corpus, lowerQuery) {
 			out = append(out, row)
 		}
 	}
-	m.filtered = out
-	if m.cursor >= len(m.filtered) {
-		if len(m.filtered) > 0 {
-			m.cursor = len(m.filtered) - 1
-		} else {
-			m.cursor = 0
-		}
-	}
+	return out
 }
 
 // detailPaths returns file paths for the currently selected idea.
-func (m *ideasTUIModel) detailPaths() []string {
+func (m ideasTUIModel) detailPaths() []string {
 	if m.cursor < 0 || m.cursor >= len(m.filtered) {
 		return nil
 	}
@@ -181,17 +174,14 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyLeft, tea.KeyEsc:
 				m.detailMode = false
 				m.detailCursor = 0
-				return m, nil
 			case tea.KeyUp:
 				if m.detailCursor > 0 {
 					m.detailCursor--
 				}
-				return m, nil
 			case tea.KeyDown:
 				if m.detailCursor < len(paths)-1 {
 					m.detailCursor++
 				}
-				return m, nil
 			case tea.KeyEnter:
 				if m.detailCursor < len(paths) {
 					p := paths[m.detailCursor]
@@ -199,7 +189,6 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, openFileCmd(p)
 					}
 				}
-				return m, nil
 			case tea.KeyRunes:
 				switch msg.String() {
 				case "k":
@@ -214,20 +203,23 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.detailMode = false
 					m.detailCursor = 0
 				}
-				return m, nil
 			}
 			return m, nil
 		}
 
 		// Normal mode
 		switch msg.Type {
+		case tea.KeyCtrlC:
+			return m, tea.Quit
+
 		case tea.KeyEsc:
 			if m.query != "" {
 				m.query = ""
-				m.rebuildFiltered()
-				return m, nil
+				m.filtered = m.ideas
+				m.cursor = 0
+			} else {
+				return m, tea.Quit
 			}
-			return m, tea.Quit
 
 		case tea.KeyUp:
 			if m.cursor > 0 {
@@ -246,14 +238,18 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailCursor = 0
 			}
 
-		case tea.KeyLeft:
-			// no-op in normal mode
-
 		case tea.KeyBackspace:
 			if len(m.query) > 0 {
 				runes := []rune(m.query)
 				m.query = string(runes[:len(runes)-1])
-				m.rebuildFiltered()
+				m.filtered = rebuildIdeasFiltered(m.ideas, m.searchIndex, m.query)
+			if m.cursor >= len(m.filtered) {
+				if len(m.filtered) > 0 {
+					m.cursor = len(m.filtered) - 1
+				} else {
+					m.cursor = 0
+				}
+			}
 			}
 
 		case tea.KeyRunes:
@@ -274,7 +270,14 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.query += ch
-			m.rebuildFiltered()
+			m.filtered = rebuildIdeasFiltered(m.ideas, m.searchIndex, m.query)
+			if m.cursor >= len(m.filtered) {
+				if len(m.filtered) > 0 {
+					m.cursor = len(m.filtered) - 1
+				} else {
+					m.cursor = 0
+				}
+			}
 		}
 	}
 	return m, nil
