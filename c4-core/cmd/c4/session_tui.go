@@ -1062,28 +1062,32 @@ func (m sessionTUIModel) View() string {
 	nonHeaderCount := 0
 
 	// Viewport: keep cursor in view, start from top
-	maxVisible := m.height - 8 // title(2) + search(2) + helpbar(2) + margins(2)
+	// Account for detail expansion lines of the selected row
+	detailLines := 0
+	if cursorRowIdx >= 0 && cursorRowIdx < len(m.rows) {
+		row := m.rows[cursorRowIdx]
+		if len(row.ideaPaths) > 0 || row.specPath != "" || row.designPath != "" {
+			detailLines = len(row.ideaPaths)
+			if row.specPath != "" {
+				detailLines++
+			}
+			if row.designPath != "" {
+				detailLines++
+			}
+		}
+	}
+	maxVisible := m.height - 8 - detailLines
 	if maxVisible < 10 {
 		maxVisible = 10
 	}
 	viewStart := 0
 	viewEnd := len(m.rows)
 	if len(m.rows) > maxVisible {
-		// Ensure cursor row is visible, but prefer showing from top
 		viewEnd = viewStart + maxVisible
-		// If cursor is below viewport, scroll down just enough
 		if cursorRowIdx >= viewEnd {
-			viewEnd = cursorRowIdx + 3 // some margin below cursor
-			if viewEnd > len(m.rows) {
-				viewEnd = len(m.rows)
-			}
-			viewStart = viewEnd - maxVisible
-		}
-		// If cursor is above viewport, scroll up
-		if cursorRowIdx < viewStart {
-			viewStart = cursorRowIdx
-			if viewStart > 0 {
-				viewStart-- // show header above cursor if possible
+			viewStart = cursorRowIdx - maxVisible + 3
+			if viewStart < 0 {
+				viewStart = 0
 			}
 			viewEnd = viewStart + maxVisible
 			if viewEnd > len(m.rows) {
