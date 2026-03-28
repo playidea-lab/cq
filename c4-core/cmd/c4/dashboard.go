@@ -596,7 +596,7 @@ func runDashboardNav() string {
 	case "launch":
 		return screenLaunch
 	default:
-		return screenSessions
+		return screenQuit
 	}
 }
 
