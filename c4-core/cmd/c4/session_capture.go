@@ -167,9 +167,36 @@ func inferStatusQuiet(entry namedSessionEntry) string {
 // When nil, LLM summarization is skipped and summary remains empty.
 var captureSessionSummarizeFn func(jsonlPath, project, date string) string
 
-// captureSession closes the session on exit: status→done, LLM summary,
+// captureSessionLight updates only the session's Updated timestamp without
+// changing status, generating summaries, or saving knowledge/persona.
+// Used for lightweight session touches (e.g., heartbeat, non-exit events).
+func captureSessionLight(name string) {
+	sessions, err := loadNamedSessions()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq: captureSessionLight: load sessions: %v\n", err)
+		return
+	}
+
+	entry, ok := sessions[name]
+	if !ok {
+		return
+	}
+
+	entry.Updated = time.Now().Format(time.RFC3339)
+	sessions[name] = entry
+
+	if err := saveNamedSessions(sessions); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: captureSessionLight: save sessions: %v\n", err)
+	}
+	fmt.Fprintf(os.Stderr, "cq: session '%s' → light capture\n", name)
+}
+
+// captureSession is an alias for captureSessionFull for backward compatibility.
+func captureSession(name string) { captureSessionFull(name) }
+
+// captureSessionFull closes the session on exit: status→done, LLM summary,
 // knowledge store, and persona learning. Best-effort: errors are logged, not fatal.
-func captureSession(name string) {
+func captureSessionFull(name string) {
 	sessions, err := loadNamedSessions()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cq: captureSession: load sessions: %v\n", err)
