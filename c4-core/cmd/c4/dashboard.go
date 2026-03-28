@@ -1,11 +1,17 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"gopkg.in/yaml.v3"
@@ -36,11 +42,19 @@ type componentRow struct {
 	detail string
 }
 
+// toolChangelog holds cached changelog for the user's default tool.
+type toolChangelog struct {
+	ToolName string   `json:"tool_name" yaml:"tool_name"`
+	Version  string   `json:"version" yaml:"version"`
+	Items    []string `json:"items" yaml:"items"` // bullet point features
+}
+
 type dashboardModel struct {
 	version     string
 	rows        []dashboardRow
-	components  []componentRow // service health details
-	whatsNew    string         // "New in vX.Y.Z: ..." or ""
+	components  []componentRow  // service health details
+	changelog   *toolChangelog  // tool changelog (nil if unavailable)
+	whatsNew    string          // "New in vX.Y.Z: ..." or ""
 	defaultTool string
 	action      string // "launch", "status", "config", or "" (quit)
 	showDetail  bool   // toggle: show component details
@@ -166,6 +180,9 @@ func newDashboardModel() dashboardModel {
 		m.whatsNew = fmt.Sprintf("✨ New in %s", version)
 	}
 
+	// Tool changelog (cached, fetched on version change)
+	m.changelog = loadToolChangelog(m.defaultTool)
+
 	return m
 }
 
@@ -247,6 +264,7 @@ func (m dashboardModel) View() string {
 		sb.WriteString(logoStyle.Render("  " + line))
 		sb.WriteString("\n")
 	}
+	sb.WriteString("\n")
 	sb.WriteString("  ")
 	sb.WriteString(styleTitle.Render(fmt.Sprintf(" %s ", m.version)))
 	sb.WriteString("\n\n")
@@ -300,12 +318,37 @@ func (m dashboardModel) View() string {
 		}
 	}
 
-	// What's New
+	// What's New (CQ version)
 	if m.whatsNew != "" {
 		sb.WriteString("\n")
 		hs := groupHeaderStyle("idea")
 		sb.WriteString(hs.Render("  " + m.whatsNew))
 		sb.WriteString("\n")
+	}
+
+	// Tool changelog
+	if m.changelog != nil && len(m.changelog.Items) > 0 {
+		sb.WriteString("\n")
+		header := fmt.Sprintf(" ── %s %s ", m.changelog.ToolName, m.changelog.Version)
+		hs := groupHeaderStyle("in-progress")
+		sb.WriteString(hs.Render(header))
+		headerW := m.width
+		if headerW < 74 {
+			headerW = 74
+		}
+		remaining := headerW - lipgloss.Width(header)
+		if remaining > 0 {
+			sb.WriteString(styleFaint.Render(strings.Repeat("─", remaining)))
+		}
+		sb.WriteString("\n")
+		maxItems := 5
+		if len(m.changelog.Items) < maxItems {
+			maxItems = len(m.changelog.Items)
+		}
+		for _, item := range m.changelog.Items[:maxItems] {
+			sb.WriteString(styleSummary.Render("  • " + item))
+			sb.WriteString("\n")
+		}
 	}
 
 	// Build help bar
@@ -341,6 +384,165 @@ func (m dashboardModel) View() string {
 	sb.WriteString(helpBar.String())
 
 	return sb.String()
+}
+
+// --- Tool changelog: fetch + cache ---
+
+// toolGitHubRepo maps tool names to their GitHub repos for changelog fetching.
+var toolGitHubRepo = map[string]string{
+	"claude": "anthropics/claude-code",
+	"codex":  "openai/codex",
+	"gemini": "google-gemini/gemini-cli",
+}
+
+func changelogCachePath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".c4", "cache", "tool-changelog.json")
+}
+
+// loadToolChangelog returns cached changelog, refreshing if tool version changed.
+func loadToolChangelog(tool string) *toolChangelog {
+	// Get current tool version
+	currentVer := getToolVersion(tool)
+	if currentVer == "" {
+		return nil
+	}
+
+	// Read cache
+	cachePath := changelogCachePath()
+	if cachePath == "" {
+		return nil
+	}
+	if data, err := os.ReadFile(cachePath); err == nil {
+		var cached toolChangelog
+		if json.Unmarshal(data, &cached) == nil {
+			if cached.ToolName == tool && cached.Version == currentVer {
+				return &cached // cache hit
+			}
+		}
+	}
+
+	// Cache miss — fetch in background-safe way (with short timeout)
+	cl := fetchToolChangelog(tool, currentVer)
+	if cl == nil {
+		return nil
+	}
+
+	// Save cache
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err == nil {
+		if data, err := json.Marshal(cl); err == nil {
+			_ = os.WriteFile(cachePath, data, 0644)
+		}
+	}
+	return cl
+}
+
+// getToolVersion runs `tool --version` and returns the version string.
+func getToolVersion(tool string) string {
+	toolPath, err := exec.LookPath(tool)
+	if err != nil || toolPath == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, tool, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	ver := strings.TrimSpace(string(out))
+	if idx := strings.IndexByte(ver, '\n'); idx > 0 {
+		ver = ver[:idx]
+	}
+	return ver
+}
+
+// fetchToolChangelog fetches the latest release from GitHub and parses bullet points.
+func fetchToolChangelog(tool, currentVer string) *toolChangelog {
+	repo, ok := toolGitHubRepo[tool]
+	if !ok {
+		return nil // no known repo (e.g. cursor)
+	}
+
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil || resp.StatusCode != 200 {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if err != nil {
+		return nil
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+		Body    string `json:"body"`
+	}
+	if json.Unmarshal(body, &release) != nil {
+		return nil
+	}
+
+	items := parseChangelogBullets(release.Body)
+	if len(items) == 0 {
+		return nil
+	}
+
+	return &toolChangelog{
+		ToolName: tool,
+		Version:  currentVer,
+		Items:    items,
+	}
+}
+
+// parseChangelogBullets extracts bullet points from markdown release body.
+func parseChangelogBullets(body string) []string {
+	var items []string
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Match markdown bullets: "- ", "* ", "• "
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") || strings.HasPrefix(line, "• ") {
+			item := strings.TrimSpace(line[2:])
+			// Skip sub-bullets (indented)
+			if item == "" {
+				continue
+			}
+			// Strip markdown links: [text](url) → text
+			for {
+				start := strings.Index(item, "[")
+				mid := strings.Index(item, "](")
+				end := strings.Index(item, ")")
+				if start >= 0 && mid > start && end > mid {
+					text := item[start+1 : mid]
+					item = item[:start] + text + item[end+1:]
+				} else {
+					break
+				}
+			}
+			// Strip bold markers
+			item = strings.ReplaceAll(item, "**", "")
+			if len(item) > 80 {
+				item = item[:77] + "..."
+			}
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 // --- Global config helpers (~/.c4/config.yaml) ---
