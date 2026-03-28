@@ -370,16 +370,20 @@ func RunDebate(ctx context.Context, caller DebateCaller, store DebateStore, hypI
 		return nil, fmt.Errorf("hypothesis_id required")
 	}
 
+	var hypBody string
 	hypDoc, err := store.Get(hypID)
-	if err != nil || hypDoc == nil {
-		return nil, fmt.Errorf("hypothesis not found: %s", hypID)
+	if err == nil && hypDoc != nil {
+		hypBody = hypDoc.Body
+	} else {
+		// Graceful fallback: use hypID as body when document not found (e.g. cloud sync delay).
+		hypBody = hypID
 	}
 
 	userMsg := fmt.Sprintf("Hypothesis: %s\nTrigger: %s\nContext: %s\n", hypID, triggerReason, extraContext)
 	if lineageContext != "" {
 		userMsg += "\n" + lineageContext + "\n"
 	}
-	userMsg += "\nHypothesis body:\n" + hypDoc.Body
+	userMsg += "\nHypothesis body:\n" + hypBody
 
 	optimizerSystem := `You are a research direction optimizer. Analyze the hypothesis and experimental results. Propose the most promising next research direction. Format: DIRECTION: [direction], RATIONALE: [rationale], NEXT_HYPOTHESIS: [draft hypothesis text]`
 	skepticSystem := `You are a research hypothesis critic. Challenge the current hypothesis and proposed directions. Identify blind spots, alternative explanations, and exploration directions being ignored. Format: CHALLENGE: [main challenge], ALTERNATIVE: [alternative direction], VERDICT: [approved|null_result|escalate]`
@@ -528,5 +532,87 @@ func (o *LoopOrchestrator) handleReasoningResult(ctx context.Context, session *L
 	}
 
 	o.Sessions.Store(session.HypothesisID, session)
+	return nil
+}
+
+// bootstrapSession handles new sessions that don't have a Hub job yet.
+// It runs Debate to design the initial experiment, then submits it via Hub.
+func (o *LoopOrchestrator) bootstrapSession(ctx context.Context, s *LoopSession) error {
+	if o.HubCli == nil {
+		return fmt.Errorf("bootstrap: HubCli not wired")
+	}
+
+	fmt.Fprintf(os.Stderr, "loop_orchestrator: bootstrapping session %s (round %d)\n", s.HypothesisID, s.Round)
+
+	// Direct command mode: skip SpecPipeline and submit the user-provided command.
+	command := s.Command
+	if command != "" {
+		jobID, err := o.HubCli.SubmitJob(ctx, LoopHubJobRequest{
+			HypothesisID: s.HypothesisID,
+			Command:      command,
+			Workdir:      s.Workdir,
+		})
+		if err != nil {
+			return fmt.Errorf("bootstrap submit: %w", err)
+		}
+		s.JobID = jobID
+		o.Sessions.Store(s.HypothesisID, s)
+		fmt.Fprintf(os.Stderr, "loop_orchestrator: bootstrapped %s → job %s (direct command)\n", s.HypothesisID, jobID)
+		if o.Notify != nil {
+			o.Notify.Emit(ctx, EventHypothesisRegistered, s.HypothesisID, fmt.Sprintf("initial experiment submitted: %s", jobID))
+		}
+		return nil
+	}
+
+	// SpecPipeline mode: LLM designs the experiment.
+	if o.Caller == nil {
+		return fmt.Errorf("bootstrap: no command provided and Caller not wired")
+	}
+
+	// Fetch hypothesis text from knowledge store.
+	var hypText string
+	if o.KStore != nil {
+		if doc, err := o.KStore.Get(s.HypothesisID); err == nil && doc != nil {
+			hypText = doc.Body
+		}
+	}
+	if hypText == "" {
+		hypText = s.HypothesisID
+	}
+
+	// Run SpecPipeline to design the initial experiment.
+	var specDocID string
+	if o.SpecPipeline != nil {
+		_, sid, nullResult, err := GenerateAndReview(ctx, o.SpecPipeline.Caller, o.SpecPipeline.KStore, hypText, 0)
+		if err != nil {
+			return fmt.Errorf("bootstrap spec: %w", err)
+		}
+		if nullResult {
+			s.NullResultCount++
+			s.Status = "completed"
+			o.Sessions.Store(s.HypothesisID, s)
+			return fmt.Errorf("bootstrap: spec pipeline returned null_result")
+		}
+		specDocID = sid
+	}
+
+	// Submit the initial Hub job.
+	jobID, err := o.HubCli.SubmitJob(ctx, LoopHubJobRequest{
+		HypothesisID:     s.HypothesisID,
+		ExperimentSpecID: specDocID,
+		Command:          "cq research run",
+	})
+	if err != nil {
+		return fmt.Errorf("bootstrap submit: %w", err)
+	}
+
+	s.JobID = jobID
+	o.Sessions.Store(s.HypothesisID, s)
+	fmt.Fprintf(os.Stderr, "loop_orchestrator: bootstrapped %s → job %s\n", s.HypothesisID, jobID)
+
+	if o.Notify != nil {
+		o.Notify.Emit(ctx, EventHypothesisRegistered, s.HypothesisID, fmt.Sprintf("initial experiment submitted: %s", jobID))
+	}
+
 	return nil
 }

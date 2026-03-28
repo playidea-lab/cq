@@ -36,6 +36,7 @@ type LoopHubJobRequest struct {
 	HypothesisID     string
 	ExperimentSpecID string
 	Command          string
+	Workdir          string
 	ProjectID        string
 	Capability       string
 	Params           map[string]any
@@ -97,6 +98,10 @@ type LoopSession struct {
 	PatienceCount        int     // rounds without sufficient improvement
 	BestMetric           float64 // best metric seen so far
 	MetricLowerIsBetter  bool    // direction for metric comparison
+	// Bootstrap fields: when Command is set, bootstrapSession skips SpecPipeline
+	// and submits this command directly to Hub.
+	Command string
+	Workdir string
 }
 
 // LoopSpecPipeline holds the dependencies for generateAndReview in onJobDone.
@@ -138,6 +143,7 @@ type loopHubClientAdapter struct{ hc HubClient }
 func (a *loopHubClientAdapter) SubmitJob(ctx context.Context, req LoopHubJobRequest) (string, error) {
 	resp, err := a.hc.SubmitJob(&hub.JobSubmitRequest{
 		Command:    req.Command,
+		Workdir:    req.Workdir,
 		ProjectID:  req.ProjectID,
 		Capability: req.Capability,
 		Params:     req.Params,
@@ -282,9 +288,15 @@ func (o *LoopOrchestrator) poll(ctx context.Context) {
 		jobStatus *HubJobStatus
 	}
 	var done []doneEntry
+	var bootstrap []LoopSession // sessions needing initial experiment submission
 	o.Sessions.Range(func(key, value any) bool {
 		session, ok := value.(*LoopSession)
 		if !ok || session.Status != "running" {
+			return true
+		}
+		// Bootstrap: new session without a job yet — needs first experiment design.
+		if session.JobID == "" {
+			bootstrap = append(bootstrap, *session)
 			return true
 		}
 		job, err := o.cfg.Hub.GetJob(session.JobID)
@@ -306,6 +318,11 @@ func (o *LoopOrchestrator) poll(ctx context.Context) {
 	for i := range done {
 		if err := o.onJobDone(ctx, &done[i].session, done[i].jobStatus); err != nil {
 			fmt.Fprintf(os.Stderr, "loop_orchestrator: onJobDone %s: %v\n", done[i].session.HypothesisID, err)
+		}
+	}
+	for i := range bootstrap {
+		if err := o.bootstrapSession(ctx, &bootstrap[i]); err != nil {
+			fmt.Fprintf(os.Stderr, "loop_orchestrator: bootstrap %s: %v\n", bootstrap[i].HypothesisID, err)
 		}
 	}
 }
