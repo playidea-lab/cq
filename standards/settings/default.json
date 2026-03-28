@@ -84,6 +84,17 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "~/.claude/hooks/session-close.sh",
+            "type": "command",
+            "timeout": 3000
+          }
+        ]
+      }
     ]
   }
 }
