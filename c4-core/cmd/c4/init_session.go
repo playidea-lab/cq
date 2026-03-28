@@ -157,6 +157,21 @@ func launchToolNamed(tool, projectDir, name string) error {
 			currentUUID = entry.UUID
 			isNew = false
 		}
+	} else {
+		// Check provider-scanned sessions (gemini/codex/chatgpt)
+		for _, p := range providers {
+			if p.ScanSessions == nil {
+				continue
+			}
+			if entry, ok := p.ScanSessions()[name]; ok {
+				currentUUID = entry.UUID
+				isNew = false
+				// Save to named-sessions for future lookups
+				sessions[name] = entry
+				_ = saveNamedSessions(sessions)
+				break
+			}
+		}
 	}
 
 	// For new sessions, generate a UUID upfront (no JSONL scanning needed).
