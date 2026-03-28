@@ -442,6 +442,37 @@ func installedItemLabel(it craft.InstalledItem) string {
 	return it.Name
 }
 
+// runCraftNav runs craft TUI and returns the next screen for the main loop.
+func runCraftNav() string {
+	homeDir, _ := os.UserHomeDir()
+	presets, err := craft.List()
+	if err != nil {
+		return screenSessions
+	}
+	m := newCraftTUIModel(presets)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return screenQuit
+	}
+	final, ok := result.(craftTUIModel)
+	if !ok {
+		return screenQuit
+	}
+	if final.nextScreen != "" {
+		return final.nextScreen
+	}
+	// Install selected preset.
+	if final.selected != nil {
+		dest, err := craft.Install(final.selected, homeDir)
+		if err == nil {
+			fmt.Printf("✓ %s 설치 → %s\n", final.selected.Name, dest)
+			fmt.Printf("  %s\n", craftUsageHint(final.selected.Type, final.selected.Name))
+		}
+	}
+	return screenSessions
+}
+
 // runCraftTUI launches the interactive preset picker TUI and installs the
 // selected preset.  homeDir is used as the installation root.
 func runCraftTUI(homeDir string) error {

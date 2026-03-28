@@ -292,44 +292,41 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 		writeGlobalConfig("default_tool", defaultTool)
 	}
 
-	// Step 6: Show dashboard.
-	p := tea.NewProgram(newDashboardModel(), tea.WithAltScreen())
-	m, err := p.Run()
-	if err != nil {
-		return err
+	// Step 6: Onboarding (first run only).
+	if readGlobalConfig("onboarded") == "" {
+		fmt.Println()
+		fmt.Println("  Welcome to CQ! 핵심 키바인딩:")
+		fmt.Println("    t → Sessions (홈)   a → Add   g → Config")
+		fmt.Println("    d → Doctor   i → Ideas   ? → Help")
+		fmt.Println("    Esc → 홈으로 복귀   q → 종료")
+		fmt.Println()
+		fmt.Print("  Enter를 눌러 시작...")
+		fmt.Scanln()
+		writeGlobalConfig("onboarded", "true")
 	}
-	dm := m.(dashboardModel)
 
-	// Step 7: Handle dashboard result.
-	switch dm.action {
-	case "launch":
-		writeGlobalConfig("last_seen_version", version)
-		return launchTool(defaultTool, projectDir)
-	case "sessions":
-		tag, tool, err := runSessionsTUI()
-		if err != nil {
-			return err
-		}
-		return resumeSelectedSession(tag, tool)
-	case "doctor":
-		return runDoctorTUI()
-	case "ideas":
-		return runIdeasTUI()
-	case "craft":
-		homeDir, _ := os.UserHomeDir()
-		return runCraftTUI(homeDir)
-	case "configtui":
-		return runConfigTUI()
-	case "config":
-		p2 := tea.NewProgram(newSelectorModel(), tea.WithAltScreen())
-		m2, err := p2.Run()
-		if err != nil {
-			return err
-		}
-		sm := m2.(selectorModel)
-		if sm.selected != "" {
-			writeGlobalConfig("default_tool", sm.selected)
-			fmt.Printf("기본 도구 변경: %s\n", sm.selected)
+	// Step 7: Main navigation loop — sessions is the home screen.
+	nextScreen := screenSessions
+	for nextScreen != screenQuit {
+		switch nextScreen {
+		case screenSessions:
+			nextScreen = runSessionsNav()
+		case screenConfig:
+			nextScreen = runConfigNav()
+		case screenAdd:
+			nextScreen = runCraftNav()
+		case screenDoctor:
+			nextScreen = runDoctorNav()
+		case screenIdeas:
+			nextScreen = runIdeasNav()
+		case screenDashboard:
+			nextScreen = runDashboardNav()
+		case screenLaunch:
+			writeGlobalConfig("last_seen_version", version)
+			_ = launchTool(defaultTool, projectDir)
+			nextScreen = screenSessions
+		default:
+			nextScreen = screenQuit
 		}
 	}
 	return nil

@@ -64,6 +64,9 @@ type doctorTUIModel struct {
 
 	// Detail view
 	detailMode bool
+
+	// Navigation
+	nextScreen string
 }
 
 func newDoctorTUIModel() doctorTUIModel {
@@ -221,7 +224,13 @@ func (m doctorTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Normal mode
+		// Normal mode — check global nav keys first.
+		inputActive := m.confirmFix || m.detailMode || m.query != ""
+		if next, ok := handleGlobalKey(msg, inputActive); ok {
+			m.nextScreen = next
+			return m, tea.Quit
+		}
+
 		switch msg.Type {
 		case tea.KeyUp:
 			m.moveCursor(-1)
@@ -845,8 +854,24 @@ func (m doctorTUIModel) viewList() string {
 	helpBar.WriteString("  ")
 	helpBar.WriteString(helpEntry("q", "quit"))
 	sb.WriteString(helpBar.String())
+	sb.WriteString("\n")
+	sb.WriteString(renderNavBar(screenDoctor, m.width))
 
 	return sb.String()
+}
+
+// runDoctorNav runs doctor TUI and returns the next screen for the main loop.
+func runDoctorNav() string {
+	m := newDoctorTUIModel()
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return screenQuit
+	}
+	if final, ok := result.(doctorTUIModel); ok && final.nextScreen != "" {
+		return final.nextScreen
+	}
+	return screenSessions
 }
 
 // runDoctorTUI launches the interactive Bubble Tea TUI for doctor.

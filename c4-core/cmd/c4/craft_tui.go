@@ -27,6 +27,9 @@ type craftTUIModel struct {
 	width    int
 	height   int
 	selected *craft.Preset
+
+	// Navigation
+	nextScreen string
 }
 
 func newCraftTUIModel(presets []craft.Preset) craftTUIModel {
@@ -177,6 +180,12 @@ func (m craftTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Check global nav keys first (when not searching).
+		if next, ok := handleGlobalKey(msg, m.query != ""); ok {
+			m.nextScreen = next
+			return m, tea.Quit
+		}
+
 		switch msg.Type {
 		case tea.KeyUp:
 			m.moveCursor(-1)
@@ -402,7 +411,7 @@ func (m craftTUIModel) View() string {
 	content := sb.String()
 	contentLines := strings.Count(content, "\n")
 	if m.height > 0 {
-		gap := m.height - contentLines - 2
+		gap := m.height - contentLines - 3
 		for i := 0; i < gap; i++ {
 			sb.WriteString("\n")
 		}
@@ -421,6 +430,8 @@ func (m craftTUIModel) View() string {
 	sb.WriteString(helpEntry("Tab", "category"))
 	sb.WriteString("  ")
 	sb.WriteString(helpEntry("Esc", "quit/clear"))
+	sb.WriteString("\n")
+	sb.WriteString(renderNavBar(screenAdd, m.width))
 
 	return sb.String()
 }

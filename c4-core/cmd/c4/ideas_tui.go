@@ -37,6 +37,9 @@ type ideasTUIModel struct {
 	newInput    string   // new idea session name
 	width       int
 	height      int
+
+	// Navigation
+	nextScreen string
 }
 
 func newIdeasTUIModel() ideasTUIModel {
@@ -253,9 +256,15 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Normal mode
+		// Normal mode — check global nav keys first.
+		if next, ok := handleGlobalKey(msg, m.query != ""); ok {
+			m.nextScreen = next
+			return m, tea.Quit
+		}
+
 		switch msg.Type {
 		case tea.KeyCtrlC:
+			m.nextScreen = screenQuit
 			return m, tea.Quit
 
 		case tea.KeyCtrlN:
@@ -577,7 +586,7 @@ func (m ideasTUIModel) View() string {
 	content := sb.String()
 	contentLines := strings.Count(content, "\n")
 	if m.height > 0 {
-		gap := m.height - contentLines - 2
+		gap := m.height - contentLines - 3
 		for i := 0; i < gap; i++ {
 			sb.WriteString("\n")
 		}
@@ -590,8 +599,52 @@ func (m ideasTUIModel) View() string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString(helpBar.String())
+	sb.WriteString("\n")
+	sb.WriteString(renderNavBar(screenIdeas, m.width))
 
 	return sb.String()
+}
+
+// runIdeasNav runs ideas TUI and returns the next screen for the main loop.
+func runIdeasNav() string {
+	m := newIdeasTUIModel()
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return screenQuit
+	}
+	final, ok := result.(ideasTUIModel)
+	if !ok {
+		return screenQuit
+	}
+	if final.nextScreen != "" {
+		return final.nextScreen
+	}
+	// Idea selected — handle launch inline, then return to sessions.
+	if final.selectedSlug != "" {
+		_ = handleIdeasSelection(final)
+		return screenSessions
+	}
+	return screenSessions
+}
+
+// handleIdeasSelection launches a session for the selected idea.
+func handleIdeasSelection(im ideasTUIModel) error {
+	tool := readGlobalConfig("default_tool")
+	if tool == "" {
+		tool = "claude"
+	}
+	if im.selectedSlug == "__new__" && len(im.selectedSessions) == 1 {
+		name := im.selectedSessions[0]
+		fmt.Fprintf(os.Stderr, "cq: creating new idea session '%s' with /pi...\n", name)
+		os.Setenv("CQ_APPEND_PROMPT", "/pi "+name)
+		return launchToolNamed(tool, projectDir, name)
+	}
+	if len(im.selectedSessions) == 1 {
+		fmt.Fprintf(os.Stderr, "cq: opening session '%s' for idea '%s'...\n", im.selectedSessions[0], im.selectedSlug)
+		return launchToolNamed(tool, projectDir, im.selectedSessions[0])
+	}
+	return nil
 }
 
 func runIdeasTUI() error {

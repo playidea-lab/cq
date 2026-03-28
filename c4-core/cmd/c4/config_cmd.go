@@ -310,6 +310,26 @@ func scanExternalToolEntries() []configEntry {
 }
 
 // runConfigTUI launches the interactive config TUI.
+// runConfigNav runs config TUI and returns the next screen for the main loop.
+func runConfigNav() string {
+	entries, err := scanConfigEntries(projectDir)
+	if err != nil {
+		return screenSessions
+	}
+	externalEntries := scanExternalToolEntries()
+	entries = append(entries, externalEntries...)
+	m := newConfigTUIModel(entries)
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return screenQuit
+	}
+	if final, ok := result.(configTUIModel); ok && final.nextScreen != "" {
+		return final.nextScreen
+	}
+	return screenSessions
+}
+
 func runConfigTUI() error {
 	entries, err := scanConfigEntries(projectDir)
 	if err != nil {

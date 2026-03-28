@@ -66,6 +66,9 @@ type dashboardModel struct {
 
 	width  int
 	height int
+
+	// Navigation
+	nextScreen string
 }
 
 // cmdRow is a single row in the commands reference (header or command).
@@ -559,8 +562,42 @@ func (m dashboardModel) View() string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString(helpBar.String())
+	sb.WriteString("\n")
+	sb.WriteString(renderNavBar(screenDashboard, m.width))
 
 	return sb.String()
+}
+
+// runDashboardNav runs dashboard TUI and returns the next screen for the main loop.
+func runDashboardNav() string {
+	p := tea.NewProgram(newDashboardModel(), tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return screenQuit
+	}
+	dm, ok := result.(dashboardModel)
+	if !ok {
+		return screenQuit
+	}
+	// Map dashboard actions to screen names.
+	switch dm.action {
+	case "sessions":
+		return screenSessions
+	case "doctor":
+		return screenDoctor
+	case "ideas":
+		return screenIdeas
+	case "craft":
+		return screenAdd
+	case "configtui":
+		return screenConfig
+	case "config":
+		return screenConfig
+	case "launch":
+		return screenLaunch
+	default:
+		return screenSessions
+	}
 }
 
 // --- Tool changelog: fetch + cache ---
