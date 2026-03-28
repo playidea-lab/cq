@@ -27,6 +27,7 @@ type openSessionsMsg struct{}
 type openDoctorMsg struct{}
 type openIdeasMsg struct{}
 type openCraftMsg struct{}
+type openConfigTUIMsg struct{}
 
 // --- Dashboard TUI Model ---
 
@@ -336,6 +337,9 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openCraftMsg:
 		m.action = "craft"
 		return m, tea.Quit
+	case openConfigTUIMsg:
+		m.action = "configtui"
+		return m, tea.Quit
 	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -372,6 +376,8 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return openIdeasMsg{} }
 			case "a":
 				return m, func() tea.Msg { return openCraftMsg{} }
+			case "g":
+				return m, func() tea.Msg { return openConfigTUIMsg{} }
 			}
 		}
 	case tea.WindowSizeMsg:
@@ -531,7 +537,9 @@ func (m dashboardModel) View() string {
 	helpBar.WriteString("  ")
 	helpBar.WriteString(helpEntry("d", "doctor"))
 	helpBar.WriteString("  ")
-	helpBar.WriteString(helpEntry("c", "설정"))
+	helpBar.WriteString(helpEntry("c", "도구"))
+	helpBar.WriteString("  ")
+	helpBar.WriteString(helpEntry("g", "config"))
 	helpBar.WriteString("  ")
 	helpBar.WriteString(helpEntry("q", "종료"))
 

@@ -147,9 +147,14 @@ func listMarkdownFiles(base string, t PresetType) ([]Preset, error) {
 	return out, nil
 }
 
-// parseFrontmatterDescription extracts the description field from YAML frontmatter.
+// ParseDescription extracts the description field from YAML frontmatter.
 // It supports both single-line and block scalar (|) values.
 // Returns an empty string when no frontmatter or description is found.
+func ParseDescription(data []byte) string {
+	return parseFrontmatterDescription(data)
+}
+
+// parseFrontmatterDescription is the internal implementation.
 func parseFrontmatterDescription(data []byte) string {
 	content := string(data)
 

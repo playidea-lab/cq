@@ -123,7 +123,13 @@ func runCraftAdd(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Local preset from embedded catalog.
+	// Try CQ registry first (network-dependent).
+	if dest, ok := tryRegistryInstall(arg, homeDir); ok {
+		fmt.Printf("✓ %s 설치 → %s\n", arg, dest)
+		return nil
+	}
+
+	// Fallback: local preset from embedded catalog.
 	preset, err := craft.Find(arg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "프리셋 '%s'을 찾을 수 없습니다. cq add로 목록을 확인하세요.\n", arg)
@@ -140,6 +146,56 @@ func runCraftAdd(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// tryRegistryInstall attempts to install a skill from the CQ registry.
+// Returns the destination path and true on success, or ("", false) on failure.
+// Failures are silent (logged to stderr) to allow fallback to builtin/GitHub.
+func tryRegistryInstall(name, homeDir string) (string, bool) {
+	client, err := newRegistryClient()
+	if err != nil {
+		return "", false
+	}
+
+	skill, err := client.Search(name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "registry: 검색 실패 (빌트인으로 fallback): %v\n", err)
+		return "", false
+	}
+	if skill == nil {
+		return "", false
+	}
+
+	version, err := client.FetchVersion(skill.ID, skill.LatestVersion)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "registry: 버전 fetch 실패: %v\n", err)
+		return "", false
+	}
+
+	// Build a Preset from registry data and install.
+	pType := craft.PresetType(skill.Type)
+	preset := &craft.Preset{
+		Name:        skill.Name,
+		Type:        pType,
+		Description: skill.Description,
+		Content:     []byte(craft.FormatCQSource(skill.Name, version.Version) + "\n" + version.Content),
+	}
+
+	// Prepend "# source: cq:<name>@<version>" for update tracking.
+	sourceComment := "# source: " + craft.FormatCQSource(skill.Name, version.Version) + "\n"
+	preset.Content = []byte(sourceComment + version.Content)
+
+	dest, err := craft.Install(preset, homeDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "registry: 설치 실패: %v\n", err)
+		return "", false
+	}
+
+	// Increment download count (best-effort, don't fail install).
+	_ = client.IncrementDownload(skill.Name)
+
+	fmt.Printf("  %s@%s (registry)\n", skill.Name, version.Version)
+	return dest, true
+}
+
 // runCraftUpdate handles `cq update <name>`.
 func runCraftUpdate(cmd *cobra.Command, args []string) error {
 	name := args[0]
@@ -149,7 +205,69 @@ func runCraftUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("홈 디렉토리 확인 실패: %w", err)
 	}
 
+	// Check if source is a CQ registry source.
+	sourceURL, _ := craft.FindSourceURL(name, homeDir)
+	if craft.IsCQSource(sourceURL) {
+		return updateFromRegistry(name, sourceURL, homeDir)
+	}
+
 	return craft.Update(name, homeDir)
+}
+
+// updateFromRegistry handles update for skills installed from the CQ registry.
+func updateFromRegistry(name, sourceURL, homeDir string) error {
+	_, currentVersion, err := craft.ParseCQSource(sourceURL)
+	if err != nil {
+		return fmt.Errorf("소스 파싱 실패: %w", err)
+	}
+
+	client, err := newRegistryClient()
+	if err != nil {
+		return fmt.Errorf("레지스트리 연결 실패: %w", err)
+	}
+
+	latestVersion, err := client.LatestVersion(name)
+	if err != nil {
+		return fmt.Errorf("최신 버전 조회 실패: %w", err)
+	}
+
+	if currentVersion == latestVersion {
+		fmt.Printf("✓ %s@%s — 이미 최신 버전입니다.\n", name, currentVersion)
+		return nil
+	}
+
+	// Fetch the skill metadata to get the ID.
+	skill, err := client.Search(name)
+	if err != nil || skill == nil {
+		return fmt.Errorf("레지스트리에서 %q를 찾을 수 없습니다", name)
+	}
+
+	version, err := client.FetchVersion(skill.ID, latestVersion)
+	if err != nil {
+		return fmt.Errorf("버전 fetch 실패: %w", err)
+	}
+
+	// Remove existing and reinstall.
+	if err := craft.Remove(name, homeDir); err != nil {
+		fmt.Fprintf(os.Stderr, "기존 제거 경고: %v\n", err)
+	}
+
+	pType := craft.PresetType(skill.Type)
+	sourceComment := "# source: " + craft.FormatCQSource(name, latestVersion) + "\n"
+	preset := &craft.Preset{
+		Name:        name,
+		Type:        pType,
+		Description: skill.Description,
+		Content:     []byte(sourceComment + version.Content),
+	}
+
+	dest, err := craft.Install(preset, homeDir)
+	if err != nil {
+		return fmt.Errorf("설치 실패: %w", err)
+	}
+
+	fmt.Printf("✓ %s 업데이트: %s → %s\n  → %s\n", name, currentVersion, latestVersion, dest)
+	return nil
 }
 
 // runCraftList handles `cq list --mine`.

@@ -315,6 +315,8 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 	case "craft":
 		homeDir, _ := os.UserHomeDir()
 		return runCraftTUI(homeDir)
+	case "configtui":
+		return runConfigTUI()
 	case "config":
 		p2 := tea.NewProgram(newSelectorModel(), tea.WithAltScreen())
 		m2, err := p2.Run()
