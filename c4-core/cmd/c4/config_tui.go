@@ -721,6 +721,31 @@ func (m *configTUIModel) moveCursorConfig(delta int) {
 	}
 }
 
+// sensitiveKeywords identifies config keys whose values should be masked.
+var sensitiveKeywords = []string{
+	"key", "token", "secret", "password", "credential", "auth",
+	"api_key", "apikey", "access_token", "refresh_token",
+}
+
+// isSensitiveKey checks if a config key contains sensitive keywords.
+func isSensitiveKey(key string) bool {
+	lower := strings.ToLower(key)
+	for _, kw := range sensitiveKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// maskValue masks a string value, showing only the last 4 chars.
+func maskValue(val string) string {
+	if len(val) <= 4 {
+		return "****"
+	}
+	return "****" + val[len(val)-4:]
+}
+
 // configValueString returns the display string for a config entry value.
 func configValueString(e configEntry) string {
 	switch e.Kind {
@@ -737,7 +762,11 @@ func configValueString(e configEntry) string {
 	case "array":
 		return fmt.Sprintf("[%d items]", arrayLen(e.Value))
 	default:
-		return fmt.Sprint(e.Value)
+		val := fmt.Sprint(e.Value)
+		if isSensitiveKey(e.Key) && val != "" {
+			return maskValue(val)
+		}
+		return val
 	}
 }
 
