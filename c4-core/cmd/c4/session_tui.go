@@ -244,8 +244,11 @@ func buildRows(sessions map[string]namedSessionEntry, idx map[string]string, que
 		byStatus[status] = append(byStatus[status], tag)
 	}
 
+	// Sort each group by Updated descending (newest first)
 	for status := range byStatus {
-		sort.Strings(byStatus[status])
+		sort.Slice(byStatus[status], func(i, j int) bool {
+			return sessions[byStatus[status][i]].Updated > sessions[byStatus[status][j]].Updated
+		})
 	}
 
 	var rows []tuiRow
@@ -263,7 +266,7 @@ func buildRows(sessions map[string]namedSessionEntry, idx map[string]string, que
 			entry := sessions[tag]
 			dateStr := "--"
 			if t, err := time.Parse(time.RFC3339, entry.Updated); err == nil {
-				dateStr = t.Format("Jan 02 15:04")
+				dateStr = t.Format("2006 Jan 02")
 			}
 			summary := sanitizeSessionSummary(entry.Summary)
 			if summary == "" {
