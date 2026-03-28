@@ -31,6 +31,8 @@ type ideasTUIModel struct {
 	cursor      int
 	detailMode  bool
 	detailCursor int
+	selectedSlug string   // set on Enter — slug of selected idea
+	selectedSessions []string // sessions linked to selected idea
 	width       int
 	height      int
 }
@@ -196,9 +198,13 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case tea.KeyEnter:
 				if m.detailCursor < len(paths) {
 					p := paths[m.detailCursor]
-					if !strings.HasPrefix(p, "session:") {
-						return m, openFileCmd(p)
+					if strings.HasPrefix(p, "session:") {
+						tag := strings.TrimPrefix(p, "session:")
+						m.selectedSlug = m.filtered[m.cursor].slug
+						m.selectedSessions = []string{tag}
+						return m, tea.Quit
 					}
+					return m, openFileCmd(p)
 				}
 			case tea.KeyRunes:
 				switch msg.String() {
@@ -222,6 +228,24 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			return m, tea.Quit
+
+		case tea.KeyEnter:
+			if m.cursor >= 0 && m.cursor < len(m.filtered) {
+				row := m.filtered[m.cursor]
+				m.selectedSlug = row.slug
+				m.selectedSessions = row.sessions
+				if len(row.sessions) == 1 {
+					// Single session → launch directly
+					return m, tea.Quit
+				} else if len(row.sessions) > 1 {
+					// Multiple sessions → enter detail mode to pick
+					m.detailMode = true
+					m.detailCursor = 0
+					return m, nil
+				}
+				// No sessions → will create new
+				return m, tea.Quit
+			}
 
 		case tea.KeyEsc:
 			if m.query != "" {
@@ -489,6 +513,8 @@ func (m ideasTUIModel) View() string {
 		helpBar.WriteString(" ")
 		helpBar.WriteString(helpEntry("↑↓", "move"))
 		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Enter", "start"))
+		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("→", "details"))
 		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("Esc", "quit/clear"))
@@ -518,6 +544,29 @@ func (m ideasTUIModel) View() string {
 func runIdeasTUI() error {
 	m := newIdeasTUIModel()
 	p := tea.NewProgram(m, tea.WithAltScreen())
-	_, err := p.Run()
-	return err
+	result, err := p.Run()
+	if err != nil {
+		return err
+	}
+
+	im := result.(ideasTUIModel)
+	if im.selectedSlug == "" {
+		return nil // quit without selection
+	}
+
+	// Determine which tool to use
+	tool := readGlobalConfig("default_tool")
+	if tool == "" {
+		tool = "claude"
+	}
+
+	if len(im.selectedSessions) == 1 {
+		// Launch existing session
+		fmt.Fprintf(os.Stderr, "cq: opening session '%s' for idea '%s'...\n", im.selectedSessions[0], im.selectedSlug)
+		return launchToolNamed(tool, projectDir, im.selectedSessions[0])
+	}
+
+	// No session → create new session named after idea slug
+	fmt.Fprintf(os.Stderr, "cq: creating new session '%s'...\n", im.selectedSlug)
+	return launchToolNamed(tool, projectDir, im.selectedSlug)
 }
