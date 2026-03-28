@@ -242,24 +242,32 @@ func applyCommandVisibility() {
 	}
 }
 
+// isLoggedIn returns true when a valid (non-expired) session exists.
+// If the session has expired but a refresh token is available, it attempts a
+// silent refresh. Returns false only when no valid session can be obtained
+// (no config, no token, or refresh failure).
+func isLoggedIn() bool {
+	client, err := newAuthClient()
+	if err != nil {
+		// No cloud config means solo/offline mode — allow access without login.
+		return true
+	}
+
+	if client.IsAuthenticated() {
+		return true
+	}
+
+	// Session expired — try silent refresh.
+	if _, refreshErr := client.RefreshToken(); refreshErr == nil {
+		return true
+	}
+	return false
+}
+
 // runCQStart is the default command when `cq` is run without subcommands.
 // It ensures login → service install → shows dashboard TUI (or text fallback).
 func runCQStart(cmd *cobra.Command, args []string) error {
-	// Step 1: Check login status. If not logged in, initiate OAuth.
-	authClient, err := newAuthClient()
-	if err == nil {
-		session, getErr := authClient.GetSession()
-		if getErr != nil || session == nil || session.AccessToken == "" {
-			fmt.Println("CQ requires authentication to connect to cloud services.")
-			fmt.Println()
-			if err := runAuthLogin(cmd, nil); err != nil {
-				fmt.Fprintf(os.Stderr, "Login skipped: %v\n", err)
-				fmt.Fprintln(os.Stderr, "Run 'cq auth login' later to enable cloud features.")
-			}
-		}
-	}
-
-	// Step 2: Ensure OS service is installed and running.
+	// Step 1: Ensure OS service is installed and running.
 	if !serve.IsServeRunning() {
 		fmt.Println("Starting CQ service...")
 		if err := installServeService(context.Background(), true); err != nil {
@@ -269,15 +277,15 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Step 3: TTY check — if not a terminal, use text fallback.
+	// Step 2: TTY check — if not a terminal, use text fallback.
 	if !isTerminal(int(os.Stdin.Fd())) {
 		return runCQStartText()
 	}
 
-	// Step 4: Read default_tool from global config.
+	// Step 3: Read default_tool from global config.
 	defaultTool := readGlobalConfig("default_tool")
 
-	// Step 5: If no default_tool, show selector.
+	// Step 4: If no default_tool, show selector.
 	if defaultTool == "" {
 		p := tea.NewProgram(newSelectorModel(), tea.WithAltScreen())
 		m, err := p.Run()
@@ -292,7 +300,7 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 		writeGlobalConfig("default_tool", defaultTool)
 	}
 
-	// Step 6: Onboarding (first run only).
+	// Step 5: Onboarding (first run only).
 	if readGlobalConfig("onboarded") == "" {
 		fmt.Println()
 		fmt.Println("  Welcome to CQ! 핵심 키바인딩:")
@@ -305,12 +313,25 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 		writeGlobalConfig("onboarded", "true")
 	}
 
-	// Step 7: Main navigation loop — dashboard is the landing page.
-	nextScreen := screenDashboard
+	// Step 6: Determine starting screen — show login TUI if not authenticated.
+	startScreen := screenDashboard
+	if !isLoggedIn() {
+		startScreen = screenLogin
+	}
+
+	// Step 7: Main navigation loop.
+	nextScreen := startScreen
 	for nextScreen != screenQuit {
 		prev := nextScreen
 		switch nextScreen {
+		case screenLogin:
+			nextScreen = runLoginNav()
 		case screenSessions:
+			// Re-check auth on return to sessions (handles mid-session expiry).
+			if !isLoggedIn() {
+				nextScreen = screenLogin
+				continue
+			}
 			nextScreen = runSessionsNav()
 		case screenConfig:
 			nextScreen = runConfigNav()

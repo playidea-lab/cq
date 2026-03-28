@@ -16,6 +16,7 @@ const (
 	screenDoctor    = "doctor"
 	screenIdeas     = "ideas"
 	screenDashboard = "dashboard"
+	screenLogin     = "login"
 	screenLaunch    = "launch"
 	screenQuit      = "quit"
 )
