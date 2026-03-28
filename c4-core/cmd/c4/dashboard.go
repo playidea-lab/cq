@@ -259,21 +259,37 @@ func (m dashboardModel) View() string {
 		sb.WriteString("\n")
 	}
 
-	// Help bar — same pattern as cq sessions
+	// Build help bar
+	var helpBar strings.Builder
+	helpBar.WriteString(" ")
+	helpBar.WriteString(helpEntry("Enter", m.defaultTool+" 시작"))
+	helpBar.WriteString("  ")
+	helpBar.WriteString(helpEntry("s", "상태"))
+	helpBar.WriteString("  ")
+	helpBar.WriteString(helpEntry("t", "sessions"))
+	helpBar.WriteString("  ")
+	helpBar.WriteString(helpEntry("d", "doctor"))
+	helpBar.WriteString("  ")
+	helpBar.WriteString(helpEntry("c", "설정"))
+	helpBar.WriteString("  ")
+	helpBar.WriteString(helpEntry("q", "종료"))
+
+	// Pin help bar at bottom — same as cq sessions
+	content := sb.String()
+	contentLines := strings.Count(content, "\n")
+	if m.height > 0 {
+		gap := m.height - contentLines - 2
+		for i := 0; i < gap; i++ {
+			sb.WriteString("\n")
+		}
+	}
+	if m.width > 0 {
+		sb.WriteString(styleFaint.Render(strings.Repeat("─", m.width)))
+	} else {
+		sb.WriteString(styleFaint.Render(strings.Repeat("─", 74)))
+	}
 	sb.WriteString("\n")
-	sb.WriteString(" ")
-	sb.WriteString(helpEntry("Enter", m.defaultTool+" 시작"))
-	sb.WriteString("  ")
-	sb.WriteString(helpEntry("s", "상태"))
-	sb.WriteString("  ")
-	sb.WriteString(helpEntry("t", "sessions"))
-	sb.WriteString("  ")
-	sb.WriteString(helpEntry("d", "doctor"))
-	sb.WriteString("  ")
-	sb.WriteString(helpEntry("c", "설정"))
-	sb.WriteString("  ")
-	sb.WriteString(helpEntry("q", "종료"))
-	sb.WriteString("\n")
+	sb.WriteString(helpBar.String())
 
 	return sb.String()
 }
