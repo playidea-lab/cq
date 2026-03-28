@@ -1494,6 +1494,77 @@ func TestBuildLaunchArgs_NotFirstRun(t *testing.T) {
 	}
 }
 
+func TestInferSessionTool_FromTagPrefix(t *testing.T) {
+	tests := []struct {
+		tag   string
+		entry namedSessionEntry
+		want  string
+	}{
+		{tag: "codex/12345678", want: "codex"},
+		{tag: "gemini/12345678", want: "gemini"},
+		{tag: "chatgpt/12345678", want: "chatgpt"},
+		{tag: "plain-name", want: "claude"},
+		{tag: "plain-name", entry: namedSessionEntry{Tool: "cursor"}, want: "cursor"},
+	}
+	for _, tt := range tests {
+		if got := inferSessionTool(tt.tag, tt.entry); got != tt.want {
+			t.Errorf("inferSessionTool(%q, %+v) = %q, want %q", tt.tag, tt.entry, got, tt.want)
+		}
+	}
+}
+
+func TestResumeSelectedSession_UsesInferredToolAndReactivatesDoneSession(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	oldProjectDir := projectDir
+	projectDir = "/tmp/cq-project"
+	defer func() { projectDir = oldProjectDir }()
+
+	oldLaunch := launchToolNamedFn
+	defer func() { launchToolNamedFn = oldLaunch }()
+
+	sessions := map[string]namedSessionEntry{
+		"codex/12345678": {
+			UUID:    "12345678-1234-1234-1234-123456789abc",
+			Status:  "done",
+			Updated: "2026-03-29T00:00:00Z",
+		},
+	}
+	if err := saveNamedSessions(sessions); err != nil {
+		t.Fatalf("saveNamedSessions: %v", err)
+	}
+
+	var gotTool, gotDir, gotName string
+	launchToolNamedFn = func(tool, dir, name string) error {
+		gotTool = tool
+		gotDir = dir
+		gotName = name
+		return nil
+	}
+
+	if err := resumeSelectedSession("codex/12345678", ""); err != nil {
+		t.Fatalf("resumeSelectedSession: %v", err)
+	}
+	if gotTool != "codex" {
+		t.Fatalf("expected codex launch, got %q", gotTool)
+	}
+	if gotDir != projectDir {
+		t.Fatalf("expected projectDir %q, got %q", projectDir, gotDir)
+	}
+	if gotName != "codex/12345678" {
+		t.Fatalf("expected session tag to be passed through, got %q", gotName)
+	}
+
+	updated, err := loadNamedSessions()
+	if err != nil {
+		t.Fatalf("loadNamedSessions: %v", err)
+	}
+	if got := updated["codex/12345678"].Status; got != "active" {
+		t.Fatalf("expected resumed session status active, got %q", got)
+	}
+}
+
 func TestBuildLaunchArgs_BaseArgsPreserved(t *testing.T) {
 	base := []string{"--model", "claude-opus-4-6"}
 	args := buildLaunchArgs(false, "claude", base)

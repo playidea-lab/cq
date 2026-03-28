@@ -68,6 +68,9 @@ type sessionTUIModel struct {
 	width  int
 	height int
 
+	// Navigation: set by handleGlobalKey to switch TUI screens.
+	nextScreen string
+
 	// History mode: user questions from JSONL
 	historyMode   bool
 	historyItems  []string // user questions (first line each)
@@ -78,9 +81,9 @@ type sessionTUIModel struct {
 	externalTools []aiToolProcess
 
 	// Remote sessions from Supabase
-	remoteFetched    bool
-	remoteTickCount  int // counts ticks since last remote fetch
-	remoteSessions   []remoteSession
+	remoteFetched   bool
+	remoteTickCount int // counts ticks since last remote fetch
+	remoteSessions  []remoteSession
 }
 
 // detailPaths returns the file paths for the currently selected session.
@@ -278,10 +281,7 @@ func buildRows(sessions map[string]namedSessionEntry, idx map[string]string, que
 			}
 			// Don't truncate here — View truncates dynamically based on terminal width
 			ideaPaths, specPath, designPath := resolveFilePaths(tag, entry)
-			tool := entry.Tool
-			if tool == "" {
-				tool = "claude"
-			}
+			tool := inferSessionTool(tag, entry)
 			rows = append(rows, tuiRow{
 				tag:        tag,
 				tool:       tool,
@@ -655,7 +655,17 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Normal mode
+		// Normal mode — check global nav keys first (when not searching).
+		if next, ok := handleGlobalKey(msg, m.isSearching()); ok {
+			if next == screenSessions {
+				// Already on sessions; Esc = quit when not searching.
+				m.nextScreen = screenQuit
+			} else {
+				m.nextScreen = next
+			}
+			return m, tea.Quit
+		}
+
 		switch msg.Type {
 		case tea.KeyEnter:
 			idx := m.cursorRowIndex()
@@ -670,6 +680,7 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.rebuildRows()
 				return m, nil
 			}
+			m.nextScreen = screenQuit
 			return m, tea.Quit
 
 		case tea.KeyUp:
@@ -862,11 +873,11 @@ var (
 
 	// Status badge styles: colored background pill
 	statusBadgeStyles = map[string]lipgloss.Style{
-		"running":     lipgloss.NewStyle().Background(lipgloss.Color("2")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
-		"idea":        lipgloss.NewStyle().Background(lipgloss.Color("3")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
-		"planned":     lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
-		"active":      lipgloss.NewStyle().Background(lipgloss.Color("6")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
-		"done":        lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("245")).Padding(0, 1),
+		"running": lipgloss.NewStyle().Background(lipgloss.Color("2")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
+		"idea":    lipgloss.NewStyle().Background(lipgloss.Color("3")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
+		"planned": lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1),
+		"active":  lipgloss.NewStyle().Background(lipgloss.Color("6")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1),
+		"done":    lipgloss.NewStyle().Background(lipgloss.Color("237")).Foreground(lipgloss.Color("245")).Padding(0, 1),
 	}
 )
 
@@ -1347,13 +1358,13 @@ func (m sessionTUIModel) View() string {
 	content := sb.String()
 	contentLines := strings.Count(content, "\n")
 	if m.height > 0 {
-		// -2 for separator + help bar
-		gap := m.height - contentLines - 2
+		// -3 for separator + help bar + nav bar
+		gap := m.height - contentLines - 3
 		for i := 0; i < gap; i++ {
 			sb.WriteString("\n")
 		}
 	}
-	// Separator + help bar
+	// Separator + help bar + nav bar
 	if m.width > 0 {
 		sb.WriteString(styleFaint.Render(strings.Repeat("─", m.width)))
 	} else {
@@ -1361,8 +1372,37 @@ func (m sessionTUIModel) View() string {
 	}
 	sb.WriteString("\n")
 	sb.WriteString(helpBar.String())
+	sb.WriteString("\n")
+	sb.WriteString(renderNavBar(screenSessions, m.width))
 
 	return sb.String()
+}
+
+// runSessionsNav runs sessions TUI and returns the next screen name for the main loop.
+func runSessionsNav() string {
+	m := newSessionTUIModel()
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return screenQuit
+	}
+	final, ok := result.(sessionTUIModel)
+	if !ok {
+		return screenQuit
+	}
+	if final.nextScreen != "" {
+		return final.nextScreen
+	}
+	// Session selected → launch it.
+	if final.selectedTag != "" {
+		tool := ""
+		if entry, ok := final.sessions[final.selectedTag]; ok {
+			tool = inferSessionTool(final.selectedTag, entry)
+		}
+		_ = resumeSelectedSession(final.selectedTag, tool)
+		return screenSessions
+	}
+	return screenQuit
 }
 
 // runSessionsTUI returns (selectedTag, tool, error).
@@ -1377,11 +1417,8 @@ func runSessionsTUI() (string, string, error) {
 	if final, ok := result.(sessionTUIModel); ok {
 		tool := ""
 		if final.selectedTag != "" {
-			if entry, ok := final.sessions[final.selectedTag]; ok && entry.Tool != "" {
-				tool = entry.Tool
-			}
-			if tool == "" {
-				tool = "claude"
+			if entry, ok := final.sessions[final.selectedTag]; ok {
+				tool = inferSessionTool(final.selectedTag, entry)
 			}
 		}
 		return final.selectedTag, tool, nil

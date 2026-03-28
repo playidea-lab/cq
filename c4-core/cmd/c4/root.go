@@ -306,8 +306,11 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 		writeGlobalConfig("last_seen_version", version)
 		return launchTool(defaultTool, projectDir)
 	case "sessions":
-		_, _, err := runSessionsTUI()
-		return err
+		tag, tool, err := runSessionsTUI()
+		if err != nil {
+			return err
+		}
+		return resumeSelectedSession(tag, tool)
 	case "doctor":
 		return runDoctorTUI()
 	case "ideas":

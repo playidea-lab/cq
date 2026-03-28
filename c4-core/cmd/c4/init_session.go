@@ -21,12 +21,16 @@ import (
 type namedSessionEntry struct {
 	UUID    string `json:"uuid"`
 	Dir     string `json:"dir"`
-	Tool    string `json:"tool,omitempty"`    // claude, codex, cursor
+	Tool    string `json:"tool,omitempty"`    // claude, codex, cursor, gemini, chatgpt
 	Memo    string `json:"memo,omitempty"`    // user-defined description
 	Idea    string `json:"idea,omitempty"`    // session idea / initial goal
-	Status  string `json:"status,omitempty"` // session lifecycle status (e.g., active, paused, done)
+	Status  string `json:"status,omitempty"`  // session lifecycle status (e.g., active, paused, done)
 	Summary string `json:"summary,omitempty"` // auto-generated or user-set summary
 	Updated string `json:"updated"`
+}
+
+var launchToolNamedFn = func(tool, projectDir, name string) error {
+	return launchToolNamed(tool, projectDir, name)
 }
 
 func namedSessionsFile() string {
@@ -123,6 +127,37 @@ func findGeminiSessionIndex(uuid string) string {
 		}
 	}
 	return "latest"
+}
+
+func inferSessionTool(tag string, entry namedSessionEntry) string {
+	if entry.Tool != "" {
+		return entry.Tool
+	}
+	if prefix, _, ok := strings.Cut(tag, "/"); ok {
+		switch prefix {
+		case "claude", "codex", "cursor", "gemini", "chatgpt":
+			return prefix
+		}
+	}
+	return "claude"
+}
+
+func resumeSelectedSession(tag, tool string) error {
+	if tag == "" {
+		return nil
+	}
+
+	sessions, _ := loadNamedSessions()
+	entry := sessions[tag]
+	if entry.Status == "done" {
+		entry.Status = "active"
+		sessions[tag] = entry
+		_ = saveNamedSessions(sessions)
+	}
+	if tool == "" {
+		tool = inferSessionTool(tag, entry)
+	}
+	return launchToolNamedFn(tool, projectDir, tag)
 }
 
 // launchToolNamed starts or resumes a named AI tool session with a reboot loop.
@@ -491,16 +526,7 @@ var sessionsCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			if tag != "" {
-				sessions, _ := loadNamedSessions()
-				if entry, ok := sessions[tag]; ok && entry.Status == "done" {
-					entry.Status = "active"
-					sessions[tag] = entry
-					_ = saveNamedSessions(sessions)
-				}
-				return launchToolNamed(tool, projectDir, tag)
-			}
-			return nil
+			return resumeSelectedSession(tag, tool)
 		}
 
 		sessions, err := loadNamedSessions()

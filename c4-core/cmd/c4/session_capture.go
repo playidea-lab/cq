@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/changmin/c4-core/internal/knowledge"
 	_ "modernc.org/sqlite"
 )
 
@@ -166,10 +167,8 @@ func inferStatusQuiet(entry namedSessionEntry) string {
 // When nil, LLM summarization is skipped and summary remains empty.
 var captureSessionSummarizeFn func(jsonlPath, project, date string) string
 
-// captureSession infers the session lifecycle status, generates a 2-line LLM summary
-// (best-effort), and updates the named-sessions.json entry for the given session name.
-// This function is best-effort: any errors are logged to stderr but do not block
-// the caller.
+// captureSession closes the session on exit: status→done, LLM summary,
+// knowledge store, and persona learning. Best-effort: errors are logged, not fatal.
 func captureSession(name string) {
 	sessions, err := loadNamedSessions()
 	if err != nil {
@@ -182,8 +181,8 @@ func captureSession(name string) {
 		return
 	}
 
-	// Infer session lifecycle status.
-	status := inferStatus(entry)
+	// Exit always transitions to "done".
+	status := "done"
 
 	// Find session transcript using provider system.
 	tool := entry.Tool
@@ -198,37 +197,27 @@ func captureSession(name string) {
 		}
 	}
 
-	// Generate LLM summary (best-effort).
+	// Generate structured summary + knowledge + persona (best-effort).
 	summary := ""
-	if transcriptPath != "" && captureSessionSummarizeFn != nil {
+	if transcriptPath != "" {
 		project := filepath.Base(entry.Dir)
 		date := time.Now().Format("2006-01-02")
-		// For non-JSONL files (Gemini JSON, Codex JSONL), convert to pseudo-JSONL
-		if strings.HasSuffix(transcriptPath, ".jsonl") {
-			summary = captureSessionSummarizeFn(transcriptPath, project, date)
-		} else {
-			// Use provider's LoadHistory to extract user messages, write temp JSONL
-			p := findProviderByTool(tool)
-			if p == nil {
-				p = findProviderByTool("gemini")
+		jsonlPath, isTmp := transcriptToJSONL(transcriptPath, tool)
+		if isTmp {
+			defer os.Remove(jsonlPath)
+		}
+
+		// Prefer structured close pipeline (summary + decisions + preferences)
+		if jsonlPath != "" && sessionCloseSummarizeFn != nil {
+			result := sessionCloseSummarizeFn(jsonlPath, project, date)
+			if result != nil && result.Summary != "" {
+				summary = result.Summary
+				captureSessionSaveKnowledge(entry.Dir, project, date, result.Summary)
+				captureSessionLearnPersona(entry.Dir, result)
 			}
-			if p != nil {
-				items := p.LoadHistory(transcriptPath)
-				if len(items) > 0 {
-					tmpFile, tmpErr := os.CreateTemp("", "cq-session-*.jsonl")
-					if tmpErr == nil {
-						for _, msg := range items {
-							row := map[string]any{"type": "user", "message": map[string]string{"role": "user", "content": msg}}
-							data, _ := json.Marshal(row)
-							tmpFile.Write(data)
-							tmpFile.WriteString("\n")
-						}
-						tmpFile.Close()
-						summary = captureSessionSummarizeFn(tmpFile.Name(), project, date)
-						os.Remove(tmpFile.Name())
-					}
-				}
-			}
+		} else if jsonlPath != "" && captureSessionSummarizeFn != nil {
+			// Fallback: simple summary only (no knowledge/persona)
+			summary = captureSessionSummarizeFn(jsonlPath, project, date)
 		}
 	}
 
@@ -243,6 +232,85 @@ func captureSession(name string) {
 	if err := saveNamedSessions(sessions); err != nil {
 		fmt.Fprintf(os.Stderr, "cq: captureSession: save sessions: %v\n", err)
 	}
+	fmt.Fprintf(os.Stderr, "cq: session '%s' → done\n", name)
+}
+
+// transcriptToJSONL converts a transcript to JSONL format for LLM processing.
+// Returns (path, isTempFile). For native JSONL, returns the original path with isTmp=false.
+func transcriptToJSONL(transcriptPath, tool string) (string, bool) {
+	if strings.HasSuffix(transcriptPath, ".jsonl") {
+		return transcriptPath, false
+	}
+
+	p := findProviderByTool(tool)
+	if p == nil {
+		p = findProviderByTool("gemini")
+	}
+	if p == nil {
+		return "", false
+	}
+
+	items := p.LoadHistory(transcriptPath)
+	if len(items) == 0 {
+		return "", false
+	}
+
+	tmpFile, err := os.CreateTemp("", "cq-session-*.jsonl")
+	if err != nil {
+		return "", false
+	}
+
+	for _, msg := range items {
+		row := map[string]any{"type": "user", "message": map[string]string{"role": "user", "content": msg}}
+		data, _ := json.Marshal(row)
+		tmpFile.Write(data)
+		tmpFile.WriteString("\n")
+	}
+	tmpFile.Close()
+	return tmpFile.Name(), true
+}
+
+// captureSessionSaveKnowledge saves a session summary to the knowledge store (best-effort).
+func captureSessionSaveKnowledge(dir, project, date, summaryText string) {
+	if summaryText == "" {
+		return
+	}
+	homeDir, _ := os.UserHomeDir()
+	knowledgeDir := filepath.Join(homeDir, ".c4", "knowledge")
+	if dir != "" {
+		if _, err := os.Stat(filepath.Join(dir, ".c4")); err == nil {
+			knowledgeDir = filepath.Join(dir, ".c4", "knowledge")
+		}
+	}
+	ks, err := knowledge.NewStore(knowledgeDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cq: captureSession: knowledge store: %v\n", err)
+		return
+	}
+	title := fmt.Sprintf("세션 요약: %s (%s)", project, date)
+	meta := map[string]any{
+		"title":  title,
+		"domain": "session",
+		"tags":   []string{"session", "auto-close"},
+	}
+	if _, err := ks.Create(knowledge.TypeInsight, meta, summaryText); err != nil {
+		fmt.Fprintf(os.Stderr, "cq: captureSession: knowledge save: %v\n", err)
+	}
+}
+
+// captureSessionLearnPersona extracts decisions/preferences and applies persona learning.
+func captureSessionLearnPersona(dir string, result *sessionCloseResult) {
+	if result == nil || (len(result.Decisions) == 0 && len(result.Preferences) == 0) {
+		return
+	}
+	var suggestions []string
+	for _, d := range result.Decisions {
+		suggestions = append(suggestions, "[결정] "+d)
+	}
+	for _, p := range result.Preferences {
+		suggestions = append(suggestions, "[선호] "+p)
+	}
+	applySessionPersona(dir, suggestions)
 }
 
 // inferStatus determines the lifecycle status of a session using a 3-step hybrid:
