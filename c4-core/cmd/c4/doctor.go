@@ -75,6 +75,9 @@ var doctorChecks = []doctorCheckEntry{
 	{Name: "ontology L1", Fn: checkOntologyL1},
 	{Name: "ontology L2", Fn: checkOntologyL2},
 	{Name: "knowledge health", Fn: checkKnowledgeHealth},
+	{Name: "LLM gateway", Fn: checkLLMGateway},
+	{Name: "DB schema", Fn: checkDBSchema},
+	{Name: "permission reviewer", Fn: checkPermissionReviewer},
 }
 
 var doctorCmd = &cobra.Command{
@@ -895,6 +898,10 @@ func sectionYAMLValue(content, section, key string) string {
 		// This prevents "url:" from matching "url_extra:" (prefix collision).
 		if inSection && (trimmed == key || strings.HasPrefix(trimmed, key+" ") || strings.HasPrefix(trimmed, key+"\t")) {
 			val := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
+			// Strip inline YAML comments (# ...)
+			if idx := strings.Index(val, " #"); idx >= 0 {
+				val = strings.TrimSpace(val[:idx])
+			}
 			val = strings.Trim(val, `"'`)
 			return val
 		}
@@ -1236,5 +1243,210 @@ func checkStandards() checkResult {
 		Status:  checkWarn,
 		Message: msg,
 		Fix:     "run: cq init --team <team> --lang <lang>",
+	}
+}
+
+// checkLLMGateway verifies LLM gateway configuration and API key availability.
+func checkLLMGateway() checkResult {
+	cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return checkResult{
+			Name:    "LLM gateway",
+			Status:  checkOK,
+			Message: "skipped (no config.yaml)",
+		}
+	}
+	content := string(data)
+
+	enabled := sectionYAMLValue(content, "llm_gateway", "enabled:")
+	if enabled != "true" {
+		return checkResult{
+			Name:    "LLM gateway",
+			Status:  checkOK,
+			Message: "disabled",
+		}
+	}
+
+	defaultProvider := sectionYAMLValue(content, "llm_gateway", "default:")
+	if defaultProvider == "" {
+		defaultProvider = "anthropic"
+	}
+
+	// Check common API key env vars based on provider
+	envKeys := map[string]string{
+		"anthropic": "ANTHROPIC_API_KEY",
+		"openai":    "OPENAI_API_KEY",
+		"google":    "GOOGLE_API_KEY",
+		"gemini":    "GOOGLE_API_KEY",
+	}
+
+	var missing []string
+	var present []string
+	for provider, envKey := range envKeys {
+		if os.Getenv(envKey) != "" {
+			present = append(present, provider)
+		} else if provider == defaultProvider {
+			missing = append(missing, envKey)
+		}
+	}
+
+	if len(missing) > 0 {
+		return checkResult{
+			Name:    "LLM gateway",
+			Status:  checkFail,
+			Message: fmt.Sprintf("default provider %q missing env: %s", defaultProvider, strings.Join(missing, ", ")),
+			Fix:     fmt.Sprintf("export %s=<your-key>", missing[0]),
+		}
+	}
+
+	return checkResult{
+		Name:    "LLM gateway",
+		Status:  checkOK,
+		Message: fmt.Sprintf("enabled, default: %s (%d providers configured)", defaultProvider, len(present)),
+	}
+}
+
+// checkDBSchema verifies that essential tables exist in the task database.
+func checkDBSchema() checkResult {
+	dbPath := ""
+	for _, f := range []string{"c4.db", "tasks.db"} {
+		p := filepath.Join(projectDir, ".c4", f)
+		if _, err := os.Stat(p); err == nil {
+			dbPath = p
+			break
+		}
+	}
+	if dbPath == "" {
+		return checkResult{
+			Name:    "DB schema",
+			Status:  checkWarn,
+			Message: "no database file found",
+		}
+	}
+
+	// Use sqlite3 to check for essential tables
+	requiredTables := []string{"c4_tasks", "c4_state"}
+	out, err := runWithTimeout(5*time.Second, "sqlite3", dbPath,
+		"SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+	if err != nil {
+		return checkResult{
+			Name:    "DB schema",
+			Status:  checkFail,
+			Message: fmt.Sprintf("cannot query database: %v", err),
+		}
+	}
+
+	tables := strings.Split(strings.TrimSpace(out), "\n")
+	tableSet := make(map[string]bool, len(tables))
+	for _, t := range tables {
+		tableSet[strings.TrimSpace(t)] = true
+	}
+
+	var missingTables []string
+	for _, req := range requiredTables {
+		if !tableSet[req] {
+			missingTables = append(missingTables, req)
+		}
+	}
+
+	if len(missingTables) > 0 {
+		return checkResult{
+			Name:    "DB schema",
+			Status:  checkFail,
+			Message: fmt.Sprintf("missing tables: %s", strings.Join(missingTables, ", ")),
+			Fix:     "cq init to re-create schema",
+		}
+	}
+
+	return checkResult{
+		Name:    "DB schema",
+		Status:  checkOK,
+		Message: fmt.Sprintf("%d tables in %s", len(tables), filepath.Base(dbPath)),
+	}
+}
+
+// checkPermissionReviewer verifies permission reviewer configuration and API key.
+func checkPermissionReviewer() checkResult {
+	cfgPath := filepath.Join(projectDir, ".c4", "config.yaml")
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return checkResult{
+			Name:    "permission reviewer",
+			Status:  checkOK,
+			Message: "skipped (no config.yaml)",
+		}
+	}
+	content := string(data)
+
+	enabled := sectionYAMLValue(content, "permission_reviewer", "enabled:")
+	if enabled != "true" {
+		return checkResult{
+			Name:    "permission reviewer",
+			Status:  checkOK,
+			Message: "disabled",
+		}
+	}
+
+	model := sectionYAMLValue(content, "permission_reviewer", "model:")
+	if model == "" {
+		model = "haiku"
+	}
+
+	validModels := map[string]bool{
+		"haiku": true, "sonnet": true, "opus": true,
+		"claude-haiku-4-5-20251001": true,
+		"claude-sonnet-4-5-20250514": true,
+	}
+	if !validModels[model] {
+		return checkResult{
+			Name:    "permission reviewer",
+			Status:  checkWarn,
+			Message: fmt.Sprintf("unknown model %q — may not work", model),
+		}
+	}
+
+	apiKeyEnv := sectionYAMLValue(content, "permission_reviewer", "api_key_env:")
+	if apiKeyEnv == "" {
+		apiKeyEnv = "ANTHROPIC_API_KEY"
+	}
+	if os.Getenv(apiKeyEnv) == "" {
+		return checkResult{
+			Name:    "permission reviewer",
+			Status:  checkFail,
+			Message: fmt.Sprintf("enabled but %s not set", apiKeyEnv),
+			Fix:     fmt.Sprintf("export %s=<your-key>", apiKeyEnv),
+		}
+	}
+
+	autoApprove := sectionYAMLValue(content, "permission_reviewer", "auto_approve:")
+	patternCount := 0
+	lines := strings.Split(content, "\n")
+	inSection := false
+	inAllow := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if len(line) > 0 && line[0] != ' ' && line[0] != '\t' {
+			inSection = strings.HasPrefix(trimmed, "permission_reviewer:")
+			inAllow = false
+			continue
+		}
+		if inSection && strings.HasPrefix(trimmed, "allow_patterns:") {
+			inAllow = true
+			continue
+		}
+		if inSection && inAllow && strings.HasPrefix(trimmed, "- ") {
+			patternCount++
+			continue
+		}
+		if inSection && !strings.HasPrefix(trimmed, "- ") && inAllow {
+			inAllow = false
+		}
+	}
+
+	return checkResult{
+		Name:    "permission reviewer",
+		Status:  checkOK,
+		Message: fmt.Sprintf("model=%s, auto_approve=%s, %d allow patterns", model, autoApprove, patternCount),
 	}
 }
