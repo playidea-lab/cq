@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -77,8 +76,10 @@ type sessionTUIModel struct {
 	// External AI tool processes (not managed by CQ)
 	externalTools []aiToolProcess
 
-	// Remote sessions from Supabase (fetched once)
-	remoteFetched bool
+	// Remote sessions from Supabase
+	remoteFetched    bool
+	remoteTickCount  int // counts ticks since last remote fetch
+	remoteSessions   []remoteSession
 }
 
 // detailPaths returns the file paths for the currently selected session.
@@ -105,6 +106,17 @@ func newSessionTUIModel() sessionTUIModel {
 	}
 	m.sessions, _ = loadNamedSessions()
 	recalcStatuses(m.sessions)
+	// Merge local sessions from all providers (Gemini, Codex)
+	for _, p := range providers {
+		if p.ScanSessions == nil {
+			continue
+		}
+		for tag, entry := range p.ScanSessions() {
+			if _, exists := m.sessions[tag]; !exists {
+				m.sessions[tag] = entry
+			}
+		}
+	}
 	m.searchIndex = buildSearchIndex(m.sessions)
 	m.rows = buildRows(m.sessions, m.searchIndex, m.query, m.statusFilter)
 	m.externalTools = detectRunningAITools()
@@ -362,75 +374,45 @@ func (m *sessionTUIModel) isSearching() bool {
 	return m.query != ""
 }
 
-// loadHistory reads user questions from the JSONL transcript of the given session.
-// It tries the session's own dir first, then falls back to the current projectDir.
-func loadHistory(uuid string, sessionDir string) []string {
-	// Try session's dir first, then current projectDir
-	dirs := []string{sessionDir, projectDir}
-	var projDir string
-	for _, d := range dirs {
-		if d == "" {
-			continue
-		}
-		pd, err := claudeProjectDir(d)
-		if err != nil {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(pd, uuid+".jsonl")); err == nil {
-			projDir = pd
-			break
-		}
+// loadHistory reads user questions from the session transcript using the provider system.
+// Tries each provider's FindTranscript with the session's dir, then projectDir.
+func loadHistory(uuid string, entry namedSessionEntry) []string {
+	tool := entry.Tool
+	if tool == "" {
+		tool = "claude"
 	}
-	if projDir == "" {
-		return nil
-	}
-	path := filepath.Join(projDir, uuid+".jsonl")
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
 
-	var questions []string
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		// Quick check before full parse
-		if !strings.Contains(line, `"user"`) {
-			continue
-		}
-		var entry struct {
-			Type    string `json:"type"`
-			Message *struct {
-				Role    string `json:"role"`
-				Content any    `json:"content"`
-			} `json:"message"`
-		}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			continue
-		}
-		if entry.Type != "user" || entry.Message == nil || entry.Message.Role != "user" {
-			continue
-		}
-		text := extractUserText(entry.Message.Content)
-		if text == "" {
-			continue
-		}
-		// Skip system/hook/command noise
-		if strings.HasPrefix(text, "<command-") || strings.HasPrefix(text, "Base directory") {
-			continue
-		}
-		// Keep full text, trim excess whitespace
-		text = strings.TrimSpace(text)
-		if text != "" {
-			questions = append(questions, text)
+	// Try the matching provider first
+	if p := findProviderByTool(tool); p != nil {
+		dirs := []string{entry.Dir, projectDir}
+		for _, d := range dirs {
+			if d == "" {
+				continue
+			}
+			path := p.FindTranscript(d, uuid)
+			if path != "" {
+				return p.LoadHistory(path)
+			}
 		}
 	}
-	return questions
+
+	// Fallback: try all providers
+	for _, p := range providers {
+		if p.Tool == tool {
+			continue
+		}
+		dirs := []string{entry.Dir, projectDir}
+		for _, d := range dirs {
+			if d == "" {
+				continue
+			}
+			path := p.FindTranscript(d, uuid)
+			if path != "" {
+				return p.LoadHistory(path)
+			}
+		}
+	}
+	return nil
 }
 
 // extractUserText extracts plain text from a JSONL message content field.
@@ -502,6 +484,7 @@ func openFileCmd(path string) tea.Cmd {
 func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case remoteSessionsMsg:
+		m.remoteSessions = msg.sessions
 		if len(msg.sessions) > 0 {
 			mergeRemoteSessions(m.sessions, msg.sessions)
 			m.searchIndex = buildSearchIndex(m.sessions)
@@ -513,10 +496,17 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sessions, err := loadNamedSessions()
 		if err == nil {
 			recalcStatuses(sessions)
-			// Re-merge remote sessions if previously fetched
-			if m.remoteFetched {
-				for tag, entry := range m.sessions {
-					if entry.Dir == "" && entry.Tool != "" && entry.Tool != "claude" {
+			// Re-merge cached remote sessions
+			if m.remoteFetched && len(m.remoteSessions) > 0 {
+				mergeRemoteSessions(sessions, m.remoteSessions)
+			}
+			// Merge local provider sessions (Gemini, Codex)
+			for _, p := range providers {
+				if p.ScanSessions == nil {
+					continue
+				}
+				for tag, entry := range p.ScanSessions() {
+					if _, exists := sessions[tag]; !exists {
 						sessions[tag] = entry
 					}
 				}
@@ -526,7 +516,15 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rebuildRows()
 		}
 		m.externalTools = detectRunningAITools()
-		return m, sessionTickCmd()
+		// Re-fetch remote sessions every ~30s (10 ticks)
+		m.remoteTickCount++
+		var cmds []tea.Cmd
+		cmds = append(cmds, sessionTickCmd())
+		if m.remoteTickCount >= 10 {
+			m.remoteTickCount = 0
+			cmds = append(cmds, fetchRemoteSessions)
+		}
+		return m, tea.Batch(cmds...)
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -672,7 +670,7 @@ func (m sessionTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if idx >= 0 {
 					tag := m.rows[idx].tag
 					entry := m.sessions[tag]
-					items := loadHistory(entry.UUID, entry.Dir)
+					items := loadHistory(entry.UUID, entry)
 					if len(items) > 0 {
 						m.historyMode = true
 						m.historyItems = items

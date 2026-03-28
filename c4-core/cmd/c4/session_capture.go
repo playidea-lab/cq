@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -50,6 +51,59 @@ func isSessionRunning(name string) bool {
 	return proc.Signal(syscall.Signal(0)) == nil
 }
 
+// --- External AI tool process detection ---
+
+// aiToolProcess represents a detected running AI tool process.
+type aiToolProcess struct {
+	tool string
+	pid  int
+}
+
+// detectRunningAITools finds running AI CLI processes not managed by CQ.
+func detectRunningAITools() []aiToolProcess {
+	patterns := []struct {
+		tool    string
+		pgrep   string
+		exclude string
+	}{
+		{"claude", "claude", "cq"},
+		{"gemini", "gemini", ""},
+		{"cursor", "Cursor", ""},
+		{"codex", "codex", ""},
+	}
+
+	var results []aiToolProcess
+	for _, p := range patterns {
+		out, err := exec.Command("pgrep", "-af", p.pgrep).Output()
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if line == "" {
+				continue
+			}
+			// Skip CQ-managed processes
+			if p.exclude != "" && strings.Contains(line, p.exclude) {
+				continue
+			}
+			// Skip this detection process itself
+			if strings.Contains(line, "pgrep") {
+				continue
+			}
+			parts := strings.SplitN(line, " ", 2)
+			if len(parts) < 2 {
+				continue
+			}
+			pid, err := strconv.Atoi(parts[0])
+			if err != nil {
+				continue
+			}
+			results = append(results, aiToolProcess{tool: p.tool, pid: pid})
+		}
+	}
+	return results
+}
+
 // --- Real-time status recalculation ---
 
 // recalcStatuses updates all session statuses in-place based on current file/DB state.
@@ -60,6 +114,11 @@ func recalcStatuses(sessions map[string]namedSessionEntry) {
 			entry.Status = "running"
 			sessions[tag] = entry
 			continue
+		}
+		// Migrate legacy "in-progress" → "active"
+		if entry.Status == "in-progress" {
+			entry.Status = "active"
+			sessions[tag] = entry
 		}
 		// Only recalc if idea is set (otherwise keep stored status)
 		if entry.Idea != "" || entry.Dir != "" {
@@ -94,7 +153,7 @@ func inferStatusQuiet(entry namedSessionEntry) string {
 				if done == total {
 					return "done"
 				}
-				return "in-progress"
+				return "active"
 			}
 			return "planned"
 		}
@@ -126,18 +185,51 @@ func captureSession(name string) {
 	// Infer session lifecycle status.
 	status := inferStatus(entry)
 
-	// Find the JSONL file for this session UUID.
-	jsonlPath := ""
-	if entry.UUID != "" && entry.Dir != "" {
-		jsonlPath = captureSessionFindJSONL(entry.Dir, entry.UUID)
+	// Find session transcript using provider system.
+	tool := entry.Tool
+	if tool == "" {
+		tool = "claude"
+	}
+	var transcriptPath string
+	for _, p := range providers {
+		if path := p.FindTranscript(entry.Dir, entry.UUID); path != "" {
+			transcriptPath = path
+			break
+		}
 	}
 
-	// Generate LLM summary (best-effort, 5-second timeout enforced in the LLM variant).
+	// Generate LLM summary (best-effort).
 	summary := ""
-	if jsonlPath != "" && captureSessionSummarizeFn != nil {
+	if transcriptPath != "" && captureSessionSummarizeFn != nil {
 		project := filepath.Base(entry.Dir)
 		date := time.Now().Format("2006-01-02")
-		summary = captureSessionSummarizeFn(jsonlPath, project, date)
+		// For non-JSONL files (Gemini JSON, Codex JSONL), convert to pseudo-JSONL
+		if strings.HasSuffix(transcriptPath, ".jsonl") {
+			summary = captureSessionSummarizeFn(transcriptPath, project, date)
+		} else {
+			// Use provider's LoadHistory to extract user messages, write temp JSONL
+			p := findProviderByTool(tool)
+			if p == nil {
+				p = findProviderByTool("gemini")
+			}
+			if p != nil {
+				items := p.LoadHistory(transcriptPath)
+				if len(items) > 0 {
+					tmpFile, tmpErr := os.CreateTemp("", "cq-session-*.jsonl")
+					if tmpErr == nil {
+						for _, msg := range items {
+							row := map[string]any{"type": "user", "message": map[string]string{"role": "user", "content": msg}}
+							data, _ := json.Marshal(row)
+							tmpFile.Write(data)
+							tmpFile.WriteString("\n")
+						}
+						tmpFile.Close()
+						summary = captureSessionSummarizeFn(tmpFile.Name(), project, date)
+						os.Remove(tmpFile.Name())
+					}
+				}
+			}
+		}
 	}
 
 	// Update the entry.
@@ -157,7 +249,7 @@ func captureSession(name string) {
 //  1. Deterministic file/DB checks (idea, spec, tasks).
 //  2. Interactive stderr prompt for ambiguous cases (free-form sessions).
 //
-// Returns one of: "idea", "planned", "in-progress", "done", "suspended".
+// Returns one of: "idea", "planned", "active", "done", "suspended".
 func inferStatus(entry namedSessionEntry) string {
 	dir := entry.Dir
 	idea := entry.Idea
@@ -185,7 +277,7 @@ func inferStatus(entry namedSessionEntry) string {
 				if done == total {
 					return "done"
 				}
-				return "in-progress"
+				return "active"
 			}
 			// spec exists but no tasks (DB error or empty) → "planned"
 			return "planned"
@@ -199,7 +291,7 @@ func inferStatus(entry namedSessionEntry) string {
 			if done == total {
 				return "done"
 			}
-			return "in-progress"
+			return "active"
 		}
 	}
 

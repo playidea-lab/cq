@@ -515,14 +515,29 @@ async function handleSessionSummary(
   // Ensure session-summary tag and source tag are included
   const allTags = [...new Set([...tags, "session-summary", source])];
 
-  // Delegate to knowledge record with session-specific metadata
-  return handleKnowledgeRecord(env, props, {
+  // 1. Save to knowledge docs (existing behavior)
+  const knowledgeResult = await handleKnowledgeRecord(env, props, {
     title: `[${source}] ${title}`,
     content:
       `> Session summary from ${source} — ${new Date().toISOString().slice(0, 10)}\n\n${summary}`,
     doc_type: "insight",
     tags: allTags,
   });
+
+  // 2. Transition active session to done (or create done session if none active)
+  const ownerId = await resolveSupabaseUserId(env, props.github_id);
+  if (ownerId) {
+    const toolName = source === "other" ? "chatgpt" : source;
+    await supabaseRpc(env, "upsert_ai_session", {
+      p_owner_id: ownerId,
+      p_tool: toolName,
+      p_title: title.slice(0, 200),
+      p_summary: summary.slice(0, 2000),
+      p_status: "done",
+    });
+  }
+
+  return knowledgeResult;
 }
 
 async function handleStatus(env: Env): Promise<string> {
@@ -602,6 +617,20 @@ async function handleMcpRpc(
       const toolArgs = (
         (params as Record<string, unknown>)?.arguments ?? {}
       ) as Record<string, unknown>;
+
+      // Heartbeat: track active session on every tool call (best-effort, non-blocking)
+      const heartbeatTitle = toolName === "c4_knowledge_record"
+        ? (toolArgs.title as string | undefined)?.slice(0, 200)
+        : undefined;
+      const ownerId = await resolveSupabaseUserId(env, props.github_id);
+      if (ownerId) {
+        // Fire-and-forget: don't block tool execution
+        void supabaseRpc(env, "upsert_ai_session", {
+          p_owner_id: ownerId,
+          p_tool: "chatgpt",
+          p_title: heartbeatTitle ?? null,
+        });
+      }
 
       let result: string;
       switch (toolName) {
