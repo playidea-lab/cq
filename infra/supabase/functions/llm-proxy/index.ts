@@ -23,6 +23,7 @@ function currentMonth(): string {
 }
 
 Deno.serve(async (req: Request) => {
+  try {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
@@ -30,15 +31,21 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Extract JWT
+  // Extract JWT: prefer x-user-token (cq-proxy sends JWT here when API Gateway
+  // uses anon key in Authorization), fallback to Authorization header.
+  const userToken = req.headers.get("x-user-token");
   const authHeader = req.headers.get("Authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  let jwt: string;
+  if (userToken) {
+    jwt = userToken;
+  } else if (authHeader?.startsWith("Bearer ")) {
+    jwt = authHeader.slice("Bearer ".length);
+  } else {
     return new Response(JSON.stringify({ error: "Missing authorization header" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }
-  const jwt = authHeader.slice("Bearer ".length);
 
   // Verify JWT via Supabase Auth
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -122,12 +129,14 @@ Deno.serve(async (req: Request) => {
 
   // Increment usage counter on successful Anthropic response
   if (anthropicResp.ok) {
-    await admin.rpc("increment_llm_usage", {
-      p_user_id: user.id,
-      p_month: month,
-    }).catch(() => {
+    try {
+      await admin.rpc("increment_llm_usage", {
+        p_user_id: user.id,
+        p_month: month,
+      });
+    } catch {
       // Non-fatal: if counter fails, still return the response
-    });
+    }
   }
 
   const respBody = await anthropicResp.text();
@@ -139,4 +148,10 @@ Deno.serve(async (req: Request) => {
       "X-RateLimit-Remaining": String(remaining - (anthropicResp.ok ? 1 : 0)),
     },
   });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: "Internal", message: String(e) }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 });

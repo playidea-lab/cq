@@ -50,8 +50,8 @@ func registerLoopMCPHandlers(ctx *initContext) error {
 	}
 
 	ctx.reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_loop_start",
-		Description: "자율 연구 루프를 시작합니다.",
+		Name:        "cq_research_loop_start",
+		Description: "자율 연구 루프를 시작합니다. command+workdir를 지정하면 SpecPipeline을 건너뛰고 직접 Hub에 제출합니다.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -60,12 +60,14 @@ func registerLoopMCPHandlers(ctx *initContext) error {
 				"max_iterations":        map[string]any{"type": "integer"},
 				"max_patience":          map[string]any{"type": "integer", "description": "수렴 판정 최대 patience 라운드 수. 0=비활성. config 기본값 override."},
 				"convergence_threshold": map[string]any{"type": "number", "description": "patience 리셋 최소 개선량. config 기본값 override."},
+				"command":               map[string]any{"type": "string", "description": "Hub에 제출할 실행 명령. 지정 시 SpecPipeline 우회."},
+				"workdir":               map[string]any{"type": "string", "description": "워커의 작업 디렉토리."},
 			},
 		},
 	}, loopStartHandler(lo, ctx.knowledgeStore, defaults))
 
 	ctx.reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_loop_stop",
+		Name:        "cq_research_loop_stop",
 		Description: "실행 중인 자율 연구 루프를 중지합니다.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -77,7 +79,7 @@ func registerLoopMCPHandlers(ctx *initContext) error {
 	}, loopStopHandler(lo))
 
 	ctx.reg.Register(mcp.ToolSchema{
-		Name:        "c4_research_loop_status",
+		Name:        "cq_research_loop_status",
 		Description: "자율 연구 루프의 현재 상태를 조회합니다.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -99,6 +101,8 @@ func loopStartHandler(lo *orchestrator.LoopOrchestrator, ks *knowledge.Store, de
 			MaxIterations        int     `json:"max_iterations"`
 			MaxPatience          *int    `json:"max_patience"`
 			ConvergenceThreshold *float64 `json:"convergence_threshold"`
+			Command              string  `json:"command"`
+			Workdir              string  `json:"workdir"`
 		}
 		if len(rawArgs) > 0 {
 			if err := json.Unmarshal(rawArgs, &params); err != nil {
@@ -137,6 +141,8 @@ func loopStartHandler(lo *orchestrator.LoopOrchestrator, ks *knowledge.Store, de
 			MaxPatience:          maxPatience,
 			ConvergenceThreshold: convergenceThreshold,
 			MetricLowerIsBetter:  defaults.MetricLowerIsBetter,
+			Command:              params.Command,
+			Workdir:              params.Workdir,
 		}
 		// mcp.HandlerFunc does not carry a context; StartLoop is a sync.Map operation
 		// and completes instantly, so context.Background() is intentional here.

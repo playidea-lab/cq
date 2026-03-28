@@ -183,7 +183,6 @@ func (g *Gateway) Resolve(taskType, modelHint string) ModelRef {
 // Chat routes a request to the appropriate provider and records cost.
 func (g *Gateway) Chat(ctx context.Context, taskType string, req *ChatRequest) (*ChatResponse, error) {
 	ref := g.Resolve(taskType, req.Model)
-
 	g.mu.RLock()
 	provider, ok := g.providers[ref.Provider]
 	g.mu.RUnlock()
