@@ -101,19 +101,23 @@ func readLocalSkill(path string) (craft.RegistrySkill, craft.RegistryVersion, er
 		skill.Description = craft.ParseDescription(content)
 		version.Content = string(content)
 
-		// Collect extra files.
+		// Collect extra files recursively (references/, examples/, scripts/, etc.).
 		extraFiles := map[string]string{}
-		entries, _ := os.ReadDir(path)
-		for _, e := range entries {
-			if e.IsDir() || e.Name() == "SKILL.md" {
-				continue
+		_ = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
 			}
-			data, err := os.ReadFile(filepath.Join(path, e.Name()))
-			if err != nil {
-				continue
+			rel, _ := filepath.Rel(path, p)
+			if rel == "SKILL.md" {
+				return nil
 			}
-			extraFiles[e.Name()] = string(data)
-		}
+			data, readErr := os.ReadFile(p)
+			if readErr != nil {
+				return nil
+			}
+			extraFiles[rel] = string(data)
+			return nil
+		})
 		if len(extraFiles) > 0 {
 			j, _ := json.Marshal(extraFiles)
 			version.ExtraFiles = j

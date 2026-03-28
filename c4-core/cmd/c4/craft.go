@@ -189,6 +189,11 @@ func tryRegistryInstall(name, homeDir string) (string, bool) {
 		return "", false
 	}
 
+	// Restore extra_files (references/, examples/, scripts/, etc.).
+	if len(version.ExtraFiles) > 0 {
+		craft.RestoreExtraFiles(skill.Name, version.ExtraFiles, homeDir)
+	}
+
 	// Increment download count (best-effort, don't fail install).
 	_ = client.IncrementDownload(skill.Name)
 
@@ -264,6 +269,11 @@ func updateFromRegistry(name, sourceURL, homeDir string) error {
 	dest, err := craft.Install(preset, homeDir)
 	if err != nil {
 		return fmt.Errorf("설치 실패: %w", err)
+	}
+
+	// Restore extra_files (references/, examples/, scripts/, etc.).
+	if len(version.ExtraFiles) > 0 {
+		craft.RestoreExtraFiles(name, version.ExtraFiles, homeDir)
 	}
 
 	fmt.Printf("✓ %s 업데이트: %s → %s\n  → %s\n", name, currentVersion, latestVersion, dest)

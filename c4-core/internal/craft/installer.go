@@ -1,6 +1,7 @@
 package craft
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -197,6 +198,25 @@ func scanMarkdownDir(dir string, t PresetType) []InstalledItem {
 		return nil
 	})
 	return items
+}
+
+// RestoreExtraFiles writes extra_files from a registry version into the skill
+// directory, preserving subdirectory structure (references/, examples/, scripts/).
+// Keys are relative paths like "references/patterns.md".
+func RestoreExtraFiles(skillName string, extraFilesJSON json.RawMessage, homeDir string) {
+	var files map[string]string
+	if err := json.Unmarshal(extraFilesJSON, &files); err != nil {
+		return
+	}
+
+	skillDir := filepath.Join(homeDir, ".claude", "skills", skillName)
+	for relPath, content := range files {
+		dest := filepath.Join(skillDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			continue
+		}
+		_ = os.WriteFile(dest, []byte(content), 0o644)
+	}
 }
 
 // readSourceComment reads the first "# source: <url>" line from a file.
