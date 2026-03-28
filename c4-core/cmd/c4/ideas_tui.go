@@ -238,6 +238,17 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detailCursor = 0
 			}
 
+		case tea.KeySpace:
+			m.query += " "
+			m.filtered = rebuildIdeasFiltered(m.ideas, m.searchIndex, m.query)
+			if m.cursor >= len(m.filtered) {
+				if len(m.filtered) > 0 {
+					m.cursor = len(m.filtered) - 1
+				} else {
+					m.cursor = 0
+				}
+			}
+
 		case tea.KeyBackspace:
 			if len(m.query) > 0 {
 				runes := []rune(m.query)
