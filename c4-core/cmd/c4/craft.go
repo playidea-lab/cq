@@ -19,11 +19,24 @@ var (
 
 // craftAddCmd implements `cq add [preset]`.
 var craftAddCmd = &cobra.Command{
-	Use:   "add [preset]",
-	Short: "프리셋 스킬/에이전트/룰 설치",
-	Long:  "프리셋 카탈로그에서 커스텀 도구를 설치합니다.",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  runCraftAdd,
+	Use:   "add [preset | github-url]",
+	Short: "스킬/에이전트/룰 설치 (내장 프리셋 또는 GitHub)",
+	Long: `스킬, 에이전트, 룰을 설치합니다.
+
+인자 없이 실행하면 내장 프리셋 53개를 TUI로 브라우징합니다.
+
+사용 예시:
+  cq add                                    TUI 카탈로그 열기
+  cq add code-review                        내장 프리셋 설치
+  cq add anthropics/skills:pdf              GitHub shorthand로 설치
+  cq add obra/superpowers:brainstorming     커뮤니티 스킬 설치
+  cq add https://github.com/.../skills/pdf  풀 URL로 설치
+  cq add --list                             프리셋 목록 텍스트 출력
+
+설치된 도구는 ~/.claude/{skills|agents|rules}/에 저장되며 즉시 사용 가능합니다.
+대화형으로 새 도구를 만들려면 /craft 스킬을 사용하세요.`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runCraftAdd,
 }
 
 // craftListCmd implements `cq list --mine`.
@@ -31,26 +44,37 @@ var craftAddCmd = &cobra.Command{
 var craftListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "설치된 커스텀 도구 목록",
-	Long:  "설치된 커스텀 도구(스킬/에이전트/룰) 목록을 출력합니다.",
-	RunE:  runCraftList,
+	Long: `설치된 커스텀 도구(스킬/에이전트/룰) 목록을 출력합니다.
+
+사용 예시:
+  cq list --mine    설치된 도구 목록 (내장/원격 구분 표시)`,
+	RunE: runCraftList,
 }
 
 // craftRemoveCmd implements `cq remove <name>`.
 var craftRemoveCmd = &cobra.Command{
 	Use:   "remove <name>",
 	Short: "설치된 커스텀 도구 제거",
-	Long:  "설치된 프리셋(스킬/에이전트/룰)을 삭제합니다.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runCraftRemove,
+	Long: `설치된 스킬/에이전트/룰을 삭제합니다.
+
+사용 예시:
+  cq remove pdf             PDF 스킬 삭제
+  cq remove --force pdf     확인 없이 삭제`,
+	Args: cobra.ExactArgs(1),
+	RunE: runCraftRemove,
 }
 
 // craftUpdateCmd implements `cq update <name>`.
 var craftUpdateCmd = &cobra.Command{
 	Use:   "update <name>",
 	Short: "원격 설치 스킬 업데이트",
-	Long:  "cq add <url>로 설치한 스킬/에이전트/룰을 최신 버전으로 업데이트합니다.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runCraftUpdate,
+	Long: `cq add <url>로 설치한 스킬을 원본 GitHub에서 최신 버전으로 업데이트합니다.
+파일에 기록된 # source: URL을 사용하여 원본을 다시 가져옵니다.
+
+사용 예시:
+  cq update pdf             PDF 스킬을 최신으로 업데이트`,
+	Args: cobra.ExactArgs(1),
+	RunE: runCraftUpdate,
 }
 
 func init() {
