@@ -243,10 +243,23 @@ func readGeminiSessionMeta(path string) geminiSessionMeta {
 	first := ""
 	for _, m := range raw.Messages {
 		if m.Type == "user" && m.Content != "" {
-			first = m.Content
-			if len(first) > 80 {
-				first = first[:80] + "..."
+			msg := strings.TrimSpace(m.Content)
+			// Skip markdown headers and IDE context
+			if strings.HasPrefix(msg, "# ") || strings.HasPrefix(msg, "## ") || strings.HasPrefix(msg, "# Context") {
+				continue
 			}
+			// Take first line only
+			if idx := strings.IndexByte(msg, '\n'); idx > 0 {
+				msg = msg[:idx]
+			}
+			msg = strings.TrimSpace(msg)
+			if msg == "" {
+				continue
+			}
+			if len(msg) > 80 {
+				msg = msg[:80] + "..."
+			}
+			first = msg
 			break
 		}
 	}
@@ -456,11 +469,22 @@ func readCodexSessionMeta(path string) codexSessionMeta {
 			}
 		}
 		if entry.Payload.Type == "user_message" && meta.firstMessage == "" {
-			msg := entry.Payload.Message
+			msg := strings.TrimSpace(entry.Payload.Message)
+			// Skip IDE context injection (not a real user message)
+			if strings.HasPrefix(msg, "# Context from") || strings.HasPrefix(msg, "## Active") {
+				continue
+			}
+			// Take first meaningful line only
+			if idx := strings.IndexByte(msg, '\n'); idx > 0 {
+				msg = msg[:idx]
+			}
+			msg = strings.TrimSpace(msg)
 			if len(msg) > 80 {
 				msg = msg[:80] + "..."
 			}
-			meta.firstMessage = msg
+			if msg != "" {
+				meta.firstMessage = msg
+			}
 		}
 		// Stop after we have both
 		if meta.id != "" && meta.firstMessage != "" {
