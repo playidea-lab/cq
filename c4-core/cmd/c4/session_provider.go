@@ -483,39 +483,62 @@ func scanCodexSessions() map[string]namedSessionEntry {
 		f.Close()
 	}
 
-	// Scan archived sessions
-	archiveDir := filepath.Join(homeDir, ".codex", "archived_sessions")
-	entries, err := os.ReadDir(archiveDir)
-	if err != nil {
-		return result
+	// Scan both archived and active sessions
+	scanDirs := []string{
+		filepath.Join(homeDir, ".codex", "archived_sessions"),
 	}
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".jsonl") {
-			continue
+	// Active sessions: ~/.codex/sessions/YYYY/MM/DD/
+	sessionsDir := filepath.Join(homeDir, ".codex", "sessions")
+	_ = filepath.WalkDir(sessionsDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".jsonl") {
+			return nil
 		}
-		path := filepath.Join(archiveDir, e.Name())
-		meta := readCodexSessionMeta(path)
-		if meta.id == "" {
-			continue
-		}
-		summary := threadNames[meta.id]
-		if summary == "" {
-			summary = meta.firstMessage
-		}
-		tag := fmt.Sprintf("codex/%s", meta.id[:8])
-		status := "done"
-		if info, err := e.Info(); err == nil {
-			if time.Since(info.ModTime()) < 10*time.Minute {
-				status = "active"
+		scanDirs = append(scanDirs, "file:"+path)
+		return nil
+	})
+
+	for _, dir := range scanDirs {
+		var files []string
+		if strings.HasPrefix(dir, "file:") {
+			files = []string{strings.TrimPrefix(dir, "file:")}
+		} else {
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			for _, e := range entries {
+				if strings.HasSuffix(e.Name(), ".jsonl") {
+					files = append(files, filepath.Join(dir, e.Name()))
+				}
 			}
 		}
-		result[tag] = namedSessionEntry{
-			UUID:    meta.id,
-			Dir:     meta.cwd,
-			Tool:    "codex",
-			Status:  status,
-			Summary: summary,
-			Updated: meta.timestamp,
+		for _, path := range files {
+			meta := readCodexSessionMeta(path)
+			if meta.id == "" {
+				continue
+			}
+			summary := threadNames[meta.id]
+			if summary == "" {
+				summary = meta.firstMessage
+			}
+			tag := fmt.Sprintf("codex/%s", meta.id[:8])
+			if _, exists := result[tag]; exists {
+				continue // dedup
+			}
+			status := "done"
+			if info, err := os.Stat(path); err == nil {
+				if time.Since(info.ModTime()) < 10*time.Minute {
+					status = "active"
+				}
+			}
+			result[tag] = namedSessionEntry{
+				UUID:    meta.id,
+				Dir:     meta.cwd,
+				Tool:    "codex",
+				Status:  status,
+				Summary: summary,
+				Updated: meta.timestamp,
+			}
 		}
 	}
 	return result
