@@ -122,15 +122,12 @@ var sessionContextCmd = &cobra.Command{
 			return nil
 		}
 
-		// Show session info.
-		statusColor := statusColorCode(entry.Status)
+		// Show session info in context injection format.
 		statusLabel := statusDisplay(entry.Status)
-		if statusColor != "" {
-			statusLabel = statusColor + statusLabel + "\033[0m"
-		}
-		fmt.Printf("📋 Session: %s  [%s]\n", tag, statusLabel)
+		fmt.Printf("📋 세션 \"%s\" 이전 맥락:\n", tag)
+		fmt.Printf("  상태: %s\n", statusLabel)
 		if entry.Summary != "" {
-			fmt.Printf("   %s\n", entry.Summary)
+			fmt.Printf("  요약: %s\n", entry.Summary)
 		}
 
 		// Idea link: use stored Idea field first, then fuzzy-match by tag.
@@ -139,29 +136,22 @@ var sessionContextCmd = &cobra.Command{
 			ideaSlug, _ = matchIdeaByTag(tag)
 		}
 		if ideaSlug != "" {
-			ideaPath := filepath.Join(projectDir, ".c4", "ideas", ideaSlug+".md")
-			if _, statErr := os.Stat(ideaPath); statErr == nil {
-				fmt.Printf("   ├─ 💡 %s\n", ideaPath)
-			}
+			fmt.Printf("  아이디어: %s\n", ideaSlug)
 		}
 
 		// Status-based suggestion.
 		fmt.Println()
 		switch entry.Status {
 		case "idea", "":
-			if ideaSlug != "" {
-				fmt.Printf("👉 /plan --from-pi %s\n", ideaSlug)
-			} else {
-				fmt.Println("👉 아직 idea.md가 없습니다. /pi 로 아이디어를 구체화하세요.")
-			}
+			fmt.Println("💡 /plan으로 계획을 시작하세요")
 		case "planned":
-			fmt.Println("👉 /run 으로 실행하세요.")
-		case "active":
-			fmt.Println("👉 /c4-status 로 진행 중 태스크를 확인하세요.")
+			fmt.Println("💡 /run으로 실행을 시작하세요")
+		case "in-progress", "active":
+			fmt.Println("💡 /status로 진행 상황을 확인하세요")
 		case "done":
-			fmt.Println("✅ 완료됨. 새 작업을 시작하려면 /pi 를 실행하세요.")
+			fmt.Println("✅ 완료된 세션입니다")
 		default:
-			fmt.Printf("ℹ️  status: %s\n", entry.Status)
+			fmt.Printf("💡 /status로 진행 상황을 확인하세요\n")
 		}
 
 		return nil
