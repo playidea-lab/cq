@@ -38,6 +38,12 @@ type ideasTUIModel struct {
 	width       int
 	height      int
 
+	// Preview mode: show idea file content
+	previewMode   bool
+	previewSlug   string
+	previewLines  []string
+	previewScroll int
+
 	// Navigation
 	nextScreen string
 }
@@ -256,6 +262,55 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Preview mode: show idea file content
+		if m.previewMode {
+			switch msg.Type {
+			case tea.KeyEsc, tea.KeyLeft:
+				m.previewMode = false
+				return m, nil
+			case tea.KeyUp:
+				if m.previewScroll > 0 {
+					m.previewScroll--
+				}
+			case tea.KeyDown:
+				maxScroll := len(m.previewLines) - (m.height - 6)
+				if maxScroll < 0 {
+					maxScroll = 0
+				}
+				if m.previewScroll < maxScroll {
+					m.previewScroll++
+				}
+			case tea.KeyEnter:
+				// Launch session for this idea
+				for _, row := range m.filtered {
+					if row.slug == m.previewSlug {
+						m.selectedSlug = row.slug
+						m.selectedSessions = row.sessions
+						break
+					}
+				}
+				return m, tea.Quit
+			case tea.KeyRunes:
+				switch msg.String() {
+				case "k":
+					if m.previewScroll > 0 {
+						m.previewScroll--
+					}
+				case "j":
+					maxScroll := len(m.previewLines) - (m.height - 6)
+					if maxScroll < 0 {
+						maxScroll = 0
+					}
+					if m.previewScroll < maxScroll {
+						m.previewScroll++
+					}
+				case "q":
+					m.previewMode = false
+				}
+			}
+			return m, nil
+		}
+
 		// Normal mode
 		switch msg.Type {
 		case tea.KeyCtrlC:
@@ -269,19 +324,17 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter:
 			if m.cursor >= 0 && m.cursor < len(m.filtered) {
 				row := m.filtered[m.cursor]
-				m.selectedSlug = row.slug
-				m.selectedSessions = row.sessions
-				if len(row.sessions) == 1 {
-					// Single session → launch directly
-					return m, tea.Quit
-				} else if len(row.sessions) > 1 {
-					// Multiple sessions → enter detail mode to pick
-					m.detailMode = true
-					m.detailCursor = 0
-					return m, nil
+				m.previewSlug = row.slug
+				m.previewScroll = 0
+				// Load idea file content
+				ideaPath := filepath.Join(projectDir, ".c4", "ideas", row.slug+".md")
+				if data, err := os.ReadFile(ideaPath); err == nil {
+					m.previewLines = strings.Split(string(data), "\n")
+				} else {
+					m.previewLines = []string{"(파일을 읽을 수 없습니다)"}
 				}
-				// No sessions → will create new
-				return m, tea.Quit
+				m.previewMode = true
+				return m, nil
 			}
 
 		case tea.KeyEsc:
@@ -369,6 +422,59 @@ func (m ideasTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m ideasTUIModel) View() string {
 	var sb strings.Builder
+
+	// Preview mode: show idea file content
+	if m.previewMode {
+		sb.WriteString(styleTitle.Render(fmt.Sprintf(" %s ", m.previewSlug)))
+		sb.WriteString("\n\n")
+
+		visibleLines := m.height - 6
+		if visibleLines < 5 {
+			visibleLines = 5
+		}
+		end := m.previewScroll + visibleLines
+		if end > len(m.previewLines) {
+			end = len(m.previewLines)
+		}
+		for i := m.previewScroll; i < end; i++ {
+			line := m.previewLines[i]
+			if strings.HasPrefix(line, "# ") || strings.HasPrefix(line, "## ") || strings.HasPrefix(line, "### ") {
+				sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14")).Render(line))
+			} else if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "  - ") {
+				sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(line))
+			} else {
+				sb.WriteString(line)
+			}
+			sb.WriteString("\n")
+		}
+
+		// Scroll indicator
+		if len(m.previewLines) > visibleLines {
+			sb.WriteString("\n")
+			sb.WriteString(styleFaint.Render(fmt.Sprintf("  %d/%d lines", m.previewScroll+1, len(m.previewLines))))
+		}
+
+		// Fill remaining space
+		content := sb.String()
+		contentLines := strings.Count(content, "\n")
+		if m.height > 0 {
+			gap := m.height - contentLines - 2
+			for i := 0; i < gap; i++ {
+				sb.WriteString("\n")
+			}
+		}
+		if m.width > 0 {
+			sb.WriteString(styleFaint.Render(strings.Repeat("─", m.width)))
+		}
+		sb.WriteString("\n")
+		sb.WriteString(" ")
+		sb.WriteString(helpEntry("↑↓", "scroll"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("Enter", "open session"))
+		sb.WriteString("  ")
+		sb.WriteString(helpEntry("Esc", "back"))
+		return sb.String()
+	}
 
 	// New idea input mode
 	if m.newMode {
