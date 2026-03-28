@@ -234,6 +234,7 @@ Key prefixes:
 | Worker shows offline | Run `ps aux | grep cq` and `curl -s "$C5_HUB_URL/v1/health"` |
 | Job stuck | Check `cq hub log <job_id>` and worker logs |
 | `--non-interactive` needed in CI | Pass `--non-interactive` flag to `cq hub worker init` |
+| WSL2 relay drops | CQ sets `SO_KEEPALIVE` automatically — no config needed. Ensure `cq serve` (not `cq hub worker start`) is used, as it includes the keepalive-aware relay component |
 
 ## Next Steps
 

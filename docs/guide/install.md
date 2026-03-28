@@ -131,6 +131,28 @@ For global use across all projects, add to `~/.claude.json`:
 
 Restart Claude Code after any `.mcp.json` change.
 
+## Global Options
+
+### `--global-mcp`
+
+Install CQ as a global MCP server available in all projects (writes to `~/.claude.json`):
+
+```sh
+cd ~/c4 && ./install.sh --global-mcp
+```
+
+Without this flag, CQ is registered per-project in `.mcp.json`.
+
+### `--global-skills`
+
+Install CQ skills globally so they are available in all Claude Code sessions:
+
+```sh
+cd ~/c4 && ./install.sh --global-skills
+```
+
+---
+
 ## Update
 
 ```sh

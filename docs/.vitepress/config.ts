@@ -1,0 +1,183 @@
+import { defineConfig } from 'vitepress'
+
+export default defineConfig({
+  title: 'CQ',
+  description: 'External Brain for AI',
+
+  ignoreDeadLinks: true,
+
+  srcExclude: [
+    '**/specs/**',
+    '**/reviews/**',
+    '**/plans/**',
+    '**/PLAN-*',
+    '**/plan-*',
+    '**/antipattern-*',
+    '**/c4-to-cq-*',
+    '**/c9-*',
+    '**/deployment-topology.md',
+    '**/developer-experience.md',
+    '**/ARCHITECTURE.md',
+    '**/ROADMAP.md',
+    '**/config-guide.md',
+    '**/usage-guide.md',
+    '**/developer-guide/**',
+    '**/gpu-worker/**',
+    '**/ops/**',
+    '**/node_modules/**',
+  ],
+
+  locales: {
+    root: {
+      label: 'English',
+      lang: 'en',
+    },
+    ko: {
+      label: '한국어',
+      lang: 'ko',
+      link: '/ko/',
+      themeConfig: {
+        nav: [
+          { text: 'Guide', link: '/ko/guide/install' },
+          { text: 'Examples', link: '/ko/examples/first-task' },
+          { text: 'Reference', link: '/ko/reference/commands' },
+          {
+            text: 'GitHub',
+            link: 'https://github.com/PlayIdea-Lab/cq',
+          },
+        ],
+        sidebar: {
+          '/ko/guide/': [
+            {
+              text: 'Getting Started',
+              items: [
+                { text: 'Installation', link: '/ko/guide/install' },
+                { text: 'Quickstart', link: '/ko/guide/quickstart' },
+              ],
+            },
+            {
+              text: 'Core Concepts',
+              items: [
+                { text: 'Tiers', link: '/ko/guide/tiers' },
+                { text: 'Growth Loop', link: '/ko/guide/growth-loop' },
+              ],
+            },
+            {
+              text: 'Infrastructure',
+              items: [
+                { text: 'Worker Setup', link: '/ko/guide/worker' },
+                { text: 'Remote Brain', link: '/ko/guide/relay' },
+              ],
+            },
+            {
+              text: 'Advanced',
+              items: [
+                { text: 'Craft', link: '/ko/guide/craft' },
+                { text: 'DAG & Cron', link: '/ko/guide/dag-cron' },
+                { text: 'Relay', link: '/ko/guide/relay' },
+                { text: 'Worker', link: '/ko/guide/worker' },
+              ],
+            },
+          ],
+          '/ko/examples/': [
+            {
+              text: 'Examples',
+              items: [
+                { text: 'First Task', link: '/ko/examples/first-task' },
+                { text: 'Bug Fix', link: '/ko/examples/bug-fix' },
+                { text: 'Feature Planning', link: '/ko/examples/feature-planning' },
+                { text: 'Distributed Experiments', link: '/ko/examples/distributed-experiments' },
+                { text: 'Researcher Workflow', link: '/ko/examples/researcher-workflow' },
+              ],
+            },
+          ],
+          '/ko/reference/': [
+            {
+              text: 'Reference',
+              items: [
+                { text: 'Commands', link: '/ko/reference/commands' },
+                { text: 'Skills', link: '/ko/reference/skills' },
+                { text: 'Tools', link: '/ko/reference/tools' },
+                { text: 'Architecture', link: '/ko/reference/architecture' },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  },
+
+  themeConfig: {
+    nav: [
+      { text: 'Guide', link: '/guide/install' },
+      { text: 'Examples', link: '/examples/first-task' },
+      { text: 'Reference', link: '/reference/commands' },
+      {
+        text: 'GitHub',
+        link: 'https://github.com/PlayIdea-Lab/cq',
+      },
+    ],
+
+    sidebar: {
+      '/guide/': [
+        {
+          text: 'Getting Started',
+          items: [
+            { text: 'Installation', link: '/guide/install' },
+            { text: 'Quickstart', link: '/guide/quickstart' },
+          ],
+        },
+        {
+          text: 'Core Concepts',
+          items: [
+            { text: 'Tiers', link: '/guide/tiers' },
+            { text: 'Growth Loop', link: '/guide/growth-loop' },
+          ],
+        },
+        {
+          text: 'Infrastructure',
+          items: [
+            { text: 'Worker Setup', link: '/guide/worker' },
+            { text: 'Remote Brain', link: '/guide/relay' },
+          ],
+        },
+        {
+          text: 'Advanced',
+          items: [
+            { text: 'Craft', link: '/guide/craft' },
+            { text: 'DAG & Cron', link: '/guide/dag-cron' },
+            { text: 'Relay', link: '/guide/relay' },
+            { text: 'Worker', link: '/guide/worker' },
+          ],
+        },
+      ],
+      '/examples/': [
+        {
+          text: 'Examples',
+          items: [
+            { text: 'First Task', link: '/examples/first-task' },
+            { text: 'Bug Fix', link: '/examples/bug-fix' },
+            { text: 'Feature Planning', link: '/examples/feature-planning' },
+            { text: 'Distributed Experiments', link: '/examples/distributed-experiments' },
+            { text: 'Researcher Workflow', link: '/examples/researcher-workflow' },
+          ],
+        },
+      ],
+      '/reference/': [
+        {
+          text: 'Reference',
+          items: [
+            { text: 'Commands', link: '/reference/commands' },
+            { text: 'Skills', link: '/reference/skills' },
+            { text: 'Tools', link: '/reference/tools' },
+            { text: 'Architecture', link: '/reference/architecture' },
+          ],
+        },
+      ],
+    },
+
+    socialLinks: [
+      { icon: 'github', link: 'https://github.com/PlayIdea-Lab/cq' },
+    ],
+  },
+})

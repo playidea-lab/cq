@@ -1,316 +1,262 @@
-# Researcher Workflow: Plan → Train → Evaluate → Iterate
+# Researcher End-to-End Workflow
 
-An end-to-end example for ML researchers using CQ to manage the full experiment lifecycle — from paper spec to final results.
+This example walks through a complete ML research cycle using CQ — from initial
+idea through planning, implementation, GPU training, evaluation, and iterative
+improvement. The Research Loop can run autonomously for multiple cycles without
+human intervention.
 
----
-
-## Scenario
-
-You're running experiments for a computer vision paper. The target: beat DINOv2 baseline on a custom medical imaging dataset (MPJPE < 2.0 mm). You need to:
-
-1. Define an experiment plan
-2. Submit training jobs to GPU workers
-3. Track metrics across runs
-4. Iterate based on results
-5. Record final findings
+**Scenario**: Improving a 3D pose estimation model. Starting metric: MPJPE 48mm.
+Target: below 25mm.
 
 ---
 
-## Step 1: Start a Research Loop
+## Phase 1: Idea — /pi
 
-Use `/c4-research` to create a tracked research session that persists across Claude Code sessions:
-
-```
-/c4-research start "DINOv2-Medical: beat 2.0mm MPJPE on CXR dataset" --target 2.0mm
-```
+Start with brainstorming before writing any code. `/pi` is a free-form
+exploration mode that saves structured notes to `idea.md`.
 
 ```
-[RESEARCH] Session started: rs-dino-medical-001
-Target: MPJPE < 2.0mm
-Phase: PLAN
-
-Next: define your experiment hypothesis and first run
+/pi "improve 3D pose estimation accuracy, currently MPJPE 48mm, target <25mm"
 ```
 
-The session state is saved — if you close Claude Code and reopen it tomorrow, you can resume:
+CQ enters Play Idea mode and asks questions, surfaces related knowledge from
+your knowledge base, and helps structure the approach:
 
 ```
-/c4-research status
-```
+[pi] Loading related knowledge...
+  Found: "exp-038: DINOv2 features improved MPJPE by 8mm on H36M"
+  Found: "insight: attention pooling outperforms average pooling for joint prediction"
 
-```
-Session: rs-dino-medical-001
-Target: MPJPE < 2.0mm
-Phase: PLAN
-Best result: none yet
-Experiments: 0 completed
+[pi] Brainstorming directions:
+  1. Backbone upgrade — DINOv2 ViT-L instead of ResNet50
+  2. Loss function — add bone length consistency loss
+  3. Data augmentation — occlusion simulation
+  4. Architecture — cross-attention between joint features
+
+[pi] Saving to idea.md...
 ```
 
 ---
 
-## Step 2: Plan the First Experiment
+## Phase 2: Plan — /c4-plan
 
-Before running anything, record your hypothesis:
-
-```
-c4_knowledge_record(
-    type="insight",
-    content="Hypothesis: DINOv2 ViT-B/14 fine-tuned on CXR with frozen backbone should reach ~2.3mm. Need to unfreeze last 4 layers to close the gap."
-)
-```
-
-Define the first experiment:
+Convert the idea into structured requirements and concrete tasks:
 
 ```
-/c4-research next
+/c4-plan
 ```
 
-```
-[RESEARCH] Phase: PLAN → EXPERIMENT
-
-Suggested experiment based on your hypothesis:
-  name: exp-001-frozen-backbone
-  model: DINOv2 ViT-B/14
-  config:
-    freeze_backbone: true
-    epochs: 50
-    lr: 1e-4
-    batch_size: 32
-
-Run it? (or modify the config)
-```
-
-Approve and it creates a task:
+CQ runs Discovery → Design → Task generation:
 
 ```
-Task created: T-EXP-001
-  command: python train.py --exp exp-001 --freeze-backbone
-  gpu_count: 1
+[plan] DISCOVERY — collecting requirements (EARS format)
+  - When training on H36M, system shall achieve MPJPE < 25mm
+  - When backbone is DINOv2 ViT-L, system shall load pretrained weights
+  - If bone length loss weight > 0.1, system shall apply joint consistency
+  - System shall not exceed 200ms inference per frame
+
+[plan] DESIGN — architecture decision
+  Option A: Replace backbone only (lower risk, faster iteration)
+  Option B: Full architecture redesign (higher ceiling, 2x time)
+  Selected: Option A — start minimal, iterate
+
+[plan] TASKS created:
+  T-RES-01  Replace ResNet50 backbone with DINOv2 ViT-L
+  T-RES-02  Add bone length consistency loss
+  T-RES-03  Update training config and data pipeline
+  T-RES-04  Run baseline evaluation (exp-043)
+  CP-RES    Checkpoint: compare against exp-042 baseline (MPJPE 22.71mm)
 ```
 
 ---
 
-## Step 3: Submit Training Job
+## Phase 3: Implement — /c4-run
 
-CQ submits the training job to the Hub:
+Spawn workers to execute tasks in parallel:
 
 ```
-c4_hub_submit(
-    name="exp-001-frozen-backbone",
-    workdir="/git/dino-medical",
-    command="python train.py --exp exp-001 --freeze-backbone --epochs 50 --lr 1e-4",
-    gpu_count=1
-)
+/c4-run 2
 ```
 
-```json
-{"job_id": "j-exp001-a4f2"}
+Two workers start simultaneously on independent tasks:
+
+```
+[worker-1] T-RES-01: Replace backbone with DINOv2 ViT-L
+  Editing model/backbone.py ...
+  Editing model/feature_extractor.py ...
+  Validation: python -m py_compile model/backbone.py ✓
+
+[worker-2] T-RES-02: Add bone length consistency loss
+  Editing losses/bone_length.py (new file) ...
+  Editing losses/__init__.py ...
+  Validation: python -m py_compile losses/bone_length.py ✓
 ```
 
-Your `train.py` must emit metrics in CQ format:
+After workers finish, T-RES-03 (config updates) runs with full context from
+both completed tasks. Worktree branches are merged and cleaned up automatically.
+
+---
+
+## Phase 4: Submit Training Job — Hub
+
+With code ready, submit the experiment to the GPU cluster:
 
 ```python
-# train.py (relevant section)
-for epoch in range(args.epochs):
-    mpjpe, pa_mpjpe = evaluate(model, val_loader)
-    print(f"Epoch {epoch+1}/{args.epochs} @mpjpe={mpjpe:.4f} @pa_mpjpe={pa_mpjpe:.4f}")
+c4_hub_submit(
+    name="dinov2-boneloss-exp043",
+    workdir="/git/pose-model",
+    command="python train.py --config configs/exp043.yaml",
+    gpu_count=1,
+    exp_id="exp-043"
+)
 ```
 
-Monitor in real time:
+Monitor progress:
 
 ```
-c4_hub_watch(job_id="j-exp001-a4f2")
+[job-8b2f1e] Epoch 1/80   @loss=2.1432  @bone_loss=0.8821  @mpjpe=45.12
+[job-8b2f1e] Epoch 10/80  @loss=1.0341  @bone_loss=0.3214  @mpjpe=35.44
+[job-8b2f1e] Epoch 40/80  @loss=0.4821  @bone_loss=0.1102  @mpjpe=26.88
+[job-8b2f1e] Epoch 80/80  @loss=0.2941  @bone_loss=0.0634  @mpjpe=21.43
+[job-8b2f1e] Status: SUCCEEDED
 ```
 
-```
-[GPU: A100 80GB]
-Epoch 1/50  @mpjpe=8.421 @pa_mpjpe=6.103
-Epoch 5/50  @mpjpe=5.812 @pa_mpjpe=4.231
-Epoch 10/50 @mpjpe=4.103 @pa_mpjpe=3.018
-Epoch 20/50 @mpjpe=3.421 @pa_mpjpe=2.512
-Epoch 30/50 @mpjpe=3.108 @pa_mpjpe=2.203
-Epoch 40/50 @mpjpe=3.021 @pa_mpjpe=2.147
-Epoch 50/50 @mpjpe=2.981 @pa_mpjpe=2.109
-```
-
-Training complete. Best MPJPE: **2.981 mm** — above the 2.0 mm target.
+MPJPE dropped from 48mm (ResNet50) to 21.43mm (DINOv2 + bone loss).
+Target of 25mm exceeded.
 
 ---
 
-## Step 4: Record the Result
+## Phase 5: Record Results
 
-```
+```python
 c4_knowledge_record(
     type="experiment",
-    content="""
-exp-001: DINOv2 ViT-B/14, frozen backbone
-  MPJPE:    2.981mm
-  PA-MPJPE: 2.109mm
-  Epochs:   50
-  LR:       1e-4
-
-Analysis: Frozen backbone limits adaptation to medical domain.
-Next: unfreeze last 4 transformer blocks.
-"""
+    content="""exp-043: DINOv2 ViT-L + bone length loss
+    MPJPE: 21.43mm  PA-MPJPE: 15.92mm
+    vs baseline exp-042 (ResNet50): MPJPE 22.71mm
+    Key finding: bone loss contribution minor vs backbone upgrade.
+    DINOv2 features alone account for ~8mm improvement.
+    Next: ablate bone loss weight, try cross-attention head."""
 )
 ```
 
 ---
 
-## Step 5: Iterate — Unfreeze Layers
+## Phase 6: Research Loop — Autonomous Iteration
 
-Based on exp-001, adjust the hypothesis. Run exp-002 with unfrozen layers:
-
-```
-c4_hub_submit(
-    name="exp-002-unfreeze-last4",
-    workdir="/git/dino-medical",
-    command="python train.py --exp exp-002 --unfreeze-layers 4 --epochs 50 --lr 5e-5",
-    gpu_count=1
-)
-```
-
-This time, run exp-003 in parallel (try lower learning rate):
+For sustained multi-cycle improvement, hand off to the Research Loop:
 
 ```
-c4_hub_submit(
-    name="exp-003-unfreeze-lr1e5",
-    workdir="/git/dino-medical",
-    command="python train.py --exp exp-003 --unfreeze-layers 4 --epochs 50 --lr 1e-5",
-    gpu_count=1
-)
+/c9-loop start \
+  --goal "improve MPJPE below 18mm" \
+  --budget 5 \
+  --metric mpjpe \
+  --direction minimize
 ```
 
-Both jobs run simultaneously on separate workers.
-
-Check when done:
+The LoopOrchestrator runs autonomously:
 
 ```
-c4_hub_summary(job_id="j-exp002-b7c1")
-c4_hub_summary(job_id="j-exp003-c2d4")
+[loop] Cycle 1 — best: 21.43mm
+  Hypothesis: cross-attention between joint queries improves local features
+  Plan: add CrossAttentionHead to decoder
+  Execute: hub submit exp-044 ...
+  Result: @mpjpe=19.87mm  (improvement: 1.56mm)
+  Knowledge recorded.
+
+[loop] Cycle 2 — best: 19.87mm
+  Hypothesis: occlusion augmentation during training reduces test-time errors
+  Plan: add OcclusionAug transform with p=0.3
+  Execute: hub submit exp-045 ...
+  Result: @mpjpe=18.24mm  (improvement: 1.63mm)
+  Knowledge recorded.
+
+[loop] Cycle 3 — best: 18.24mm
+  Hypothesis: cosine LR schedule with warm restart improves convergence
+  Execute: hub submit exp-046 ...
+  Result: @mpjpe=17.61mm  (improvement: 0.63mm)
+  Goal reached: 17.61mm < 18mm target.
+
+[loop] Goal achieved after 3 cycles. Stopping.
 ```
 
-```
-exp-002: MPJPE=2.103mm  PA-MPJPE=1.814mm  ← below target!
-exp-003: MPJPE=2.341mm  PA-MPJPE=2.012mm
-```
-
-exp-002 beats the 2.0 mm target.
-
----
-
-## Step 6: Confirm Best Result
-
-Update the research session with the winning experiment:
+Check loop status at any time:
 
 ```
-/c4-research record --exp exp-002 --mpjpe 2.103 --pa-mpjpe 1.814
+/c9-loop status
 ```
 
 ```
-[RESEARCH] Result recorded.
-  Session best: MPJPE=2.103mm (exp-002)
-  Target:       MPJPE < 2.0mm
-  Status:       TARGET NOT YET MET (2.103 > 2.000)
-```
-
-Close, but not there yet. One more iteration.
-
----
-
-## Step 7: Fine-Tune the Winner
-
-```
-c4_hub_submit(
-    name="exp-004-longer-training",
-    workdir="/git/dino-medical",
-    command="python train.py --exp exp-004 --unfreeze-layers 4 --epochs 100 --lr 5e-5 --cosine-annealing",
-    gpu_count=1
-)
-```
-
-```
-c4_hub_watch(job_id="j-exp004-d5e6")
-```
-
-```
-Epoch 80/100  @mpjpe=2.021 @pa_mpjpe=1.743
-Epoch 90/100  @mpjpe=1.982 @pa_mpjpe=1.701
-Epoch 100/100 @mpjpe=1.941 @pa_mpjpe=1.678
-```
-
-**MPJPE: 1.941 mm — target met.**
-
----
-
-## Step 8: Approve and Complete
-
-```
-/c4-research record --exp exp-004 --mpjpe 1.941 --pa-mpjpe 1.678
-/c4-research approve complete
-```
-
-```
-[RESEARCH] Session complete.
-
-Summary: DINOv2-Medical — beat 2.0mm MPJPE target
-  Best:       exp-004, MPJPE=1.941mm, PA-MPJPE=1.678mm
-  Experiments: 4 runs
-  Key finding: Unfreeze last 4 layers + 100 epochs + cosine annealing
-
-Knowledge recorded. Session closed: rs-dino-medical-001
+Loop: running (cycle 3/5)
+Best: 17.61mm (exp-046)
+Experiments: exp-043, exp-044, exp-045, exp-046
+Budget remaining: 2 cycles
 ```
 
 ---
 
-## Full Experiment Summary
-
-| Exp | Config | MPJPE | PA-MPJPE | Note |
-|-----|--------|-------|---------|------|
-| exp-001 | frozen backbone, 50 epochs, lr=1e-4 | 2.981 | 2.109 | baseline |
-| exp-002 | unfreeze 4 layers, 50 epochs, lr=5e-5 | 2.103 | 1.814 | first below 2.1 |
-| exp-003 | unfreeze 4 layers, 50 epochs, lr=1e-5 | 2.341 | 2.012 | lr too low |
-| exp-004 | unfreeze 4 layers, 100 epochs, cosine | **1.941** | **1.678** | **target met** |
-
----
-
-## Knowledge Retrieval in Future Sessions
-
-The recorded experiments are searchable:
+## Phase 7: Finish and Release
 
 ```
-c4_knowledge_search(query="DINOv2 medical MPJPE unfreeze")
+/c4-finish
 ```
 
+CQ runs final checks, generates a summary, and creates a release:
+
 ```
-Found 3 results:
+[finish] All validations passed
+[finish] Generating research summary...
 
-1. [experiment] exp-004: DINOv2 ViT-B/14, unfreeze 4 layers...
-   MPJPE=1.941mm — best result, target met
+Research Summary — 3D Pose Estimation Improvement
+  Starting MPJPE: 48.00mm (exp-042, ResNet50)
+  Final MPJPE:    17.61mm (exp-046, DINOv2 + CA + OccAug)
+  Improvement:    63% reduction in joint position error
+  Experiments:    4 (3 autonomous loop cycles)
+  Total GPU time: 6h 14m
 
-2. [insight] Hypothesis: frozen backbone limits domain adaptation...
-   Next: unfreeze last 4 layers
+Key findings (saved to knowledge base):
+  1. DINOv2 backbone provides largest single gain (~8mm)
+  2. Cross-attention head adds ~2mm improvement
+  3. Occlusion augmentation critical for robustness
+  4. Bone length loss: minor effect (< 0.5mm)
 
-3. [experiment] exp-001: frozen backbone baseline...
-   MPJPE=2.981mm
+[finish] Commit created: feat(model): DINOv2+CA+OccAug — MPJPE 17.61mm
 ```
 
 ---
 
-## Tips
+## Full Workflow in One View
 
-**Always record hypotheses before running.** It takes 30 seconds and saves hours of "why did I run this?" confusion later.
+```
+/pi          →  Explore idea, surface prior knowledge
+/c4-plan     →  EARS requirements + architecture decision + tasks
+/c4-run 2    →  Parallel workers implement code changes
+hub submit   →  GPU training, @metric streaming, artifact upload
+/c9-loop     →  Autonomous multi-cycle improvement
+/c4-finish   →  Summary, knowledge capture, commit
+```
 
-**Run parallel experiments for hyperparameter sweeps.** `c4_hub_submit` is non-blocking — submit 3–4 jobs and check results together.
+---
 
-**Use `@metric=value` format consistently.** CQ parses these automatically from stdout. No separate metrics file needed.
+## Research Loop Configuration
 
-**Session state survives restarts.** `/c4-research status` works in any new Claude Code session — you don't lose context.
+```yaml
+# .c4/config.yaml
+hub:
+  enabled: true
+  url: https://hub.pilab.kr
+  team_id: your-team-id
+
+research_loop:
+  max_cycles: 10
+  metric: mpjpe
+  direction: minimize    # or maximize
+  early_stop_patience: 3 # stop if no improvement for 3 cycles
+```
 
 ---
 
 ## Next Steps
 
-- **DAG pipelines for multi-step workflows**: [Distributed Experiments](distributed-experiments.md)
-- **Feature implementation workflow**: [Feature Planning](feature-planning.md)
-- **Experiment tracking MCP tools**: [Usage Guide §6](../usage-guide.md)
+- [Distributed ML Experiments](distributed-experiments.md) — Hub and DAG details
+- [Usage Guide](../usage-guide.md) — full command reference including /c9-loop
