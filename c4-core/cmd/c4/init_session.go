@@ -130,6 +130,32 @@ func findGeminiSessionIndex(uuid string) string {
 // For gemini: uses --resume with index-based lookup (best effort).
 // Env vars CQ_SESSION_NAME and CQ_SESSION_UUID are injected into the subprocess.
 func launchToolNamed(tool, projectDir, name string) error {
+	// ChatGPT: open in browser (no CLI)
+	if tool == "chatgpt" {
+		sessions, _ := loadNamedSessions()
+		// Also check provider sessions
+		uuid := ""
+		if entry, ok := sessions[name]; ok {
+			uuid = entry.UUID
+		} else {
+			for _, p := range providers {
+				if p.ScanSessions == nil {
+					continue
+				}
+				if entry, ok := p.ScanSessions()[name]; ok {
+					uuid = entry.UUID
+					break
+				}
+			}
+		}
+		if uuid != "" {
+			url := fmt.Sprintf("https://chatgpt.com/c/%s", uuid)
+			fmt.Fprintf(os.Stderr, "cq: opening ChatGPT conversation in browser...\n")
+			return exec.Command("open", url).Run()
+		}
+		return fmt.Errorf("ChatGPT session '%s' not found", name)
+	}
+
 	sessions, err := loadNamedSessions()
 	if err != nil {
 		return fmt.Errorf("loading named sessions: %w", err)
