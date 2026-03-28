@@ -225,7 +225,7 @@ func openDB() (*sql.DB, error) {
 // applyCommandVisibility assigns groups to visible commands and hides the rest.
 func applyCommandVisibility() {
 	aiTools := map[string]bool{"claude": true, "cursor": true, "codex": true, "gemini": true}
-	mgmt := map[string]bool{"status": true, "stop": true, "update": true, "doctor": true}
+	mgmt := map[string]bool{"status": true, "stop": true, "update": true, "doctor": true, "add": true}
 
 	for _, c := range rootCmd.Commands() {
 		name := c.Name()
@@ -312,6 +312,9 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 		return runDoctorTUI()
 	case "ideas":
 		return runIdeasTUI()
+	case "craft":
+		homeDir, _ := os.UserHomeDir()
+		return runCraftTUI(homeDir)
 	case "config":
 		p2 := tea.NewProgram(newSelectorModel(), tea.WithAltScreen())
 		m2, err := p2.Run()

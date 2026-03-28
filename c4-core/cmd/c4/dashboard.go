@@ -26,6 +26,7 @@ type changeConfigMsg struct{}
 type openSessionsMsg struct{}
 type openDoctorMsg struct{}
 type openIdeasMsg struct{}
+type openCraftMsg struct{}
 
 // --- Dashboard TUI Model ---
 
@@ -89,6 +90,11 @@ func buildCommandRows() []cmdRow {
 		{name: "cq doctor", desc: "설치 환경 진단"},
 		{name: "cq update", desc: "CQ 최신 버전 업데이트"},
 		{name: "cq stop", desc: "CQ 서비스 중지"},
+		{name: "cq add", desc: "스킬/에이전트/룰 설치 (프리셋 + GitHub)"},
+		{name: "cq add <url>", desc: "GitHub에서 원격 설치"},
+		{name: "cq list --mine", desc: "설치된 커스텀 도구 목록"},
+		{name: "cq remove <name>", desc: "설치된 도구 삭제"},
+		{name: "cq update <name>", desc: "원격 설치 도구 업데이트"},
 
 		// Slash Commands (Skills)
 		{isHeader: true, category: "Slash Commands"},
@@ -99,6 +105,7 @@ func buildCommandRows() []cmdRow {
 		{name: "/quick", desc: "태스크 1개 빠른 실행"},
 		{name: "/status", desc: "프로젝트 상태 + 태스크 그래프"},
 		{name: "/review", desc: "6축 코드 리뷰"},
+		{name: "/craft", desc: "대화형 스킬/에이전트/룰 생성"},
 		{name: "/help", desc: "스킬/에이전트/도구 레퍼런스"},
 		{name: "/attach", desc: "현재 세션에 이름 붙이기"},
 		{name: "/reboot", desc: "세션 재시작"},
@@ -326,6 +333,9 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openIdeasMsg:
 		m.action = "ideas"
 		return m, tea.Quit
+	case openCraftMsg:
+		m.action = "craft"
+		return m, tea.Quit
 	}
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -360,6 +370,8 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg { return openDoctorMsg{} }
 			case "i":
 				return m, func() tea.Msg { return openIdeasMsg{} }
+			case "a":
+				return m, func() tea.Msg { return openCraftMsg{} }
 			}
 		}
 	case tea.WindowSizeMsg:
@@ -512,6 +524,8 @@ func (m dashboardModel) View() string {
 	helpBar.WriteString(helpEntry("s", "상태"))
 	helpBar.WriteString("  ")
 	helpBar.WriteString(helpEntry("i", "ideas"))
+	helpBar.WriteString("  ")
+	helpBar.WriteString(helpEntry("a", "add"))
 	helpBar.WriteString("  ")
 	helpBar.WriteString(helpEntry("t", "sessions"))
 	helpBar.WriteString("  ")

@@ -41,10 +41,12 @@ What's the task?
 ├─ Large (15+ files) → /plan → /run N  OR  /swarm N
 ├─ Research/experiment → /c9-loop, /review (paper)
 ├─ Document work → c4_parse_document, /proposal-writer, /document-review
-└─ Idea exploration → /pi
+├─ Idea exploration → /pi
+└─ 도구 추가/커스텀 → cq add, /craft
 
 Core: /status, /quick, /run, /submit, /validate
-More: /help commands | agents | tools | piki | <keyword>
+Craft: cq add (프리셋 TUI), cq add owner/repo:name (GitHub), /craft (대화형 생성)
+More: /help commands | agents | tools | piki | craft | <keyword>
 ```
 
 ### "piki" → Piki 표준 스킬 안내
@@ -97,6 +99,39 @@ More: /help commands | agents | tools | piki | <keyword>
 ### "agents" → See `references/agents.md`
 
 ### "tools" → See `references/tools.md`
+
+### "craft" → Craft 시스템 안내
+
+```
+🛠 CQ Craft — 스킬/에이전트/룰 설치 & 생성
+
+  설치 (CLI):
+  cq add                         TUI 카탈로그 (53개 내장 프리셋)
+  cq add code-review             내장 프리셋 직접 설치
+  cq add anthropics/skills:pdf   GitHub에서 원격 설치
+  cq add obra/superpowers:tdd    커뮤니티 스킬 설치
+
+  관리:
+  cq list --mine                 설치된 도구 목록
+  cq update <name>               원격 도구 업데이트
+  cq remove <name>               도구 삭제
+
+  생성 (대화형):
+  /craft                         새 skill/agent/rule/CLAUDE.md 만들기
+                                 타입 자동 판단 (묻지 않음)
+
+  프리셋 카테고리:
+  Skills (16)  — 코드 리뷰, TDD, 장애대응, API 설계 등
+  Agents (17)  — Go/Python/Rust/TS 전문가, 리뷰어, 아키텍트 등
+  Rules (12)   — 에러핸들링, 타입, 함수길이, 로그레벨 등
+  CLAUDE.md (8) — Go/Python/Rust/Kotlin/ML/모노레포 템플릿
+
+  GitHub 추천:
+  anthropics/skills     Anthropic 공식 (pdf, docx, pptx, xlsx 등)
+  obra/superpowers      Superpowers (brainstorming, TDD, debugging)
+
+  가이드: docs/guide/craft.md
+```
 
 ### Other → Keyword search across `references/search-data.md`
 
