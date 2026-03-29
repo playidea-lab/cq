@@ -1,4 +1,4 @@
-# Bug Fix with /c4-quick
+# Bug Fix with /quick
 
 A step-by-step example of diagnosing and fixing a bug using CQ's quick workflow.
 
@@ -23,7 +23,7 @@ You need to:
 ## Step 1: Start a Quick Task
 
 ```
-/c4-quick "fix: auth middleware panics on expired JWT — should return 401"
+/quick "fix: auth middleware panics on expired JWT — should return 401"
 ```
 
 Output:
@@ -185,7 +185,7 @@ go test ./internal/middleware/... -v
 ## Step 6: Validate
 
 ```
-/c4-validate
+/validate
 ```
 
 ```
@@ -202,7 +202,7 @@ All validations passed.
 ## Step 7: Submit
 
 ```
-/c4-submit
+/submit
 ```
 
 ```
@@ -219,7 +219,7 @@ Task T-042 completed.
 ## Step 8: Confirm
 
 ```
-/c4-status
+/status
 ```
 
 ```
@@ -235,7 +235,7 @@ Done:
 
 **Fix one bug at a time.** Two separate fixes (bounds check + error return) are fine in one commit when they affect the same function and address the same root cause.
 
-**Validate all test paths.** CQ's `/c4-validate` runs the full test suite. A passing test for the fixed case isn't enough — the entire suite must stay green.
+**Validate all test paths.** CQ's `/validate` runs the full test suite. A passing test for the fixed case isn't enough — the entire suite must stay green.
 
 ---
 
@@ -243,4 +243,4 @@ Done:
 
 - **Multiple files, clearer requirements**: [Feature Planning](feature-planning.md)
 - **Complex investigation**: Run `/c4-swarm --investigate` when the root cause is unknown
-- **Usage decision tree**: [Usage Guide §1](../usage-guide.md)
+- **Usage decision tree**: [Usage Guide §1](../reference/commands.md)

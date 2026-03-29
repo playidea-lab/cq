@@ -15,21 +15,21 @@
 │  → 그냥 고쳐. C4 불필요.
 │
 ├─ 소규모 (1-5파일, 요구사항 명확)
-│  → /c4-quick "설명" → 작업 → /c4-submit
+│  → /quick "설명" → 작업 → /submit
 │
 ├─ 중규모 (5-15파일, 아키텍처 확정)
-│  → /c4-add-task 반복 → /c4-run → /c4-polish → /c4-finish → /c4-release
+│  → /add-task 반복 → /run → /polish → /finish → /c4-release
 │    또는 Direct: c4_claim → c4_report
 │
 ├─ 대규모 (15+파일, 새 도메인)
-│  → /c4-interview → /c4-plan → /c4-run N → /c4-polish → /c4-finish
-│    또는 /c4-swarm N → /c4-polish → /c4-finish
+│  → /c4-interview → /plan → /run N → /polish → /finish
+│    또는 /c4-swarm N → /polish → /finish
 │
 ├─ 연구/실험
 │  → /c4-research 또는 /c4-swarm --investigate
 │
 └─ 문서 작업 (논문 리뷰, HWP/DOCX 분석)
-   → /c4-review 또는 c4_parse_document
+   → /review 또는 c4_parse_document
 ```
 
 **확신이 없으면 작은 모드부터 시작**하세요. 병렬성이 보이면 올려도 됩니다.
@@ -40,13 +40,13 @@
 
 ### Direct vs Worker vs Swarm
 
-| 기준 | Direct | Worker (`/c4-run`) | Swarm (`/c4-swarm`) |
+| 기준 | Direct | Worker (`/run`) | Swarm (`/c4-swarm`) |
 |------|--------|-------------------|---------------------|
 | 태스크 수 | 1-2개 | 3개+ 독립적 | 3개+ 상호의존적 |
 | 파일 겹침 | 높음 | 낮음 (worktree 격리) | 중간 |
 | 에이전트 간 소통 | 불필요 | 불필요 | 필요 |
 | 비용 | 최저 | 중간 | 최고 |
-| 사용법 | `c4_claim` → `c4_report` | `/c4-run N` | `/c4-swarm N` |
+| 사용법 | `c4_claim` → `c4_report` | `/run N` | `/c4-swarm N` |
 | 최적 상황 | 버그 수정, 리팩토링 | 독립 기능 구현 | 리뷰, 조사, 교차 기능 |
 
 ### 판단 기준
@@ -72,32 +72,32 @@
 **상황**: 특정 버그를 찾아 고치는 단일 작업
 
 ```bash
-/c4-quick "fix: 타임아웃 버그 in auth middleware"
+/quick "fix: 타임아웃 버그 in auth middleware"
 # → 자동으로 태스크 생성 + claim
 
 # 코드 수정 후
-/c4-validate               # lint + test 실행
-/c4-submit                 # 완료 제출
+/validate               # lint + test 실행
+/submit                 # 완료 제출
 ```
 
-**주의사항**: 수정 후 반드시 `/c4-validate`로 검증. 검증 실패 시 submit 금지.
+**주의사항**: 수정 후 반드시 `/validate`로 검증. 검증 실패 시 submit 금지.
 
 ### B. 명확한 기능 추가 (요구사항 확정)
 
 **상황**: "JWT 인증 추가" 같은 범위가 명확한 기능
 
 ```bash
-/c4-add-task "JWT 인증 미들웨어 추가"
+/add-task "JWT 인증 미들웨어 추가"
 # → DoD(Definition of Done) 대화형 생성
 
-/c4-run 1                  # Worker 1개 스폰 실행
+/run 1                  # Worker 1개 스폰 실행
 # 또는 Direct 모드:
 # c4_claim(task_id) → 작업 → c4_report(task_id, summary, files_changed)
 
-/c4-checkpoint             # 완료 시 리뷰 요청
+/checkpoint             # 완료 시 리뷰 요청
 ```
 
-**주의사항**: 태스크가 3개 이상이면 `/c4-run N`으로 병렬 실행을 고려하세요.
+**주의사항**: 태스크가 3개 이상이면 `/run N`으로 병렬 실행을 고려하세요.
 
 ### C. 대규모 신기능 (아키텍처 결정 필요)
 
@@ -105,9 +105,9 @@
 
 ```bash
 /c4-interview "실시간 동기화"  # 심층 요구사항 탐색 (선택)
-/c4-plan                      # Discovery → Design → Tasks 자동 생성
-/c4-run 3                     # 3개 Worker 병렬 실행
-/c4-checkpoint                # 단계별 리뷰
+/plan                      # Discovery → Design → Tasks 자동 생성
+/run 3                     # 3개 Worker 병렬 실행
+/checkpoint                # 단계별 리뷰
 # → 리뷰 결과에 따라 수정 후 반복
 ```
 
@@ -120,7 +120,7 @@
 ```bash
 /c4-swarm --review            # 보안/성능/테스트 3개 리뷰어 스폰
 # 또는 간단히:
-/c4-checkpoint                # 단일 리뷰
+/checkpoint                # 단일 리뷰
 ```
 
 **리뷰 우선순위** (SOUL 기준):
@@ -198,7 +198,7 @@ c4_extract_text(file_path="report.hwp")
 c4_parse_document(file_path="thesis.docx")
 
 # 학술 논문 6축 리뷰
-/c4-review paper.pdf
+/review paper.pdf
 ```
 
 ---
@@ -209,31 +209,31 @@ c4_parse_document(file_path="thesis.docx")
 
 | 커맨드 | 용도 | 인자 형식 | 사용 시점 |
 |--------|------|----------|-----------|
-| `/c4-status` | 현황 파악 | (없음) | 세션 시작, 진행 중 확인 |
-| `/c4-quick` | 즉시 작업 시작 | `"설명"` `[scope=경로]` | 소규모 작업 |
-| `/c4-run` | Worker 병렬 실행 | `[N]` `[--continuous]` `[--max N]` | 독립 태스크 3개+ |
-| `/c4-submit` | 완료 제출 | `[task-id]` | 작업 완료 시 |
-| `/c4-validate` | 검증 실행 | (없음) | submit 전 필수 |
+| `/status` | 현황 파악 | (없음) | 세션 시작, 진행 중 확인 |
+| `/quick` | 즉시 작업 시작 | `"설명"` `[scope=경로]` | 소규모 작업 |
+| `/run` | Worker 병렬 실행 | `[N]` `[--continuous]` `[--max N]` | 독립 태스크 3개+ |
+| `/submit` | 완료 제출 | `[task-id]` | 작업 완료 시 |
+| `/validate` | 검증 실행 | (없음) | submit 전 필수 |
 | `c4_claim` / `c4_report` | Direct 모드 | `task_id` (MCP 도구) | 파일 겹침 높은 작업 |
 
 ### 주간 쓰는 커맨드 (상황별 5개)
 
 | 커맨드 | 용도 | 인자 형식 | 사용 시점 |
 |--------|------|----------|-----------|
-| `/c4-plan` | 대규모 기획 | (없음) | 새 기능, 15+파일 |
-| `/c4-add-task` | 태스크 수동 추가 | `"설명"` `[--domain D]` | plan 없이 태스크 생성 |
-| `/c4-checkpoint` | 단계별 리뷰 | (없음) | 구현 완료 후 |
+| `/plan` | 대규모 기획 | (없음) | 새 기능, 15+파일 |
+| `/add-task` | 태스크 수동 추가 | `"설명"` `[--domain D]` | plan 없이 태스크 생성 |
+| `/checkpoint` | 단계별 리뷰 | (없음) | 구현 완료 후 |
 | `/c4-swarm` | 팀 협업 | `[N]` `[--review]` `[--investigate]` | 리뷰, 조사, 교차 기능 |
-| `/c4-stop` | 실행 중단 | (없음) | EXECUTE → HALTED 전환 (`/c4-run`으로 재개) |
+| `/c4-stop` | 실행 중단 | (없음) | EXECUTE → HALTED 전환 (`/run`으로 재개) |
 
 ### 가끔 쓰는 커맨드 (파워유저 5개)
 
 | 커맨드 | 용도 | 인자 형식 | 사용 시점 |
 |--------|------|----------|-----------|
 | `/c4-interview` | 심층 인터뷰 | `"주제"` | 모호한 요구사항 탐색 |
-| `/c4-release` | 체인지로그 + 태그 생성 | `[vX.Y.Z]` `[--dry-run]` `[--no-push]` | `/c4-finish` 후 자동 실행 (또는 수동) |
+| `/c4-release` | 체인지로그 + 태그 생성 | `[vX.Y.Z]` `[--dry-run]` `[--no-push]` | `/finish` 후 자동 실행 (또는 수동) |
 | `/c4-research` | 연구 반복 | `[start\|status\|next\|record\|approve]` | 논문 품질 반복 개선 (alias: `/research-loop`) |
-| `/c4-review` | 논문 리뷰 | `<pdf_path>` | 학술 논문 6축 분석 (alias: `/c2-review`) |
+| `/review` | 논문 리뷰 | `<pdf_path>` | 학술 논문 6축 분석 (alias: `/c2-review`) |
 | `/c4-init` | 프로젝트 초기화 | (없음) | 새 프로젝트 시작 (또는 터미널에서 `c4`) |
 
 ### 메타 커맨드
@@ -252,11 +252,11 @@ c4_parse_document(file_path="thesis.docx")
 
 ## 5. 에이전트 가이드
 
-37개 에이전트는 `/c4-swarm`이나 `/c4-run`이 태스크 도메인에 따라 자동 매핑합니다. 직접 선택할 필요는 거의 없지만, 알아두면 도메인 지정 시 유리합니다.
+37개 에이전트는 `/c4-swarm`이나 `/run`이 태스크 도메인에 따라 자동 매핑합니다. 직접 선택할 필요는 거의 없지만, 알아두면 도메인 지정 시 유리합니다.
 
 ### 도메인 → 에이전트 자동 매핑
 
-`/c4-add-task` 시 `domain` 필드를 지정하면 Swarm이 최적 에이전트를 선택합니다.
+`/add-task` 시 `domain` 필드를 지정하면 Swarm이 최적 에이전트를 선택합니다.
 
 | 도메인 | 에이전트 | 전문 영역 |
 |--------|----------|-----------|
@@ -279,7 +279,7 @@ c4_parse_document(file_path="thesis.docx")
 |----------|------|-----------|
 | `code-reviewer` | 리뷰 태스크 자동 할당 | `/c4-swarm --review` 또는 자동 R-task |
 | `debugger` | 에러/실패 조사 | `/c4-swarm --investigate` |
-| `architect-review` | PRD/아키텍처 검토 | `/c4-plan` 내부에서 사용 |
+| `architect-review` | PRD/아키텍처 검토 | `/plan` 내부에서 사용 |
 | `c4-scout` | 코드베이스 빠른 탐색 | 내부 사용 (500토큰 압축 컨텍스트) |
 | `content-writer` | 기술 문서/블로그 작성 | 직접 호출 |
 | `prompt-engineer` | LLM 프롬프트 최적화 | AI 기능 개발 시 |
@@ -313,7 +313,7 @@ c4_parse_document(file_path="thesis.docx")
 C4 Swarm이 태스크의 `domain` 필드를 보고 자동 매핑합니다:
 
 ```bash
-/c4-add-task "Redis 캐시 레이어 추가" --domain database
+/add-task "Redis 캐시 레이어 추가" --domain database
 /c4-swarm 2
 # → database-optimizer 에이전트가 자동 할당됨
 ```
@@ -405,7 +405,7 @@ HWP, DOCX, PDF, XLSX, PPTX 파일을 파싱/분석합니다.
 | `c4_persona_learn` | AI 초안 vs 사용자 최종본 비교 → 문체 학습 |
 | `c4_profile_load/save` | 사용자 글쓰기 프로필 관리 |
 
-**언제 씀**: 논문 리뷰(`/c4-review`), 보고서 분석, 문체 커스터마이징.
+**언제 씀**: 논문 리뷰(`/review`), 보고서 분석, 문체 커스터마이징.
 
 ### Digital Twin — 성찰 & 성장 추적
 
@@ -435,17 +435,17 @@ c4_llm_costs()                                     # 누적 비용 추적
 
 ```
 ━━━ 매일 (6개) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  /c4-status, /c4-quick, /c4-run, /c4-submit,
-  /c4-validate, c4_claim/c4_report
+  /status, /quick, /run, /submit,
+  /validate, c4_claim/c4_report
 
 ━━━ 주간 (8개) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  /c4-plan, /c4-add-task, /c4-checkpoint, /c4-swarm,
+  /plan, /add-task, /checkpoint, /c4-swarm,
   /c4-stop, c4_knowledge_record, c4_knowledge_search,
   c4_reflect
 
 ━━━ 가끔 (8개) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   /c4-interview, /c4-release, /c4-research,
-  /c4-review, c4_lighthouse, c4_hub_submit,
+  /review, c4_lighthouse, c4_hub_submit,
   c4_hub_dag_from_yaml, c4_llm_costs
 
 ━━━ 나머지 80+개 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -524,7 +524,7 @@ economic_mode:
 
 ### Discovery 워크플로우 — 설계 문서화
 
-`/c4-plan`이 내부적으로 사용하는 Spec/Design 관리를 직접 다룰 수도 있습니다.
+`/plan`이 내부적으로 사용하는 Spec/Design 관리를 직접 다룰 수도 있습니다.
 
 ```bash
 # Discovery 단계: 요구사항 정리
@@ -572,7 +572,7 @@ economic_mode:
 
 # === 검증 ===
 validation:
-  <name>: <command>         # /c4-validate에서 실행할 커맨드
+  <name>: <command>         # /validate에서 실행할 커맨드
   # 예: go-test: "cd c4-core && go test ./..."
   # 예: pytest: "uv run pytest tests/"
 
@@ -599,7 +599,7 @@ worktree:
 ### 세션 시작
 
 ```
-☐ /c4-status 로 현재 상태 확인
+☐ /status 로 현재 상태 확인
 ☐ 진행 중인 태스크가 있으면 이어서 작업
 ☐ 없으면 의사결정 트리(§1) 따라 시작
 ```

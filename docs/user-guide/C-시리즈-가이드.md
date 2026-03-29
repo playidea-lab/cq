@@ -316,10 +316,10 @@ INIT → PLAN → EXECUTE ⇄ CHECKPOINT → COMPLETE
 ### 빠른 시작 (스킬)
 
 ```
-/c4-plan "기능 설명"    # 계획 수립 + 태스크 생성
-/c4-run                 # Worker 스폰 → 자동 실행
-/c4-status              # 진행 상황 확인
-/c4-finish              # 빌드 + 테스트 + 설치 + 커밋
+/plan "기능 설명"    # 계획 수립 + 태스크 생성
+/run                 # Worker 스폰 → 자동 실행
+/status              # 진행 상황 확인
+/finish              # 빌드 + 테스트 + 설치 + 커밋
 ```
 
 ---

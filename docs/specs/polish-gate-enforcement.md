@@ -15,7 +15,7 @@ requirements:
   unwanted:
     - 5줄 미만 변경에 polish 강제 (false block)
     - 기존 R- 리뷰 태스크 플로우 변경
-    - /c4-finish 스킬 폐기
+    - /finish 스킬 폐기
 out_of_scope:
     - persona 학습 기반 자동 threshold 조정 (Phase 3)
     - auto→interactive 전환 로직 (Phase 3)

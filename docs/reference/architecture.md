@@ -169,7 +169,7 @@ pattern_suggest <- distill <- autoRecordKnowledge <- Worker complete (handoff)
 - **FTS5**: Full-text search on all knowledge records
 - **pgvector**: OpenAI 1536-dim embeddings (or Ollama 768-dim nomic-embed-text)
 - **3-way RRF**: Ranked fusion of FTS + vector + popularity scores
-- **Auto-distill**: Triggered by `/c4-finish` when knowledge count >= 5
+- **Auto-distill**: Triggered by `/finish` when knowledge count >= 5
 - **Cloud sync**: Local SQLite <-> Supabase pgvector sync
 - **Cross-project**: `c4_knowledge_publish` / `c4_knowledge_pull` for sharing
 
@@ -333,8 +333,8 @@ INIT -> DISCOVERY -> DESIGN -> PLAN -> EXECUTE <-> CHECKPOINT -> REFINE -> POLIS
 | PLAN | Tasks created, ready to execute |
 | EXECUTE | Workers active, tasks being claimed |
 | CHECKPOINT | Phase gate reached, review in progress |
-| HALTED | Execution paused, resumable with `/c4-run` |
-| COMPLETE | All tasks done, ready for `/c4-finish` |
+| HALTED | Execution paused, resumable with `/run` |
+| COMPLETE | All tasks done, ready for `/finish` |
 
 ---
 

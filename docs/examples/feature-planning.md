@@ -1,4 +1,4 @@
-# Feature Planning: /pi → /c4-plan → /c4-run
+# Feature Planning: /pi → /plan → /run
 
 A complete example of building a large feature — real-time webhook delivery with retry logic — using CQ's full planning workflow.
 
@@ -6,14 +6,14 @@ A complete example of building a large feature — real-time webhook delivery wi
 
 ## When to Use This Workflow
 
-Use `/pi` → `/c4-plan` → `/c4-run` when:
+Use `/pi` → `/plan` → `/run` when:
 
 - The feature touches 10+ files
 - Architecture decisions need to be made (DB schema, retry strategy, queue design)
 - Multiple engineers (or workers) will work in parallel
 - You need a spec document before writing any code
 
-For smaller tasks, use `/c4-quick` instead.
+For smaller tasks, use `/quick` instead.
 
 ---
 
@@ -70,15 +70,15 @@ Answer the questions:
 CQ summarizes the agreed design and offers to move to planning:
 
 ```
-[PI] Ready to plan. Run /c4-plan to generate tasks.
+[PI] Ready to plan. Run /plan to generate tasks.
 ```
 
 ---
 
-## Step 2: Generate Tasks with /c4-plan
+## Step 2: Generate Tasks with /plan
 
 ```
-/c4-plan "webhook delivery: SQLite-backed retry, 5 attempts, exponential backoff, webhook.failed event on exhaustion"
+/plan "webhook delivery: SQLite-backed retry, 5 attempts, exponential backoff, webhook.failed event on exhaustion"
 ```
 
 CQ runs Discovery → Design → Task generation:
@@ -118,7 +118,7 @@ Dependencies:
 Review the task list:
 
 ```
-/c4-status
+/status
 ```
 
 ```
@@ -130,12 +130,12 @@ Blocked: T-WH-02..06 (waiting on dependencies)
 
 ---
 
-## Step 3: Run Workers with /c4-run
+## Step 3: Run Workers with /run
 
 Start the workers. T-WH-01 has no dependencies, so one worker can start immediately:
 
 ```
-/c4-run 3
+/run 3
 ```
 
 ```
@@ -183,7 +183,7 @@ Worker-2 claimed: T-WH-02  WebhookStore: CRUD + pending-deliveries query
 Workers continue picking up tasks as dependencies are resolved. Watch progress:
 
 ```
-/c4-status
+/status
 ```
 
 ```
@@ -205,7 +205,7 @@ Queue: 2 pending | 3 in_progress | 1 done
 When all tasks complete, CQ automatically enters CHECKPOINT state:
 
 ```
-/c4-status
+/status
 ```
 
 ```
@@ -216,7 +216,7 @@ Checkpoint: CP-WH — all 6 tasks done, awaiting review
 Trigger the review:
 
 ```
-/c4-checkpoint
+/checkpoint
 ```
 
 ```
@@ -249,7 +249,7 @@ Notes:
 ## Step 5: Finish
 
 ```
-/c4-finish
+/finish
 ```
 
 ```
@@ -274,25 +274,25 @@ Summary: Webhook delivery system
 | Step | Command | Purpose |
 |------|---------|---------|
 | Explore | `/pi "idea"` | Brainstorm options, clarify constraints before committing |
-| Plan | `/c4-plan "spec"` | Generate spec, design decisions (ADR), task queue |
-| Execute | `/c4-run N` | Spawn N workers; they pick up tasks as deps resolve |
-| Review | `/c4-checkpoint` | Supervisor reviews all changes; approve or request changes |
-| Finish | `/c4-finish` | Polish, changelog, final validation |
+| Plan | `/plan "spec"` | Generate spec, design decisions (ADR), task queue |
+| Execute | `/run N` | Spawn N workers; they pick up tasks as deps resolve |
+| Review | `/checkpoint` | Supervisor reviews all changes; approve or request changes |
+| Finish | `/finish` | Polish, changelog, final validation |
 
 ---
 
 ## Tips
 
-**Sizing workers**: `/c4-run 3` is a good default. More workers help when many tasks are independent. For a linear dependency chain (A → B → C), extra workers idle.
+**Sizing workers**: `/run 3` is a good default. More workers help when many tasks are independent. For a linear dependency chain (A → B → C), extra workers idle.
 
-**If checkpoint requests changes**: CQ creates new tasks and returns to EXECUTE. Workers automatically pick them up — just wait, or run `/c4-run` again.
+**If checkpoint requests changes**: CQ creates new tasks and returns to EXECUTE. Workers automatically pick them up — just wait, or run `/run` again.
 
-**Spec is preserved**: The spec and design from `/c4-plan` are stored in `.c4/specs/` and `.c4/designs/`. Refer to them anytime with `c4_get_spec` or `c4_get_design`.
+**Spec is preserved**: The spec and design from `/plan` are stored in `.c4/specs/` and `.c4/designs/`. Refer to them anytime with `c4_get_spec` or `c4_get_design`.
 
 ---
 
 ## Next Steps
 
-- **GPU workloads**: [Distributed Experiments](distributed-experiments.md)
-- **Researcher workflow**: [Researcher E2E](researcher-workflow.md)
-- **Full workflow reference**: [Usage Guide](../usage-guide.md)
+- **GPU workloads**: [Research Loop](research-loop.md)
+- **Researcher workflow**: [Research Loop](research-loop.md)
+- **Full workflow reference**: [Usage Guide](../reference/commands.md)

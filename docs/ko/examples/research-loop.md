@@ -31,8 +31,8 @@ CQ enters brainstorming mode, surfaces related knowledge, and structures the app
 ## Phase 2: Plan and Implement
 
 ```
-/c4-plan    → Requirements (EARS) + architecture decision + tasks
-/c4-run 2   → Parallel workers implement code changes
+/plan    → Requirements (EARS) + architecture decision + tasks
+/run 2   → Parallel workers implement code changes
 ```
 
 Two workers run simultaneously on independent tasks. Worktree branches merge automatically.

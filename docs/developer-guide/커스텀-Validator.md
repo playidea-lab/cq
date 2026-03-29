@@ -63,13 +63,13 @@ validations:
 ### 특정 검증 실행
 
 ```
-/c4-validate lint typecheck
+/validate lint typecheck
 ```
 
 ### 모든 검증 실행
 
 ```
-/c4-validate
+/validate
 ```
 
 ## 체크포인트와 연동
@@ -158,5 +158,5 @@ validations:
 
 ## 다음 단계
 
-- [명령어 레퍼런스](../user-guide/명령어-레퍼런스.md) - /c4-validate 상세
+- [명령어 레퍼런스](../user-guide/명령어-레퍼런스.md) - /validate 상세
 - [MCP 도구 레퍼런스](../api/MCP-도구-레퍼런스.md) - c4_run_validation API

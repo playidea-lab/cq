@@ -195,9 +195,9 @@ T-C02 (rule evaluation DAG) ──┼──► T-C03 (assignments API) ──►
 ## 7. Next Steps (사용자 실행)
 
 1. **태스크 생성**: `c4_add_todo`로 T-C01-0 ~ T-C04-0 추가 (T-C02 depends on T-C01, T-C04 depends on T-C03).
-2. **실행**: `/c4-run`
-3. **정제**: `/c4-refine`
-4. **마무리**: `/c4-finish`
+2. **실행**: `/run`
+3. **정제**: `/refine`
+4. **마무리**: `/finish`
 
 ---
 

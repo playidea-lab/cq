@@ -59,7 +59,7 @@ scripts/codex/install-agents.sh
 | 항목 | Claude Code | Codex CLI |
 |------|-------------|-----------|
 | 실행 진입 | Skill 자동 트리거 | Agent 트리거 + MCP 호출 |
-| 기본 구현 경로 | Worker 중심 (`/c4-run`) | Worker 중심 (`c4-run` agent + `c4_get_task`) |
+| 기본 구현 경로 | Worker 중심 (`/run`) | Worker 중심 (`c4-run` agent + `c4_get_task`) |
 | 예외 처리 | Direct는 제한적 사용 | Direct는 `execution_mode=direct` 태스크에 한정 |
 
 ## 5. 체크리스트

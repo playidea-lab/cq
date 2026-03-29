@@ -8,7 +8,7 @@ requirements:
   - type: event-driven
     text: "When promote가 호출되고 enforce_schema가 false이면, the system shall 기존 동작(경고만) 유지한다"
   - type: state-driven
-    text: "While require_stub_first가 true이면, the system shall /c4-plan에서 새 MCP 도구 태스크 생성 시 lighthouse stub 등록을 필수로 한다"
+    text: "While require_stub_first가 true이면, the system shall /plan에서 새 MCP 도구 태스크 생성 시 lighthouse stub 등록을 필수로 한다"
   - type: ubiquitous
     text: "The system shall config.yaml의 lighthouse 섹션에서 enforce_schema와 require_stub_first를 읽는다"
 

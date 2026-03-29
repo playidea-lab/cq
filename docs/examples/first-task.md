@@ -30,7 +30,7 @@ Total time: ~5 minutes.
 Open Claude Code in your project directory. First, check whether CQ is already initialized:
 
 ```
-/c4-status
+/status
 ```
 
 **Expected output if not initialized:**
@@ -54,10 +54,10 @@ If not initialized, run `/c4-init` and follow the prompts.
 
 ## Step 2: Create the Task
 
-Use `/c4-quick` for small, well-defined tasks (1–5 files, clear scope):
+Use `/quick` for small, well-defined tasks (1–5 files, clear scope):
 
 ```
-/c4-quick "add GET /health endpoint returning {status: ok, version: string}"
+/quick "add GET /health endpoint returning {status: ok, version: string}"
 ```
 
 CQ creates a task and immediately assigns it to you:
@@ -72,7 +72,7 @@ Status: in_progress (claimed by current session)
 **What happens internally:**
 
 - CQ creates task T-001 in `.c4/tasks.db`
-- The task is auto-claimed — no separate `/c4-claim` needed with `/c4-quick`
+- The task is auto-claimed — no separate `/c4-claim` needed with `/quick`
 - CQ scans the project to detect Go files and sets `domain: go`
 
 ---
@@ -115,7 +115,7 @@ mux.HandleFunc("GET /health", handleHealth)
 Before submitting, run validation:
 
 ```
-/c4-validate
+/validate
 ```
 
 **Expected output:**
@@ -138,7 +138,7 @@ go-build: FAIL
   → Add "encoding/json" to imports
 ```
 
-Fix the issue and re-run `/c4-validate`.
+Fix the issue and re-run `/validate`.
 
 ---
 
@@ -147,7 +147,7 @@ Fix the issue and re-run `/c4-validate`.
 Once validation passes:
 
 ```
-/c4-submit
+/submit
 ```
 
 **Expected output:**
@@ -174,7 +174,7 @@ CQ automatically:
 Check the final state:
 
 ```
-/c4-status
+/status
 ```
 
 ```
@@ -201,15 +201,15 @@ curl http://localhost:8080/health
 
 | Concept | Command | When to Use |
 |---------|---------|-------------|
-| Quick task | `/c4-quick "description"` | 1–5 files, requirements are clear |
-| Validate | `/c4-validate` | Before every submit |
-| Submit | `/c4-submit` | After validation passes |
-| Check state | `/c4-status` | Anytime |
+| Quick task | `/quick "description"` | 1–5 files, requirements are clear |
+| Validate | `/validate` | Before every submit |
+| Submit | `/submit` | After validation passes |
+| Check state | `/status` | Anytime |
 
 ---
 
 ## Next Steps
 
-- **Bug fix scenario**: [Bug Fix with /c4-quick](bug-fix.md)
-- **Larger feature**: [Feature Planning with /pi and /c4-plan](feature-planning.md)
-- **Full command reference**: [Usage Guide](../usage-guide.md)
+- **Bug fix scenario**: [Bug Fix with /quick](bug-fix.md)
+- **Larger feature**: [Feature Planning with /pi and /plan](feature-planning.md)
+- **Full command reference**: [Usage Guide](../reference/commands.md)

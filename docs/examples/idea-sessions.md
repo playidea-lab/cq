@@ -103,7 +103,7 @@ Choose next step:
 Option 1 triggers the full pipeline:
 
 ```
-/pi → idea.md → /c4-plan → /c4-run → /c4-finish
+/pi → idea.md → /plan → /run → /finish
 ```
 
 No manual handoff. The idea flows straight into code.

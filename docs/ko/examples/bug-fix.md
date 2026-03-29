@@ -1,4 +1,4 @@
-# /c4-quick으로 버그 수정
+# /quick으로 버그 수정
 
 CQ의 quick 워크플로우를 사용하여 버그를 진단하고 수정하는 단계별 예제입니다.
 
@@ -23,7 +23,7 @@ panic: runtime error: index out of range [0] with length 0
 ## 1단계: 빠른 태스크 시작
 
 ```
-/c4-quick "fix: 만료된 JWT에서 auth 미들웨어 panic — 401을 반환해야 함"
+/quick "fix: 만료된 JWT에서 auth 미들웨어 panic — 401을 반환해야 함"
 ```
 
 출력:
@@ -185,7 +185,7 @@ go test ./internal/middleware/... -v
 ## 6단계: 유효성 검사
 
 ```
-/c4-validate
+/validate
 ```
 
 ```
@@ -202,7 +202,7 @@ All validations passed.
 ## 7단계: 제출
 
 ```
-/c4-submit
+/submit
 ```
 
 ```
@@ -219,7 +219,7 @@ Task T-042 completed.
 ## 8단계: 확인
 
 ```
-/c4-status
+/status
 ```
 
 ```
@@ -235,7 +235,7 @@ Done:
 
 **한 번에 하나씩 버그 수정.** 두 가지 수정(범위 검사 + 오류 return)이 같은 함수를 수정하고 같은 근본 원인을 해결하는 경우 하나의 커밋에 담아도 됩니다.
 
-**모든 테스트 경로 유효성 검사.** CQ의 `/c4-validate`가 전체 테스트 스위트를 실행합니다. 수정된 케이스의 테스트 통과만으로는 충분하지 않습니다 — 전체 스위트가 초록색을 유지해야 합니다.
+**모든 테스트 경로 유효성 검사.** CQ의 `/validate`가 전체 테스트 스위트를 실행합니다. 수정된 케이스의 테스트 통과만으로는 충분하지 않습니다 — 전체 스위트가 초록색을 유지해야 합니다.
 
 ---
 
@@ -243,4 +243,4 @@ Done:
 
 - **여러 파일, 명확한 요구사항**: [기능 계획](feature-planning.md)
 - **복잡한 조사**: 근본 원인을 모를 때 `/c4-swarm --investigate` 실행
-- **사용 결정 트리**: [사용 가이드 §1](../usage-guide.md)
+- **사용 결정 트리**: [사용 가이드 §1](../reference/commands.md)

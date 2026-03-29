@@ -339,8 +339,8 @@ pattern_suggest ← distill ← autoRecordKnowledge ← Worker 완료 (handoff)
 - **Worker가 기록**: c4_submit 시 handoff에 구조화된 데이터 전달 → 자동 knowledge 기록
 
 ### Layer 2: Read (조회 통합)
-- `/c4-plan` Phase 0.1: `c4_knowledge_search` + `c4_pattern_suggest` 자동 호출
-- `/c4-refine` Phase 0.5: 과거 refine 패턴 조회
+- `/plan` Phase 0.1: `c4_knowledge_search` + `c4_pattern_suggest` 자동 호출
+- `/refine` Phase 0.5: 과거 refine 패턴 조회
 - DoD에 **Rationale** 섹션 필수 포함
 
 ### Layer 3: Inject (주입)
@@ -348,13 +348,13 @@ pattern_suggest ← distill ← autoRecordKnowledge ← Worker 완료 (handoff)
 - Worker는 과거 패턴/인사이트를 참조하여 구현
 
 ### Layer 4: Converge (수렴)
-- `/c4-finish`에서 `c4_knowledge_distill` 자동 호출 (docs ≥ 5건)
-- `/c4-refine`에서 반복 이슈 패턴을 pattern으로 자동 기록
+- `/finish`에서 `c4_knowledge_distill` 자동 호출 (docs ≥ 5건)
+- `/refine`에서 반복 이슈 패턴을 pattern으로 자동 기록
 - `c4_knowledge_publish` / `c4_knowledge_pull`로 프로젝트 간 공유
 
 ### 핵심 규칙
 - **c4_submit 시 handoff에 reasoning 포함**: discoveries, concerns, rationale 필드 활용
-- **계획 시 과거 지식 조회 필수**: `/c4-plan` Phase 0.1에서 knowledge_search 수행
+- **계획 시 과거 지식 조회 필수**: `/plan` Phase 0.1에서 knowledge_search 수행
 - **Refine 루프에서 교훈 기록**: 반복 이슈 → pattern 자동 승격
 
 ---

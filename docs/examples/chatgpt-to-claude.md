@@ -71,9 +71,9 @@ The `/pi` session starts with full context — no re-explaining needed.
 ## Step 4: Plan and Implement
 
 ```
-/c4-plan    → Tasks created from the ChatGPT-informed design
-/c4-run     → Workers implement with full context
-/c4-finish  → Polish, test, commit
+/plan    → Tasks created from the ChatGPT-informed design
+/run     → Workers implement with full context
+/finish  → Polish, test, commit
 ```
 
 ---

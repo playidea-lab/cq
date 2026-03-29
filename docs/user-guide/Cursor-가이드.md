@@ -79,15 +79,15 @@ AGENTS.md(CLAUDE.md)에 적힌 대로, Cursor 에이전트도 **C4 MCP 도구를
 |----------------|--------------------------------------------|
 | 상태 확인      | `c4_status`                                |
 | 태스크 추가    | `c4_add_todo`                              |
-| 계획/설계      | `/c4-plan` 트리거 → `.claude/skills/c4-plan/SKILL.md` 절차 + MCP 도구 |
-| 실행           | `/c4-run` → Worker 스폰 등                 |
-| 마무리         | `/c4-finish` → 빌드·테스트·커밋·지식 기록  |
+| 계획/설계      | `/plan` 트리거 → `.claude/skills/plan/SKILL.md` 절차 + MCP 도구 |
+| 실행           | `/run` → Worker 스폰 등                 |
+| 마무리         | `/finish` → 빌드·테스트·커밋·지식 기록  |
 
 “상태 확인해줘”, “태스크 추가해줘”, “계획 세워줘”, “실행해줘”, “마무리해줘”처럼 말하면 에이전트가 C4 스킬과 MCP 도구를 사용하도록 유도할 수 있습니다.
 
 ## 3. Cursor 제한 사항
 
-- **25회 Tool Call 제한**: Agent 모드에서 도구 호출이 25회까지로 제한됩니다. `/c4-run`처럼 호출이 많은 작업은 중간에 “continue”로 이어서 실행하거나, **MAX 모드**(약 200회)를 쓰거나, 완전 자동화가 필요하면 Claude Code/Codex CLI를 사용하세요.
+- **25회 Tool Call 제한**: Agent 모드에서 도구 호출이 25회까지로 제한됩니다. `/run`처럼 호출이 많은 작업은 중간에 “continue”로 이어서 실행하거나, **MAX 모드**(약 200회)를 쓰거나, 완전 자동화가 필요하면 Claude Code/Codex CLI를 사용하세요.
 - **cursor-agent(headless)**: `cursor-agent`의 MCP spawn 버그로 인해 MCP 도구가 동작하지 않을 수 있습니다. 자동화 시에는 `cursor-agent -p --force "cq status 실행해줘"`처럼 **cq CLI를 bash로 호출**하는 방식을 권장합니다.
 
 자세한 내용은 [문제 해결 — Cursor](문제-해결.md#cursor-25회-tool-call-제한)을 참고하세요.

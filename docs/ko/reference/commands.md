@@ -270,29 +270,29 @@ Skill은 Claude Code 안에서 호출하는 슬래시 커맨드입니다. 모든
 
 | Skill | 트리거 | 사용 가능한 상태 | 설명 |
 |-------|--------|---------------|------|
-| `/pi` | play idea, ideation | 모든 상태 | 계획 전 브레인스토밍. 발산/수렴/조사/토론. 자동으로 `/c4-plan` 실행. |
-| `/c4-plan` | plan, design | INIT, HALTED | Discovery -> Design -> Lighthouse 계약 -> 태스크 생성. |
-| `/c4-run` | run, execute | PLAN, HALTED, EXECUTE | 대기 중인 태스크를 위한 Worker 스폰. 큐가 빌 때까지 지속. |
-| `/c4-finish` | finish, complete | 구현 후 | 빌드 -> 테스트 -> 문서 -> 커밋. 구현 후 완료 처리. |
-| `/c4-status` | status | 모든 상태 | 시각적 태스크 그래프, 큐 요약, Worker 상태. |
-| `/c4-quick` | quick | PLAN, HALTED, EXECUTE | 태스크 즉시 생성 + 할당, 계획 건너뜀. |
+| `/pi` | play idea, ideation | 모든 상태 | 계획 전 브레인스토밍. 발산/수렴/조사/토론. 자동으로 `/plan` 실행. |
+| `/plan` | plan, design | INIT, HALTED | Discovery -> Design -> Lighthouse 계약 -> 태스크 생성. |
+| `/run` | run, execute | PLAN, HALTED, EXECUTE | 대기 중인 태스크를 위한 Worker 스폰. 큐가 빌 때까지 지속. |
+| `/finish` | finish, complete | 구현 후 | 빌드 -> 테스트 -> 문서 -> 커밋. 구현 후 완료 처리. |
+| `/status` | status | 모든 상태 | 시각적 태스크 그래프, 큐 요약, Worker 상태. |
+| `/quick` | quick | PLAN, HALTED, EXECUTE | 태스크 즉시 생성 + 할당, 계획 건너뜀. |
 
 ### 품질 루프
 
 | Skill | 트리거 | 설명 |
 |-------|--------|------|
-| `/c4-checkpoint` | (자동) | 4렌즈 리뷰: 전체적/사용자 흐름/파급 효과/출시 준비. |
-| `/c4-validate` | validate | lint + 테스트 실행. CRITICAL은 커밋 차단, HIGH는 리뷰 필요. |
-| `/c4-review` | review | 6축 평가를 통한 종합적 3-pass 코드 리뷰. |
-| `/c4-polish` | polish | *(Deprecated — `/c4-finish`에 내장됨)* |
-| `/c4-refine` | refine | *(Deprecated — `/c4-finish`에 내장됨)* |
+| `/checkpoint` | (자동) | 4렌즈 리뷰: 전체적/사용자 흐름/파급 효과/출시 준비. |
+| `/validate` | validate | lint + 테스트 실행. CRITICAL은 커밋 차단, HIGH는 리뷰 필요. |
+| `/review` | review | 6축 평가를 통한 종합적 3-pass 코드 리뷰. |
+| `/polish` | polish | *(Deprecated — `/finish`에 내장됨)* |
+| `/refine` | refine | *(Deprecated — `/finish`에 내장됨)* |
 
 ### 태스크 관리
 
 | Skill | 트리거 | 설명 |
 |-------|--------|------|
-| `/c4-add-task` | add task | DoD, 범위, 도메인과 함께 태스크 대화형 추가. |
-| `/c4-submit` | submit | 자동 유효성 검사와 함께 완료된 태스크 제출. |
+| `/add-task` | add task | DoD, 범위, 도메인과 함께 태스크 대화형 추가. |
+| `/submit` | submit | 자동 유효성 검사와 함께 완료된 태스크 제출. |
 | `/c4-interview` | interview | 깊이 있는 요구사항 인터뷰 (PM/아키텍트 모드). |
 | `/c4-stop` | stop | 실행 중지, HALTED로 전환. 진행 상황 보존. |
 | `/c4-clear` | clear | C4 상태 초기화. 태스크, 이벤트, 잠금 지우기. |
@@ -319,7 +319,7 @@ Skill은 Claude Code 안에서 호출하는 슬래시 커맨드입니다. 모든
 | Skill | 트리거 | 설명 |
 |-------|--------|------|
 | `/research-loop` | research loop | 논문-실험 개선 루프. |
-| `/c2-paper-review` | paper review | *(Deprecated — `/c4-review` 사용)* |
+| `/c2-paper-review` | paper review | *(Deprecated — `/review` 사용)* |
 
 ### C9 Research Loop (ML)
 
@@ -349,10 +349,10 @@ INIT -> DISCOVERY -> DESIGN -> PLAN -> EXECUTE <-> CHECKPOINT -> REFINE -> POLIS
 
 | 상태 | 사용 가능한 Skill |
 |------|---------------|
-| INIT | `/init`, `/c4-plan` |
-| DISCOVERY / DESIGN | `/c4-plan` (자동 진행) |
-| PLAN | `/c4-run`, `/c4-quick`, `/c4-status` |
-| EXECUTE | `/c4-run`, `/c4-quick`, `/c4-stop`, `/c4-status`, `/c4-validate`, `/c4-submit`, `/c4-add-task`, `/c4-swarm` |
-| CHECKPOINT | `/c4-checkpoint`, `/c4-add-task` |
-| HALTED | `/c4-run`, `/c4-quick`, `/c4-plan` |
-| COMPLETE | `/c4-finish`, `/c4-release` |
+| INIT | `/init`, `/plan` |
+| DISCOVERY / DESIGN | `/plan` (자동 진행) |
+| PLAN | `/run`, `/quick`, `/status` |
+| EXECUTE | `/run`, `/quick`, `/c4-stop`, `/status`, `/validate`, `/submit`, `/add-task`, `/c4-swarm` |
+| CHECKPOINT | `/checkpoint`, `/add-task` |
+| HALTED | `/run`, `/quick`, `/plan` |
+| COMPLETE | `/finish`, `/c4-release` |

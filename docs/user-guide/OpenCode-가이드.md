@@ -157,14 +157,14 @@ OpenCode 내에서 C4 MCP 도구를 직접 호출할 수 있습니다:
 
 `.opencode/commands/` 디렉토리에 커맨드 파일이 있습니다:
 
-- `/c4-status` - 프로젝트 상태 확인
-- `/c4-plan` - 계획 수립
-- `/c4-run` - 자동 실행
+- `/status` - 프로젝트 상태 확인
+- `/plan` - 계획 수립
+- `/run` - 자동 실행
 - `/c4-stop` - 실행 중지
-- `/c4-checkpoint` - 체크포인트 리뷰
-- `/c4-submit` - 태스크 제출
-- `/c4-validate` - 검증 실행
-- `/c4-add-task` - 태스크 추가
+- `/checkpoint` - 체크포인트 리뷰
+- `/submit` - 태스크 제출
+- `/validate` - 검증 실행
+- `/add-task` - 태스크 추가
 - `/c4-clear` - 상태 초기화
 
 ---

@@ -22,9 +22,9 @@
 
 ```bash
 # Cursor/Claude Code에서
-/c4-run 8
+/run 8
 # 또는 자동 병렬
-/c4-run
+/run
 ```
 
 - **review_required**: false (점검 태스크는 리뷰 미생성)

@@ -30,7 +30,7 @@
 프로젝트 디렉토리에서 Claude Code를 엽니다. 먼저 CQ가 초기화되어 있는지 확인합니다:
 
 ```
-/c4-status
+/status
 ```
 
 **초기화되지 않은 경우 예상 출력:**
@@ -54,10 +54,10 @@ CQ not initialized. Run /c4-init to set up.
 
 ## 2단계: 태스크 생성
 
-작고 범위가 명확한 태스크(1–5개 파일)에는 `/c4-quick`을 사용하세요:
+작고 범위가 명확한 태스크(1–5개 파일)에는 `/quick`을 사용하세요:
 
 ```
-/c4-quick "GET /health 엔드포인트 추가 — {status: ok, version: string} 반환"
+/quick "GET /health 엔드포인트 추가 — {status: ok, version: string} 반환"
 ```
 
 CQ가 태스크를 생성하고 즉시 할당합니다:
@@ -72,7 +72,7 @@ Status: in_progress (claimed by current session)
 **내부적으로 일어나는 일:**
 
 - CQ가 `.c4/tasks.db`에 태스크 T-001 생성
-- 태스크가 자동으로 클레임됨 — `/c4-quick`에서는 별도의 `/c4-claim` 불필요
+- 태스크가 자동으로 클레임됨 — `/quick`에서는 별도의 `/c4-claim` 불필요
 - CQ가 프로젝트를 스캔하여 Go 파일을 감지하고 `domain: go` 설정
 
 ---
@@ -115,7 +115,7 @@ mux.HandleFunc("GET /health", handleHealth)
 제출 전에 유효성 검사를 실행합니다:
 
 ```
-/c4-validate
+/validate
 ```
 
 **예상 출력:**
@@ -138,7 +138,7 @@ go-build: FAIL
   → 임포트에 "encoding/json" 추가
 ```
 
-문제를 수정하고 `/c4-validate`를 다시 실행하세요.
+문제를 수정하고 `/validate`를 다시 실행하세요.
 
 ---
 
@@ -147,7 +147,7 @@ go-build: FAIL
 유효성 검사를 통과하면:
 
 ```
-/c4-submit
+/submit
 ```
 
 **예상 출력:**
@@ -174,7 +174,7 @@ CQ가 자동으로:
 최종 상태 확인:
 
 ```
-/c4-status
+/status
 ```
 
 ```
@@ -201,15 +201,15 @@ curl http://localhost:8080/health
 
 | 개념 | 커맨드 | 사용 시점 |
 |------|--------|---------|
-| 빠른 태스크 | `/c4-quick "설명"` | 1–5개 파일, 요구사항이 명확할 때 |
-| 유효성 검사 | `/c4-validate` | 모든 제출 전 |
-| 제출 | `/c4-submit` | 유효성 검사 통과 후 |
-| 상태 확인 | `/c4-status` | 언제든지 |
+| 빠른 태스크 | `/quick "설명"` | 1–5개 파일, 요구사항이 명확할 때 |
+| 유효성 검사 | `/validate` | 모든 제출 전 |
+| 제출 | `/submit` | 유효성 검사 통과 후 |
+| 상태 확인 | `/status` | 언제든지 |
 
 ---
 
 ## 다음 단계
 
-- **버그 수정 시나리오**: [/c4-quick으로 버그 수정](bug-fix.md)
-- **더 큰 기능**: [/pi와 /c4-plan으로 기능 계획](feature-planning.md)
-- **전체 커맨드 레퍼런스**: [사용 가이드](../usage-guide.md)
+- **버그 수정 시나리오**: [/quick으로 버그 수정](bug-fix.md)
+- **더 큰 기능**: [/pi와 /plan으로 기능 계획](feature-planning.md)
+- **전체 커맨드 레퍼런스**: [사용 가이드](../reference/commands.md)

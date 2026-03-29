@@ -122,6 +122,10 @@ export default defineConfig({
   },
 
   themeConfig: {
+    search: {
+      provider: 'local'
+    },
+
     nav: [
       { text: 'Guide', link: '/guide/install' },
       { text: 'Examples', link: '/examples/first-task' },

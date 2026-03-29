@@ -18,7 +18,7 @@
 검토 범위:
 - 루트 문서: `README.md`, `AGENTS.md`
 - 시작/가이드: `docs/getting-started/*`, `docs/usage-guide.md`, `docs/user-guide/*`
-- 실행 스킬: `.claude/skills/c4-run/SKILL.md`, `.claude/skills/c4-submit/SKILL.md`, `.claude/skills/c4-plan/SKILL.md`
+- 실행 스킬: `.claude/skills/run/SKILL.md`, `.claude/skills/submit/SKILL.md`, `.claude/skills/plan/SKILL.md`
 - 실제 계약 참조: `c4-core/internal/store/types.go`, `c4_status` 실출력
 
 검토 제외:
@@ -47,7 +47,7 @@
 
 ## 5. 개선 백로그 상세
 
-### UXR-001 (P0) `/c4-run` 상태 스키마 계약 불일치
+### UXR-001 (P0) `/run` 상태 스키마 계약 불일치
 
 증상:
 - 스킬 문서가 `status["parallelism"]`, `status["queue"]["pending"]`, `status["status"]`를 가정함.
@@ -55,33 +55,33 @@
 
 사용자 영향:
 - 자동 실행/상태 분기 로직이 오작동하거나 예외를 유발할 수 있음.
-- "왜 /c4-run이 문서대로 안 되지?"라는 신뢰 하락을 야기함.
+- "왜 /run이 문서대로 안 되지?"라는 신뢰 하락을 야기함.
 
 근거:
-- `.claude/skills/c4-run/SKILL.md:85`
-- `.claude/skills/c4-run/SKILL.md:260`
-- `.claude/skills/c4-run/SKILL.md:262`
+- `.claude/skills/run/SKILL.md:85`
+- `.claude/skills/run/SKILL.md:260`
+- `.claude/skills/run/SKILL.md:262`
 - `c4-core/internal/store/types.go:107`
 - `c4-core/internal/store/types.go:110`
 - `c4-core/internal/store/types.go:117`
 
 개선안:
-1. `/c4-run` 스킬의 상태 참조 키를 실제 `c4_status` 계약으로 교체.
+1. `/run` 스킬의 상태 참조 키를 실제 `c4_status` 계약으로 교체.
 2. 상태 파싱 실패 시 명시적 에러 메시지와 fallback 경로 제공.
 3. 스킬 문서 예시 JSON을 실제 응답 스키마 기준으로 갱신.
 
 수용기준:
-1. `/c4-run` 문서/스킬에서 `parallelism`, `queue.pending`, `status` 가정 제거.
+1. `/run` 문서/스킬에서 `parallelism`, `queue.pending`, `status` 가정 제거.
 2. `state` 기반 분기(`PLAN/HALTED/EXECUTE/CHECKPOINT/COMPLETE`)가 일관되게 문서화됨.
 3. 최소 1개 상태 샘플이 실제 출력과 동일 필드명으로 제시됨.
 
 ---
 
-### UXR-002 (P0) `/c4-submit` 인자 계약 불일치
+### UXR-002 (P0) `/submit` 인자 계약 불일치
 
 증상:
-- 명령어 레퍼런스는 `/c4-submit <task_id> <commit_sha> [validation_results]`를 안내.
-- 스킬 문서는 `/c4-submit [task-id]` 및 task 자동 탐지 흐름을 안내.
+- 명령어 레퍼런스는 `/submit <task_id> <commit_sha> [validation_results]`를 안내.
+- 스킬 문서는 `/submit [task-id]` 및 task 자동 탐지 흐름을 안내.
 
 사용자 영향:
 - 호출 방식 혼선으로 제출 실패 가능.
@@ -89,12 +89,12 @@
 
 근거:
 - `docs/user-guide/명령어-레퍼런스.md:230`
-- `.claude/skills/c4-submit/SKILL.md:17`
-- `.claude/skills/c4-submit/SKILL.md:20`
-- `.claude/skills/c4-submit/SKILL.md:199`
+- `.claude/skills/submit/SKILL.md:17`
+- `.claude/skills/submit/SKILL.md:20`
+- `.claude/skills/submit/SKILL.md:199`
 
 개선안:
-1. `/c4-submit` 사용자 입력 계약을 단일 규격으로 통일.
+1. `/submit` 사용자 입력 계약을 단일 규격으로 통일.
 2. "사용자 입력"과 "스킬 내부 처리(commit_sha 수집)"를 분리 표기.
 3. 실패 케이스(인자 누락, in_progress 아님) 에러 예시 추가.
 
@@ -152,7 +152,7 @@
 개선안:
 1. "실행 SSOT"와 "설명용 문서"를 분리 표기.
 2. `tasks.json`, `docs/PLAN.md` 중심 문구를 최신 워크플로우 기준으로 정정.
-3. `/c4-plan` 설명을 c4_save_spec/design/add_todo 중심으로 업데이트.
+3. `/plan` 설명을 c4_save_spec/design/add_todo 중심으로 업데이트.
 
 수용기준:
 1. Task tracking 저장소 설명이 전 문서에서 동일(`.c4/tasks.db`).
@@ -259,7 +259,7 @@
 개선안:
 1. "기본: Worker", "예외: direct execution_mode 태스크"를 표준 규칙으로 명시.
 2. Direct 모드 사용 시 금지/허용 조건을 체크리스트로 추가.
-3. `/c4-run`, `/c4-submit`, `c4_claim/c4_report` 선택 트리를 통합.
+3. `/run`, `/submit`, `c4_claim/c4_report` 선택 트리를 통합.
 
 수용기준:
 1. 신규 사용자가 문서만 보고도 모드 선택 오류 없이 실행 가능.
@@ -284,7 +284,7 @@
 3. CI에 계약 드리프트 체크 추가.
 
 수용기준:
-1. 주요 명령(`/c4-run`, `/c4-submit`, `/c4-plan`, `/c4-status`)이 계약 파일 기반으로 검증됨.
+1. 주요 명령(`/run`, `/submit`, `/plan`, `/status`)이 계약 파일 기반으로 검증됨.
 2. PR에서 계약 불일치 시 자동 실패.
 3. 사람이 수동으로 여러 문서를 동시에 편집하지 않아도 일관성이 유지됨.
 
@@ -338,9 +338,9 @@
 - `docs/user-guide/Codex-패리티-매트릭스.md`
 
 스킬:
-- `.claude/skills/c4-run/SKILL.md`
-- `.claude/skills/c4-submit/SKILL.md`
-- `.claude/skills/c4-plan/SKILL.md` (필요 시 계약 링크 정리)
+- `.claude/skills/run/SKILL.md`
+- `.claude/skills/submit/SKILL.md`
+- `.claude/skills/plan/SKILL.md` (필요 시 계약 링크 정리)
 
 정책 문서 정합성 점검:
 - `AGENTS.md`
@@ -348,7 +348,7 @@
 ## 8. 일괄 반영 실행 순서 (제안)
 
 1단계: 계약 고정
-1. `c4_status`, `/c4-run`, `/c4-submit` 계약을 단일 기준으로 확정.
+1. `c4_status`, `/run`, `/submit` 계약을 단일 기준으로 확정.
 2. 상태 키/인자/오류 코드/필수 전제조건을 표준 표로 정의.
 
 2단계: 스킬 정합화
@@ -739,11 +739,11 @@
 2. 구조 레벨: 1건 (`AR-006`)
 3. 즉시 반영 권장: `CR-008`, `CR-009`, `CR-010`
 
-### CR-008 (P0) `/c4-submit` 인자 계약 충돌 재확인
+### CR-008 (P0) `/submit` 인자 계약 충돌 재확인
 
 현상:
-- 명령어 레퍼런스는 `/c4-submit <task_id> <commit_sha> [validation_results]`를 강제한다.
-- 실제 스킬은 `/c4-submit [task-id]`이며 task-id 생략 시 자동 탐지/대화형 제출을 안내한다.
+- 명령어 레퍼런스는 `/submit <task_id> <commit_sha> [validation_results]`를 강제한다.
+- 실제 스킬은 `/submit [task-id]`이며 task-id 생략 시 자동 탐지/대화형 제출을 안내한다.
 
 사용자 영향:
 - 문서대로 호출한 사용자와 스킬 안내를 따르는 사용자가 서로 다른 행동을 기대하게 된다.
@@ -751,30 +751,30 @@
 
 근거:
 - `docs/user-guide/명령어-레퍼런스.md:230`
-- `.claude/skills/c4-submit/SKILL.md:17`
-- `.claude/skills/c4-submit/SKILL.md:38`
+- `.claude/skills/submit/SKILL.md:17`
+- `.claude/skills/submit/SKILL.md:38`
 
 개선안:
-1. `/c4-submit` 계약을 단일 포맷으로 확정(필수 인자형 vs 자동탐지형).
+1. `/submit` 계약을 단일 포맷으로 확정(필수 인자형 vs 자동탐지형).
 2. 선택하지 않은 방식은 deprecated 경로로 명시.
 3. 예시/파라미터 표를 모든 문서에서 동기화.
 
 수용기준:
-1. `/c4-submit` 시그니처가 레퍼런스/스킬/헬프에서 동일.
+1. `/submit` 시그니처가 레퍼런스/스킬/헬프에서 동일.
 2. 혼합 시그니처가 남아있으면 CI 실패.
 
-### CR-009 (P1) `/c4-add-task` 사용법이 문서 내부에서도 상충
+### CR-009 (P1) `/add-task` 사용법이 문서 내부에서도 상충
 
 현상:
 - 명령어 레퍼런스는 positional 인자(`<task_id> <title> [options]`)를 제시.
-- add-task 스킬과 사용 시나리오 문서는 대화형/설명형 입력(`/c4-add-task [설명]`)을 제시.
+- add-task 스킬과 사용 시나리오 문서는 대화형/설명형 입력(`/add-task [설명]`)을 제시.
 
 사용자 영향:
 - 동일 명령의 입력 스타일이 문서마다 달라 신규 사용자의 첫 성공률이 저하된다.
 
 근거:
 - `docs/user-guide/명령어-레퍼런스.md:296`
-- `.claude/skills/c4-add-task/SKILL.md:18`
+- `.claude/skills/add-task/SKILL.md:18`
 - `docs/user-guide/사용-시나리오.md:71`
 - `docs/user-guide/사용-시나리오.md:79`
 
@@ -783,29 +783,29 @@
 2. 레퍼런스 문서에 대화형 fallback을 명시해 실제 동작과 합치.
 
 수용기준:
-1. `/c4-add-task` 문서 예시가 모든 문서에서 동일한 계약 계층(정규/별칭)으로 정렬.
+1. `/add-task` 문서 예시가 모든 문서에서 동일한 계약 계층(정규/별칭)으로 정렬.
 
-### CR-010 (P1) `/c4-run` 인자 표면의 문서 불일치
+### CR-010 (P1) `/run` 인자 표면의 문서 불일치
 
 현상:
-- 명령어 레퍼런스는 `/c4-run` 단일 형태만 제시한다.
-- run/help 스킬은 `/c4-run N`, `--max`, `--continuous`를 공식 사용법으로 제시한다.
+- 명령어 레퍼런스는 `/run` 단일 형태만 제시한다.
+- run/help 스킬은 `/run N`, `--max`, `--continuous`를 공식 사용법으로 제시한다.
 
 사용자 영향:
 - 병렬도 제어와 연속 실행 기능의 발견 가능성이 문서 선택에 따라 달라진다.
 
 근거:
 - `docs/user-guide/명령어-레퍼런스.md:103`
-- `.claude/skills/c4-run/SKILL.md:18`
-- `.claude/skills/c4-run/SKILL.md:22`
+- `.claude/skills/run/SKILL.md:18`
+- `.claude/skills/run/SKILL.md:22`
 - `.claude/skills/c4-help/SKILL.md:77`
 
 개선안:
-1. `/c4-run` 인자 행렬을 명령어 레퍼런스에 승격.
+1. `/run` 인자 행렬을 명령어 레퍼런스에 승격.
 2. Smart Auto Mode 문서와 레퍼런스 사이를 교차 참조로 고정.
 
 수용기준:
-1. `/c4-run`의 인자/옵션 표가 레퍼런스/스킬에서 동일.
+1. `/run`의 인자/옵션 표가 레퍼런스/스킬에서 동일.
 
 ### CR-011 (P2) `/c4-stop` 실행 경로 설명 불투명
 
@@ -904,7 +904,7 @@
 ### AR-009 (P2) 템플릿 계층(AGENTS/CLAUDE 템플릿/가이드) 간 용어 드리프트
 
 현상:
-- 템플릿 계층에서 완료 명령 표기가 `/finish`로 남아 있고, 프로젝트 지침은 `/c4-finish`를 사용한다.
+- 템플릿 계층에서 완료 명령 표기가 `/finish`로 남아 있고, 프로젝트 지침은 `/finish`를 사용한다.
 - init 템플릿과 프로젝트별 AGENTS/가이드가 독립 진화하면서 용어 동기화가 깨진다.
 
 근거:
@@ -919,7 +919,7 @@
 3. 릴리스 전 체크리스트에 "command naming parity" 추가.
 
 수용기준:
-1. `/finish` vs `/c4-finish`류의 명령 표기 차이가 자동 검출됨.
+1. `/finish` vs `/finish`류의 명령 표기 차이가 자동 검출됨.
 2. 템플릿 갱신 후 프로젝트 문서 재생성 시 용어가 일관됨.
 
 ---
@@ -943,7 +943,7 @@
 검토 범위:
 1. `c4_submit` 입력 계약과 소유권 검증 경계
 2. `c4_get_task` 할당/추적 로직의 정확성
-3. `/c4-status` 문서 계약과 실제 응답 계약 정합성
+3. `/status` 문서 계약과 실제 응답 계약 정합성
 
 이번 라운드 신규 누적:
 1. 코드/계약 레벨: 5건 (`CR-012` ~ `CR-016`)
@@ -1047,7 +1047,7 @@
 1. 정상 pending 할당에서 `stale_reassign` 이벤트가 발생하지 않음.
 2. stale 재할당 케이스에서만 해당 trace가 기록됨.
 
-### CR-016 (P2) `/c4-status` 출력 예시와 실제 응답 계약 괴리
+### CR-016 (P2) `/status` 출력 예시와 실제 응답 계약 괴리
 
 현상:
 - 명령어 레퍼런스는 `Execution Mode`, `Current Task`, `Checkpoints`, `Recent Events`를 상태 출력 예시로 제시한다.
@@ -1069,7 +1069,7 @@
 2. 별도 포맷터(요약 텍스트)를 제공할 계획이면 해당 출력 계약을 명시적으로 분리 문서화.
 
 수용기준:
-1. `/c4-status` 문서 예시가 현재 응답 스키마와 1:1로 매핑됨.
+1. `/status` 문서 예시가 현재 응답 스키마와 1:1로 매핑됨.
 
 ### AR-010 (P1) `c4_submit` 제출자 식별 정책의 SSOT 부재
 
@@ -1385,7 +1385,7 @@
 ### CR-025 (P0) 문서화된 `APPROVE_FINAL` 결정값이 런타임에서 거부됨
 
 현상:
-- 사용자 문서는 `/c4-checkpoint` 결정값으로 `APPROVE_FINAL`을 제시한다.
+- 사용자 문서는 `/checkpoint` 결정값으로 `APPROVE_FINAL`을 제시한다.
 - 실제 런타임 검증은 `APPROVE`, `REQUEST_CHANGES`, `REPLAN`만 허용한다.
 
 사용자 영향:

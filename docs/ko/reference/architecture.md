@@ -169,7 +169,7 @@ pattern_suggest <- distill <- autoRecordKnowledge <- Worker 완료 (핸드오프
 - **FTS5**: 모든 지식 기록에 대한 전문 검색
 - **pgvector**: OpenAI 1536-dim 임베딩 (또는 Ollama 768-dim nomic-embed-text)
 - **3-way RRF**: FTS + 벡터 + 인기도 점수의 순위 융합
-- **자동 증류**: 지식 수 >= 5일 때 `/c4-finish`에 의해 트리거됨
+- **자동 증류**: 지식 수 >= 5일 때 `/finish`에 의해 트리거됨
 - **클라우드 동기화**: 로컬 SQLite <-> Supabase pgvector 동기화
 - **크로스 프로젝트**: `c4_knowledge_publish` / `c4_knowledge_pull`로 공유
 
@@ -333,8 +333,8 @@ INIT -> DISCOVERY -> DESIGN -> PLAN -> EXECUTE <-> CHECKPOINT -> REFINE -> POLIS
 | PLAN | 태스크 생성됨, 실행 준비 완료 |
 | EXECUTE | Worker 활성, 태스크 처리 중 |
 | CHECKPOINT | 단계 게이트 도달, 리뷰 진행 중 |
-| HALTED | 실행 일시 중지, `/c4-run`으로 재개 가능 |
-| COMPLETE | 모든 태스크 완료, `/c4-finish` 준비 |
+| HALTED | 실행 일시 중지, `/run`으로 재개 가능 |
+| COMPLETE | 모든 태스크 완료, `/finish` 준비 |
 
 ---
 

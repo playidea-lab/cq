@@ -226,12 +226,12 @@ git worktree list
 
 ## 멀티 Worker 실행
 
-### Smart Auto Mode (`/c4-run`)
+### Smart Auto Mode (`/run`)
 
 ```bash
-/c4-run           # 자동으로 적절한 수의 Worker 스폰
-/c4-run 3         # 3개 Worker 스폰
-/c4-run --max 4   # 최대 4개로 제한
+/run           # 자동으로 적절한 수의 Worker 스폰
+/run 3         # 3개 Worker 스폰
+/run --max 4   # 최대 4개로 제한
 ```
 
 C4가 자동으로:
@@ -243,7 +243,7 @@ C4가 자동으로:
 ### 단일 Worker 모드
 
 ```bash
-/c4-run 1         # 이 세션에서 직접 실행
+/run 1         # 이 세션에서 직접 실행
 ```
 
 단일 Worker 시에도 worktree가 생성되지만, 메인 디렉토리에서 직접 작업할 수 있습니다.

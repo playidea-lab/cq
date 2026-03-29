@@ -270,29 +270,29 @@ Skills are slash commands invoked inside Claude Code. All skills are embedded in
 
 | Skill | Triggers | Available States | Description |
 |-------|----------|-----------------|-------------|
-| `/pi` | play idea, ideation | Any | Brainstorm before planning. Diverge/converge/research/debate. Auto-launches `/c4-plan`. |
-| `/c4-plan` | plan, design | INIT, HALTED | Discovery -> Design -> Lighthouse contracts -> Task creation. |
-| `/c4-run` | run, execute | PLAN, HALTED, EXECUTE | Spawn workers for pending tasks. Continuous until queue empty. |
-| `/c4-finish` | finish, complete | After implementation | Build -> test -> docs -> commit. Post-implementation completion. |
-| `/c4-status` | status | Any | Visual task graph, queue summary, worker status. |
-| `/c4-quick` | quick | PLAN, HALTED, EXECUTE | Create + assign one task immediately, skip planning. |
+| `/pi` | play idea, ideation | Any | Brainstorm before planning. Diverge/converge/research/debate. Auto-launches `/plan`. |
+| `/plan` | plan, design | INIT, HALTED | Discovery -> Design -> Lighthouse contracts -> Task creation. |
+| `/run` | run, execute | PLAN, HALTED, EXECUTE | Spawn workers for pending tasks. Continuous until queue empty. |
+| `/finish` | finish, complete | After implementation | Build -> test -> docs -> commit. Post-implementation completion. |
+| `/status` | status | Any | Visual task graph, queue summary, worker status. |
+| `/quick` | quick | PLAN, HALTED, EXECUTE | Create + assign one task immediately, skip planning. |
 
 ### Quality Loop
 
 | Skill | Triggers | Description |
 |-------|----------|-------------|
-| `/c4-checkpoint` | (auto) | 4-lens review: holistic / user-flow / cascade / ship-ready. |
-| `/c4-validate` | validate | Run lint + tests. CRITICAL blocks commit, HIGH requires review. |
-| `/c4-review` | review | Comprehensive 3-pass code review with 6-axis evaluation. |
-| `/c4-polish` | polish | *(Deprecated -- built into `/c4-finish`)* |
-| `/c4-refine` | refine | *(Deprecated -- built into `/c4-finish`)* |
+| `/checkpoint` | (auto) | 4-lens review: holistic / user-flow / cascade / ship-ready. |
+| `/validate` | validate | Run lint + tests. CRITICAL blocks commit, HIGH requires review. |
+| `/review` | review | Comprehensive 3-pass code review with 6-axis evaluation. |
+| `/polish` | polish | *(Deprecated -- built into `/finish`)* |
+| `/refine` | refine | *(Deprecated -- built into `/finish`)* |
 
 ### Task Management
 
 | Skill | Triggers | Description |
 |-------|----------|-------------|
-| `/c4-add-task` | add task | Add task interactively with DoD, scope, and domain. |
-| `/c4-submit` | submit | Submit completed task with automated validation. |
+| `/add-task` | add task | Add task interactively with DoD, scope, and domain. |
+| `/submit` | submit | Submit completed task with automated validation. |
 | `/c4-interview` | interview | Deep requirements interview (PM/architect mode). |
 | `/c4-stop` | stop | Halt execution, transition to HALTED. Preserves progress. |
 | `/c4-clear` | clear | Reset C4 state. Clears tasks, events, locks. |
@@ -319,7 +319,7 @@ Skills are slash commands invoked inside Claude Code. All skills are embedded in
 | Skill | Triggers | Description |
 |-------|----------|-------------|
 | `/research-loop` | research loop | Paper-experiment improvement loop. |
-| `/c2-paper-review` | paper review | *(Deprecated -- use `/c4-review`)* |
+| `/c2-paper-review` | paper review | *(Deprecated -- use `/review`)* |
 
 ### C9 Research Loop (ML)
 
@@ -349,10 +349,10 @@ INIT -> DISCOVERY -> DESIGN -> PLAN -> EXECUTE <-> CHECKPOINT -> REFINE -> POLIS
 
 | State | Available Skills |
 |-------|-----------------|
-| INIT | `/init`, `/c4-plan` |
-| DISCOVERY / DESIGN | `/c4-plan` (auto-progresses) |
-| PLAN | `/c4-run`, `/c4-quick`, `/c4-status` |
-| EXECUTE | `/c4-run`, `/c4-quick`, `/c4-stop`, `/c4-status`, `/c4-validate`, `/c4-submit`, `/c4-add-task`, `/c4-swarm` |
-| CHECKPOINT | `/c4-checkpoint`, `/c4-add-task` |
-| HALTED | `/c4-run`, `/c4-quick`, `/c4-plan` |
-| COMPLETE | `/c4-finish`, `/c4-release` |
+| INIT | `/init`, `/plan` |
+| DISCOVERY / DESIGN | `/plan` (auto-progresses) |
+| PLAN | `/run`, `/quick`, `/status` |
+| EXECUTE | `/run`, `/quick`, `/c4-stop`, `/status`, `/validate`, `/submit`, `/add-task`, `/c4-swarm` |
+| CHECKPOINT | `/checkpoint`, `/add-task` |
+| HALTED | `/run`, `/quick`, `/plan` |
+| COMPLETE | `/finish`, `/c4-release` |

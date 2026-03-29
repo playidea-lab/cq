@@ -213,9 +213,9 @@ T-006 (EventBus→Hub) depends on T-005
 
 1. **태스크 생성** (C4 MCP 연결 시):
    - `c4_add_todo`로 T-001-0 ~ T-006-0 위 정의대로 추가 (dependency: T-006-0 depends on T-005-0).
-2. **실행**: `/c4-run` (Worker 스폰).
-3. **정제**: `/c4-refine` (품질 게이트 통과까지).
-4. **마무리**: `/c4-finish` (빌드·테스트·설치·문서·커밋).
+2. **실행**: `/run` (Worker 스폰).
+3. **정제**: `/refine` (품질 게이트 통과까지).
+4. **마무리**: `/finish` (빌드·테스트·설치·문서·커밋).
 5. **이후**: C(Edge/Deploy) 별도 plan 수립.
 
 ---

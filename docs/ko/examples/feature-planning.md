@@ -1,4 +1,4 @@
-# 기능 계획: /pi → /c4-plan → /c4-run
+# 기능 계획: /pi → /plan → /run
 
 CQ의 전체 계획 워크플로우를 사용하여 대형 기능 — 재시도 로직이 있는 실시간 Webhook 전달 — 을 구축하는 완전한 예제입니다.
 
@@ -6,14 +6,14 @@ CQ의 전체 계획 워크플로우를 사용하여 대형 기능 — 재시도 
 
 ## 이 워크플로우를 사용하는 경우
 
-다음과 같을 때 `/pi` → `/c4-plan` → `/c4-run`을 사용하세요:
+다음과 같을 때 `/pi` → `/plan` → `/run`을 사용하세요:
 
 - 기능이 10개 이상의 파일에 영향을 미침
 - 아키텍처 결정이 필요함 (DB 스키마, 재시도 전략, 큐 설계)
 - 여러 엔지니어(또는 Worker)가 병렬로 작업함
 - 코드 작성 전에 스펙 문서가 필요함
 
-더 작은 태스크에는 `/c4-quick`을 사용하세요.
+더 작은 태스크에는 `/quick`을 사용하세요.
 
 ---
 
@@ -70,15 +70,15 @@ CQ가 Play Idea 모드에 진입합니다 — 저비용 탐색 단계입니다. 
 CQ가 합의된 설계를 요약하고 계획으로 이동할 것을 제안합니다:
 
 ```
-[PI] 계획 준비됨. /c4-plan을 실행하여 태스크 생성.
+[PI] 계획 준비됨. /plan을 실행하여 태스크 생성.
 ```
 
 ---
 
-## 2단계: /c4-plan으로 태스크 생성
+## 2단계: /plan으로 태스크 생성
 
 ```
-/c4-plan "Webhook 전달: SQLite 기반 재시도, 5회 시도, 지수 백오프, 소진 시 webhook.failed 이벤트"
+/plan "Webhook 전달: SQLite 기반 재시도, 5회 시도, 지수 백오프, 소진 시 webhook.failed 이벤트"
 ```
 
 CQ가 Discovery → Design → 태스크 생성을 실행합니다:
@@ -118,7 +118,7 @@ CQ가 Discovery → Design → 태스크 생성을 실행합니다:
 태스크 목록 검토:
 
 ```
-/c4-status
+/status
 ```
 
 ```
@@ -130,12 +130,12 @@ Queue: 6 pending | 0 in_progress | 0 done
 
 ---
 
-## 3단계: /c4-run으로 Worker 실행
+## 3단계: /run으로 Worker 실행
 
 Worker를 시작합니다. T-WH-01에 의존성이 없으므로 하나의 Worker가 즉시 시작할 수 있습니다:
 
 ```
-/c4-run 3
+/run 3
 ```
 
 ```
@@ -183,7 +183,7 @@ Worker-2 클레임: T-WH-02  WebhookStore: CRUD + pending-deliveries 쿼리
 Worker들이 의존성이 해결되면서 계속 태스크를 가져갑니다. 진행 상황 확인:
 
 ```
-/c4-status
+/status
 ```
 
 ```
@@ -205,7 +205,7 @@ Queue: 2 pending | 3 in_progress | 1 done
 모든 태스크가 완료되면 CQ가 자동으로 CHECKPOINT 상태에 진입합니다:
 
 ```
-/c4-status
+/status
 ```
 
 ```
@@ -216,7 +216,7 @@ Checkpoint: CP-WH — 6개 태스크 완료, 리뷰 대기 중
 리뷰 트리거:
 
 ```
-/c4-checkpoint
+/checkpoint
 ```
 
 ```
@@ -249,7 +249,7 @@ Checkpoint: CP-WH — 6개 태스크 완료, 리뷰 대기 중
 ## 5단계: 마무리
 
 ```
-/c4-finish
+/finish
 ```
 
 ```
@@ -274,25 +274,25 @@ State: COMPLETE
 | 단계 | 커맨드 | 목적 |
 |------|--------|------|
 | 탐색 | `/pi "아이디어"` | 확정 전 옵션 브레인스토밍, 제약사항 명확화 |
-| 계획 | `/c4-plan "스펙"` | 스펙, 설계 결정(ADR), 태스크 큐 생성 |
-| 실행 | `/c4-run N` | N개의 Worker 스폰; 의존성 해결되면 태스크 처리 |
-| 리뷰 | `/c4-checkpoint` | 관리자가 모든 변경사항 검토; 승인 또는 변경 요청 |
-| 마무리 | `/c4-finish` | 다듬기, 체인지로그, 최종 유효성 검사 |
+| 계획 | `/plan "스펙"` | 스펙, 설계 결정(ADR), 태스크 큐 생성 |
+| 실행 | `/run N` | N개의 Worker 스폰; 의존성 해결되면 태스크 처리 |
+| 리뷰 | `/checkpoint` | 관리자가 모든 변경사항 검토; 승인 또는 변경 요청 |
+| 마무리 | `/finish` | 다듬기, 체인지로그, 최종 유효성 검사 |
 
 ---
 
 ## 팁
 
-**Worker 수 조정**: `/c4-run 3`이 좋은 기본값입니다. 독립적인 태스크가 많으면 Worker가 더 많을수록 도움이 됩니다. 선형 의존성 체인(A → B → C)에서는 추가 Worker가 유휴 상태가 됩니다.
+**Worker 수 조정**: `/run 3`이 좋은 기본값입니다. 독립적인 태스크가 많으면 Worker가 더 많을수록 도움이 됩니다. 선형 의존성 체인(A → B → C)에서는 추가 Worker가 유휴 상태가 됩니다.
 
-**체크포인트에서 변경 요청 시**: CQ가 새 태스크를 생성하고 EXECUTE로 돌아갑니다. Worker들이 자동으로 처리합니다 — 기다리거나 `/c4-run`을 다시 실행하세요.
+**체크포인트에서 변경 요청 시**: CQ가 새 태스크를 생성하고 EXECUTE로 돌아갑니다. Worker들이 자동으로 처리합니다 — 기다리거나 `/run`을 다시 실행하세요.
 
-**스펙은 보존됩니다**: `/c4-plan`의 스펙과 설계는 `.c4/specs/`와 `.c4/designs/`에 저장됩니다. `c4_get_spec` 또는 `c4_get_design`으로 언제든지 참조할 수 있습니다.
+**스펙은 보존됩니다**: `/plan`의 스펙과 설계는 `.c4/specs/`와 `.c4/designs/`에 저장됩니다. `c4_get_spec` 또는 `c4_get_design`으로 언제든지 참조할 수 있습니다.
 
 ---
 
 ## 다음 단계
 
-- **GPU 워크로드**: [분산 실험](distributed-experiments.md)
-- **연구자 워크플로우**: [연구자 E2E](researcher-workflow.md)
-- **전체 워크플로우 레퍼런스**: [사용 가이드](../usage-guide.md)
+- **GPU 워크로드**: [연구 루프](research-loop.md)
+- **연구자 워크플로우**: [연구 루프](research-loop.md)
+- **전체 워크플로우 레퍼런스**: [사용 가이드](../reference/commands.md)

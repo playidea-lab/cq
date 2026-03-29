@@ -17,6 +17,6 @@ non_functional:
   - 알림 실패 시 시스템 동작에 영향 없음 (best-effort)
 
 out_of_scope:
-  - /c4-run 폴링 제거 (Stage 2)
+  - /run 폴링 제거 (Stage 2)
   - 워커 자동 스폰 (Stage 2)
   - Slack/Discord (미래)

@@ -8,7 +8,7 @@ Skills are slash commands invoked inside Claude Code. All 42 skills are embedded
 
 | Skill | Triggers | Description |
 |-------|----------|-------------|
-| `/pi` | play idea, ideation, /pi | Brainstorm and refine ideas before planning. Diverge/converge/research/debate modes. Writes `idea.md` and auto-launches `/c4-plan`. |
+| `/pi` | play idea, ideation, /pi | Brainstorm and refine ideas before planning. Diverge/converge/research/debate modes. Writes `idea.md` and auto-launches `/plan`. |
 
 ---
 
@@ -16,11 +16,11 @@ Skills are slash commands invoked inside Claude Code. All 42 skills are embedded
 
 | Skill | Triggers | Description |
 |-------|----------|-------------|
-| `/c4-plan` | plan, design, spec | Discovery -> Design -> Lighthouse contracts -> Task creation. Full structured plan for a feature. |
-| `/c4-run` | run, execute | Spawn workers for all pending tasks in parallel. Continuous mode -- auto-respawns until queue empty. |
-| `/c4-finish` | finish, complete | Build -> test -> docs -> commit. Post-implementation completion routine. |
-| `/c4-status` | status | Visual task graph with progress, dependency graph, queue summary, and worker status. |
-| `/c4-quick` | quick | Create + assign one task immediately, skip planning. For small focused changes. |
+| `/plan` | plan, design, spec | Discovery -> Design -> Lighthouse contracts -> Task creation. Full structured plan for a feature. |
+| `/run` | run, execute | Spawn workers for all pending tasks in parallel. Continuous mode -- auto-respawns until queue empty. |
+| `/finish` | finish, complete | Build -> test -> docs -> commit. Post-implementation completion routine. |
+| `/status` | status | Visual task graph with progress, dependency graph, queue summary, and worker status. |
+| `/quick` | quick | Create + assign one task immediately, skip planning. For small focused changes. |
 
 ---
 
@@ -28,11 +28,11 @@ Skills are slash commands invoked inside Claude Code. All 42 skills are embedded
 
 | Skill | Triggers | Description |
 |-------|----------|-------------|
-| `/c4-checkpoint` | (auto at checkpoint) | Phase gate: 4-lens review (holistic / user-flow / cascade / ship-ready). Approve, request changes, replan, or redesign. |
-| `/c4-validate` | validate | Run lint + tests. CRITICAL blocks commit, HIGH requires review, MEDIUM is recommended. |
-| `/c4-review` | review | Comprehensive 3-pass code or paper review with 6-axis evaluation. Generates formal review document. |
-| `/c4-polish` | polish | *(Deprecated -- polish loop is now built into `/c4-finish`.)* |
-| `/c4-refine` | refine | *(Deprecated -- quality loop is now built into `/c4-finish`.)* |
+| `/checkpoint` | (auto at checkpoint) | Phase gate: 4-lens review (holistic / user-flow / cascade / ship-ready). Approve, request changes, replan, or redesign. |
+| `/validate` | validate | Run lint + tests. CRITICAL blocks commit, HIGH requires review, MEDIUM is recommended. |
+| `/review` | review | Comprehensive 3-pass code or paper review with 6-axis evaluation. Generates formal review document. |
+| `/polish` | polish | *(Deprecated -- polish loop is now built into `/finish`.)* |
+| `/refine` | refine | *(Deprecated -- quality loop is now built into `/finish`.)* |
 
 ---
 
@@ -40,8 +40,8 @@ Skills are slash commands invoked inside Claude Code. All 42 skills are embedded
 
 | Skill | Triggers | Description |
 |-------|----------|-------------|
-| `/c4-add-task` | add task | Add task interactively with DoD, scope, and domain guidance. Infers ID from existing patterns. |
-| `/c4-submit` | submit | Submit completed task with automated validation. Verifies commit SHA, triggers checkpoint if needed. |
+| `/add-task` | add task | Add task interactively with DoD, scope, and domain guidance. Infers ID from existing patterns. |
+| `/submit` | submit | Submit completed task with automated validation. Verifies commit SHA, triggers checkpoint if needed. |
 | `/c4-interview` | interview | Deep exploratory requirements interview. Acts as senior PM/architect to discover hidden requirements and edge cases. |
 | `/c4-stop` | stop | Stop execution, transition to HALTED state. Preserves progress for later resumption. |
 | `/c4-clear` | clear | Reset C4 state for debugging. Clears tasks, events, locks in `.c4/` with optional config preservation. |
@@ -62,7 +62,7 @@ Skills are slash commands invoked inside Claude Code. All 42 skills are embedded
 | Skill | Triggers | Description |
 |-------|----------|-------------|
 | `/research-loop` | research loop | Paper-experiment improvement loop. Iterates review -> plan -> experiment -> re-review until target quality reached. |
-| `/c2-paper-review` | paper review | *(Deprecated -- use `/c4-review` instead.)* |
+| `/c2-paper-review` | paper review | *(Deprecated -- use `/review` instead.)* |
 
 ---
 
@@ -121,18 +121,18 @@ Complete list by category:
 | Skill | Category |
 |-------|----------|
 | `/pi` | Ideation |
-| `/c4-plan` | Core Workflow |
-| `/c4-run` | Core Workflow |
-| `/c4-finish` | Core Workflow |
-| `/c4-status` | Core Workflow |
-| `/c4-quick` | Core Workflow |
-| `/c4-checkpoint` | Quality Loop |
-| `/c4-validate` | Quality Loop |
-| `/c4-review` | Quality Loop |
-| `/c4-polish` | Quality Loop (deprecated) |
-| `/c4-refine` | Quality Loop (deprecated) |
-| `/c4-add-task` | Task Management |
-| `/c4-submit` | Task Management |
+| `/plan` | Core Workflow |
+| `/run` | Core Workflow |
+| `/finish` | Core Workflow |
+| `/status` | Core Workflow |
+| `/quick` | Core Workflow |
+| `/checkpoint` | Quality Loop |
+| `/validate` | Quality Loop |
+| `/review` | Quality Loop |
+| `/polish` | Quality Loop (deprecated) |
+| `/refine` | Quality Loop (deprecated) |
+| `/add-task` | Task Management |
+| `/submit` | Task Management |
 | `/c4-interview` | Task Management |
 | `/c4-stop` | Task Management |
 | `/c4-clear` | Task Management |
