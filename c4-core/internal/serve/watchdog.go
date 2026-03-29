@@ -30,6 +30,7 @@ type CrashUploader interface {
 // Watchdog supervises a child "cq serve" process.
 // On crash it restarts with exponential backoff (5s→10s→20s→...→5min).
 // On clean SIGTERM it forwards the signal to the child and exits.
+// Call RestartChild() to trigger a graceful restart via the relay (worker/restart).
 type Watchdog struct {
 	// Args are the arguments passed to the child process (os.Args[0] + serve args).
 	Args []string
@@ -38,6 +39,8 @@ type Watchdog struct {
 	Uploader CrashUploader
 	// WorkerID identifies this node in crash log uploads.
 	WorkerID string
+	// restartCh triggers a graceful child restart when sent on.
+	restartCh chan struct{}
 }
 
 // NewWatchdog creates a Watchdog that re-invokes the current binary with serveArgs.
@@ -50,9 +53,21 @@ func NewWatchdog(serveArgs []string, hubClient *hub.Client, workerID string) *Wa
 		uploader = hubClient
 	}
 	return &Watchdog{
-		Args:     args,
-		Uploader: uploader,
-		WorkerID: workerID,
+		Args:      args,
+		Uploader:  uploader,
+		WorkerID:  workerID,
+		restartCh: make(chan struct{}, 1),
+	}
+}
+
+// RestartChild triggers a graceful restart of the supervised child process.
+// It sends SIGTERM to the child, waits up to 5 seconds, then starts a new child.
+// If a restart is already pending, the call is a no-op.
+func (w *Watchdog) RestartChild() {
+	select {
+	case w.restartCh <- struct{}{}:
+	default:
+		// Restart already pending.
 	}
 }
 
@@ -129,6 +144,25 @@ func (w *Watchdog) Run(ctx context.Context) error {
 			<-done
 			fmt.Fprintln(os.Stderr, "watchdog: context done, child exited")
 			return ctx.Err()
+
+		case <-w.restartCh:
+			// Relay-triggered restart: SIGTERM child, wait up to 5s, then restart.
+			fmt.Fprintln(os.Stderr, "watchdog: restart requested via relay, sending SIGTERM to child")
+			if child.Process != nil {
+				_ = child.Process.Signal(syscall.SIGTERM)
+			}
+			select {
+			case <-exitCh:
+			case <-time.After(5 * time.Second):
+				fmt.Fprintln(os.Stderr, "watchdog: child did not exit within grace period, killing")
+				if child.Process != nil {
+					_ = child.Process.Kill()
+				}
+				<-exitCh
+			}
+			<-done
+			fmt.Fprintln(os.Stderr, "watchdog: child stopped for restart")
+			backoff = watchdogInitialBackoff // reset backoff for intentional restart
 
 		case exitErr = <-exitCh:
 			<-done
