@@ -1,182 +1,81 @@
 # Quick Start
 
-Build something with CQ in 5 minutes.
+From install to your first result in 2 minutes.
 
-## Before You Begin
-
-Complete [installation](install.md) first, then run:
+## 1. Install
 
 ```sh
-cq doctor    # Verify everything is working
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
 ```
 
-## The Core Workflow
-
-```
-cq doctor → cq auth login → cq claude
-                                 │
-                                 ▼
-                           /c4-plan "goal"
-                                 │
-                                 ▼
-                            /c4-run
-                           (repeats)
-                                 │
-                                 ▼
-                           /c4-finish
-```
-
-## Step 1: Check Health
+## 2. Launch
 
 ```sh
-cq doctor
+cq
 ```
 
+CQ auto-detects your AI tool (Claude Code, Cursor, Codex, Gemini) and connects.
+
+## 3. Do Something
+
+Just talk. CQ auto-routes based on what you ask:
+
+### Small — Direct Fix (30 seconds)
+
 ```
-[✓] cq binary: v1.37
-[✓] Claude Code: installed
-[✓] MCP server: connected
-[✓] .c4/ directory: initialized
+"Fix the typo in auth/handler.go line 42"
 ```
 
-Fix any failures before continuing.
+CQ handles it directly. No planning, no workers. Just a fix.
 
-## Step 2: Log In
+### Medium — Quick Task (2 minutes)
+
+```
+/quick "add a health check endpoint to the API"
+```
+
+CQ creates a task with Definition of Done, spawns a worker, and submits the result. One command.
+
+### Large — Full Pipeline (5+ minutes)
+
+```
+/pi "build a webhook delivery system with retry logic"
+```
+
+CQ brainstorms → plans → spawns parallel workers → polishes → commits. You drink coffee.
+
+---
+
+## That's It
+
+There's no step 4. CQ figures out the right workflow for each request.
+
+**What happens behind the scenes:**
+- Every session, CQ captures your decisions and preferences
+- By session 5, it knows how you work without being told
+- Knowledge flows across AI tools — learn in ChatGPT, use in Claude
+
+---
+
+## What Next?
+
+| I want to... | Go to |
+|-------------|-------|
+| Understand the 4 pillars (Distribute/Connect/Mimic/Evolve) | [Home](/) |
+| See a real bug fix walkthrough | [Bug Fix Example](/examples/bug-fix) |
+| Build a large feature with planning | [Feature Planning](/examples/feature-planning) |
+| Connect ChatGPT to my CQ brain | [Remote MCP](/examples/remote-mcp) |
+| Watch CQ learn my preferences | [Growth Loop](/examples/growth-loop-in-action) |
+| Run GPU experiments autonomously | [Research Loop](/examples/research-loop) |
+
+## Troubleshooting
 
 ```sh
-cq auth login    # GitHub OAuth — opens browser
+cq doctor    # Check what's wrong
 ```
 
-One-time setup. CQ uses the token for cloud sync, the Growth Loop, and the Knowledge base.
-
-## Step 3: Open Claude Code
-
-```sh
-cq claude    # Launches Claude Code with CQ MCP connected
-```
-
-CQ auto-detects your AI tool. You can also use:
-
-```sh
-cq cursor     # Cursor
-cq codex      # OpenAI Codex CLI
-cq gemini     # Google Gemini
-```
-
-## Step 4: Plan
-
-In Claude Code, describe what you want to build:
-
-```
-/c4-plan "add user authentication with JWT"
-```
-
-CQ walks through three phases:
-
-1. **Discovery** — collects requirements (EARS format)
-2. **Design** — proposes architecture and ADRs
-3. **Plan** — breaks work into verifiable tasks with Definition of Done
-
-Each phase requires your approval before proceeding.
-
-## Step 5: Run
-
-```
-/c4-run
-```
-
-Workers pick up tasks automatically:
-
-- Each worker gets one task, one fresh context, one isolated worktree
-- Runs lint and tests before submitting
-- Auto-respawns until the queue is empty
-- Quality gates reject submissions that skip review
-
-Set it up and come back — the queue drains on its own.
-
-## Step 6: Finish
-
-```
-/c4-finish
-```
-
-Polishes the code, runs the full review cycle, and creates a clean commit. Checks off the Definition of Done checklist.
-
-## Check Status at Any Time
-
-```
-/c4-status
-```
-
-```
-## CQ Project Status
-
-State:    EXECUTE
-Queue:    3 pending | 2 in-progress | 7 done
-Workers:  2 active
-```
-
-## Scenario: New Feature
-
-```
-/c4-plan "add CSV export to the reports page"
-/c4-run
-/c4-finish
-```
-
-## Scenario: Bug Fix (Direct Mode)
-
-For single-file fixes that don't need the full planning pipeline:
-
-```
-Fix the null pointer in auth/token.go when refresh token is missing
-```
-
-Claude handles it directly. Or use the explicit flow:
-
-```
-c4_claim → make changes → c4_report
-```
-
-## Command Reference
-
-| Command | What it does | When to use |
-|---------|-------------|-------------|
-| `cq doctor` | Health check | Before starting |
-| `cq auth login` | GitHub OAuth | First time |
-| `cq claude` | Launch Claude Code | Every session |
-| `/c4-status` | Show project state | Any time |
-| `/c4-plan "goal"` | Create plan + tasks | New feature |
-| `/c4-run` | Start workers | After planning |
-| `/c4-finish` | Polish + commit | After implementation |
-| `/pi "idea"` | Brainstorm + research | Before planning |
-
-## Auto-Routing
-
-CQ routes requests automatically based on scope:
-
-| Size | Criteria | Workflow |
-|------|----------|----------|
-| Small | Typo, 1–2 line change | Direct edit |
-| Medium | 1–3 files, function change | `/c4-quick` → 1 worker |
-| Large | New feature, design needed | `/pi` → `/c4-plan` → `/c4-run` → `/c4-finish` |
-
-When in doubt, CQ picks the smaller option — faster is better than over-engineered.
-
-## What Happens to My Sessions?
-
-When you close a session, CQ automatically:
-
-1. Summarizes decisions and discoveries
-2. Extracts preferences from how you worked
-3. Stores them in your Knowledge base
-4. Feeds them into the [Growth Loop](growth-loop.md)
-
-Next session, your preferences are already there.
-
-## Next Steps
-
-- [Tiers](tiers.md) — understand solo / connected / full
-- [Growth Loop](growth-loop.md) — how CQ learns your preferences
-- [Worker Setup](worker-setup.md) — add GPU workers for training jobs
-- [Remote Brain](remote-brain.md) — access CQ from ChatGPT or Claude Desktop
+| Symptom | Fix |
+|---------|-----|
+| "MCP server not found" | Check binary path in `.mcp.json`; run `cq doctor` |
+| macOS code signing error | Use `go build -o` directly, never `cp` |
+| Python sidecar error | Run `uv sync`; verify Python 3.11+ |

@@ -24,6 +24,10 @@ function copy() {
       </svg>
     </a>
   </div>
+  <div class="hero-links">
+    <a href="/cq/guide/quickstart" class="hero-link-btn">Quick Start</a>
+    <a href="https://github.com/PlayIdea-Lab/cq/discussions" target="_blank" class="hero-link-btn secondary">Discussion</a>
+  </div>
 </template>
 
 <style scoped>
@@ -78,6 +82,42 @@ function copy() {
 }
 
 .github-btn:hover {
+  border-color: var(--vp-c-brand-1);
+}
+
+.hero-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.hero-link-btn {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.hero-link-btn:not(.secondary) {
+  background: var(--vp-c-brand-1);
+  color: var(--vp-c-white);
+}
+
+.hero-link-btn:not(.secondary):hover {
+  background: var(--vp-c-brand-2);
+}
+
+.hero-link-btn.secondary {
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  border: 1px solid var(--vp-c-divider);
+}
+
+.hero-link-btn.secondary:hover {
   border-color: var(--vp-c-brand-1);
 }
 </style>

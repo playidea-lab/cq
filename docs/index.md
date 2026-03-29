@@ -22,11 +22,3 @@ features:
   - icon: "\U0001F4C8"
     title: Evolve
     details: "Bad patterns fade. Good patterns become rules. By session 5, your AI already knows how you work — without being told."
-
----
-
-<div class="community-block">
-  <a href="https://github.com/PlayIdea-Lab/cq/discussions" target="_blank">💬 Join the Discussion</a>
-  &nbsp;·&nbsp;
-  <a href="/cq/examples/first-task">📖 Examples</a>
-</div>
