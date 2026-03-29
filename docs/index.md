@@ -3,36 +3,42 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "Connects All the LLMs"
-  tagline: "One brain across Claude, ChatGPT, Cursor, Codex, Gemini. What you learn in one AI is available in all of them."
+  text: "The Evolving External Brain"
+  tagline: "AI that learns you, works for you, and evolves with every session."
   actions:
     - theme: brand
-      text: Install
+      text: "curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh"
       link: /cq/guide/install
     - theme: alt
       text: GitHub
       link: https://github.com/PlayIdea-Lab/cq
 
 features:
-  - icon: "\U0001F4E6"
-    title: One-Line Install
-    details: "curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh"
+  - icon: "\U0001F310"
+    title: Distribute
+    details: "Workers run tasks independently in parallel. Set it up before bed — wake up to tested, reviewed code."
 
-  - icon: "\U0001F9E0"
-    title: Shared Brain
-    details: "Save a design decision in ChatGPT. Pick it up in Claude Code. Your knowledge lives in one place, not scattered across tools."
+  - icon: "\U0001F517"
+    title: Connect
+    details: "One brain across Claude, ChatGPT, Cursor, Codex, Gemini. Knowledge saved in one AI is available in all of them."
+
+  - icon: "\U0001F9EC"
+    title: Mimic
+    details: "CQ learns how you think — your judgment, habits, preferences. It builds a persona that decides like you would."
 
   - icon: "\U0001F4C8"
-    title: Evolves With You
-    details: "CQ learns your preferences over sessions. By session 5, your AI already knows how you work — without being told."
-
-  - icon: "\U0001F504"
-    title: Plans, Then Codes
-    details: "Requirements first, then architecture, then tasks. Workers implement in parallel while you sleep."
+    title: Evolve
+    details: "Bad patterns fade. Good patterns become rules. By session 5, your AI already knows how you work — without being told."
 
 ---
 
 ## How It Works
+
+```
+    Distribute → Connect → Mimic → Evolve
+         ↑                            │
+         └────────────────────────────┘
+```
 
 ```
  You say              CQ does                    Result
@@ -41,17 +47,6 @@ features:
  "go"                 /c4-plan → tasks + review       plan
  ⏳                   /c4-run  → parallel workers     code + tests
  ☕                   /c4-finish → polish + verify    done
-```
-
-## Cross-AI Knowledge Flow
-
-```
-ChatGPT  ──snapshot──►  CQ Brain  ◄──recall──  Claude Code
-Cursor   ──snapshot──►            ◄──recall──  Codex
-                    ▲
-                    │
-              mcp.pilab.kr
-         (MCP — zero install)
 ```
 
 **[See Examples →](/cq/examples/first-task)**
