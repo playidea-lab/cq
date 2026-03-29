@@ -121,24 +121,27 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Updated: %s → %s\n", currentVersion, newVersion)
 
 	// Auto-restart cq serve if installed or running.
-	// "cq serve install" handles: uninstall old → install new → start.
-	// This works for both OS service (LaunchAgent/systemd) and manual mode.
+	// Strategy: stop → start (not "serve install" which has start timing issues).
 	if isServeInstalledOrRunning() {
 		fmt.Println("Restarting cq serve...")
-		cmd := exec.Command(self, "serve", "install", "--dir", detectProjectDir())
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			// Fallback: manual stop + start
-			fmt.Fprintf(os.Stderr, "serve install failed (%v), trying manual restart...\n", err)
-			exec.Command(self, "serve", "stop").Run()
-			time.Sleep(1 * time.Second)
-			startCmd := exec.Command(self, "serve")
+		// Stop gracefully
+		stopCmd := exec.Command(self, "serve", "stop")
+		stopCmd.Stdout = os.Stdout
+		stopCmd.Stderr = os.Stderr
+		_ = stopCmd.Run()
+		time.Sleep(2 * time.Second)
+
+		// Start via systemctl if available (Linux/WSL2), otherwise direct
+		if startErr := restartOSService(); startErr != nil {
+			// Fallback: direct start
+			startCmd := exec.Command(self, "serve", "--dir", detectProjectDir())
 			startCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-			if startErr := startCmd.Start(); startErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to restart serve: %v\n", startErr)
+			startCmd.Stdout = os.Stdout
+			startCmd.Stderr = os.Stderr
+			if err := startCmd.Start(); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to restart serve: %v\n", err)
 			} else {
-				fmt.Println("cq serve restarted (manual mode).")
+				fmt.Println("cq serve restarted.")
 			}
 		}
 	}
@@ -181,6 +184,36 @@ func isServeInstalledOrRunning() bool {
 	}
 	s := string(out)
 	return strings.Contains(s, "running") || strings.Contains(s, "installed")
+}
+
+// restartOSService restarts the cq-serve service via the OS service manager.
+// Returns nil on success, error if not available or failed.
+func restartOSService() error {
+	switch runtime.GOOS {
+	case "linux":
+		cmd := exec.Command("systemctl", "--user", "restart", "cq-serve")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+		fmt.Println("cq serve restarted (systemd).")
+		return nil
+	case "darwin":
+		label := "com.pilab.cq-serve"
+		_ = exec.Command("launchctl", "stop", label).Run()
+		time.Sleep(1 * time.Second)
+		cmd := exec.Command("launchctl", "start", label)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+		fmt.Println("cq serve restarted (launchd).")
+		return nil
+	default:
+		return fmt.Errorf("no OS service manager for %s", runtime.GOOS)
+	}
 }
 
 // detectProjectDir returns the current working directory (used for serve install --dir).
