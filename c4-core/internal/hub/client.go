@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -14,6 +15,12 @@ import (
 const (
 	maxRetries    = 3
 	retryBaseWait = 1 * time.Second
+
+	// 429-specific adaptive backoff constants.
+	// 429s are retried independently from 5xx errors, with a longer cap.
+	retry429BaseWait = 5 * time.Second
+	max429Wait       = 5 * time.Minute
+	max429Attempts   = 10
 )
 
 // Client communicates with a PiQ Hub server over REST or Supabase PostgREST.
@@ -179,43 +186,125 @@ func (c *Client) setSupabaseHeaders(req *http.Request) {
 	}
 }
 
-// isRetryableStatus returns true for HTTP status codes that warrant a retry.
+// isRetryableStatus returns true for 5xx status codes that warrant a retry.
+// 429 (Too Many Requests) is handled separately with adaptive backoff.
 func isRetryableStatus(code int) bool {
-	return code == http.StatusTooManyRequests || code >= 500
+	return code >= 500
+}
+
+// retryAfterPresent reports whether the response carries a Retry-After header.
+func retryAfterPresent(resp *http.Response) bool {
+	return resp.Header.Get("Retry-After") != ""
+}
+
+// parse429Wait extracts the wait duration from a 429 Retry-After header.
+// The header value may be a delay in seconds (integer ≥ 0) or an HTTP-date.
+// Returns (0, false) if the header is absent or cannot be parsed.
+// Returns (d, true) if a valid wait was parsed (d may be 0 for immediate retry).
+func parse429Wait(resp *http.Response) (time.Duration, bool) {
+	ra := resp.Header.Get("Retry-After")
+	if ra == "" {
+		return 0, false
+	}
+	// Try integer seconds first (0 means "retry immediately").
+	if secs, err := strconv.Atoi(ra); err == nil && secs >= 0 {
+		return time.Duration(secs) * time.Second, true
+	}
+	// Try HTTP-date format.
+	if t, err := http.ParseTime(ra); err == nil {
+		d := time.Until(t)
+		if d < 0 {
+			d = 0
+		}
+		return d, true
+	}
+	return 0, false
 }
 
 // doWithRetry executes an HTTP request with exponential backoff retry.
-// Only retries on network errors and retryable status codes (429, 5xx).
+//
+// Retry behaviour:
+//   - Network errors and 5xx responses: up to maxRetries (3) attempts with
+//     exponential backoff starting at retryBaseWait (1s → 2s → 4s).
+//   - 429 Too Many Requests: retried separately up to max429Attempts times.
+//     The wait is taken from the Retry-After header when present; otherwise
+//     exponential backoff starting at retry429BaseWait (5s), capped at
+//     max429Wait (5 minutes).
 func (c *Client) doWithRetry(req *http.Request) (*http.Response, error) {
 	var lastErr error
-	for attempt := range maxRetries {
-		if attempt > 0 {
-			wait := retryBaseWait << (attempt - 1) // 1s, 2s, 4s
-			time.Sleep(wait)
+	attempts5xx := 0
+	attempts429 := 0
 
-			// Rewind body for retry if present
-			if req.GetBody != nil {
-				body, err := req.GetBody()
-				if err != nil {
-					return nil, fmt.Errorf("retry body reset: %w", err)
-				}
-				req.Body = body
-			}
-		}
-
+	for {
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			lastErr = err
+			attempts5xx++
+			if attempts5xx >= maxRetries {
+				return nil, lastErr
+			}
+			wait := retryBaseWait << (attempts5xx - 1)
+			time.Sleep(wait)
+			if err := c.rewindBody(req); err != nil {
+				return nil, err
+			}
 			continue
 		}
-		if isRetryableStatus(resp.StatusCode) {
+
+		switch {
+		case resp.StatusCode == http.StatusTooManyRequests:
+			// 429 adaptive backoff.
+			attempts429++
+			if attempts429 >= max429Attempts {
+				resp.Body.Close()
+				return nil, fmt.Errorf("%s %s: 429 (too many retries)", req.Method, req.URL.Path)
+			}
+			wait, hasRetryAfter := parse429Wait(resp)
+			resp.Body.Close()
+			if !hasRetryAfter {
+				// Exponential backoff: 5s, 10s, 20s, 40s … capped at 5 min.
+				wait = retry429BaseWait << (attempts429 - 1)
+				if wait > max429Wait {
+					wait = max429Wait
+				}
+			} else if wait > max429Wait {
+				wait = max429Wait
+			}
+			time.Sleep(wait)
+			if err := c.rewindBody(req); err != nil {
+				return nil, err
+			}
+
+		case isRetryableStatus(resp.StatusCode):
+			// 5xx retry with exponential backoff.
 			resp.Body.Close()
 			lastErr = fmt.Errorf("%s %s: %d", req.Method, req.URL.Path, resp.StatusCode)
-			continue
+			attempts5xx++
+			if attempts5xx >= maxRetries {
+				return nil, lastErr
+			}
+			wait := retryBaseWait << (attempts5xx - 1) // 1s, 2s
+			time.Sleep(wait)
+			if err := c.rewindBody(req); err != nil {
+				return nil, err
+			}
+
+		default:
+			return resp, nil
 		}
-		return resp, nil
 	}
-	return nil, lastErr
+}
+
+// rewindBody resets the request body for a retry.
+func (c *Client) rewindBody(req *http.Request) error {
+	if req.GetBody != nil {
+		body, err := req.GetBody()
+		if err != nil {
+			return fmt.Errorf("retry body reset: %w", err)
+		}
+		req.Body = body
+	}
+	return nil
 }
 
 // get performs a GET request and decodes JSON into dest.
