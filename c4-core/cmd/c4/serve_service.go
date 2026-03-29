@@ -49,7 +49,9 @@ func runCommand(name string, args ...string) (string, error) {
 
 // newServiceConfig returns a service.Config for the cq-serve service.
 func newServiceConfig(execPath, configPath string) service.Config {
-	args := []string{"serve"}
+	// Use --watchdog so the OS service manager supervises a watchdog process that
+	// automatically restarts the inner cq serve on crash (in addition to the OS-level restart).
+	args := []string{"serve", "--watchdog"}
 	if configPath != "" {
 		args = append(args, "--config", configPath)
 	}
