@@ -13,6 +13,7 @@ function copy() {
 </script>
 
 <template>
+  <div class="hero-version">v1.45.0</div>
   <div class="hero-install">
     <button class="install-btn" @click="copy">
       <span class="cmd">{{ cmd }}</span>
@@ -120,5 +121,14 @@ function copy() {
 
 .hero-link-btn.secondary:hover {
   border-color: var(--vp-c-brand-1);
+}
+
+.hero-version {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vp-c-brand-1);
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
 }
 </style>

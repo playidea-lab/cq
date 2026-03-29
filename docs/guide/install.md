@@ -79,7 +79,7 @@ cq doctor
 Expected output:
 
 ```
-[✓] cq binary: v1.37
+[✓] cq binary: v1.45
 [✓] Claude Code: installed
 [✓] MCP server: .mcp.json connected
 [✓] .c4/ directory: initialized
