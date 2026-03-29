@@ -81,13 +81,26 @@ export default defineConfig({
           ],
           '/ko/examples/': [
             {
-              text: 'Examples',
+              text: 'Workflow',
               items: [
                 { text: 'First Task', link: '/ko/examples/first-task' },
                 { text: 'Bug Fix', link: '/ko/examples/bug-fix' },
                 { text: 'Feature Planning', link: '/ko/examples/feature-planning' },
-                { text: 'Distributed Experiments', link: '/ko/examples/distributed-experiments' },
-                { text: 'Researcher Workflow', link: '/ko/examples/researcher-workflow' },
+              ],
+            },
+            {
+              text: 'Brain',
+              items: [
+                { text: 'Remote MCP 연결', link: '/ko/examples/remote-mcp' },
+                { text: 'ChatGPT → Claude', link: '/ko/examples/chatgpt-to-claude' },
+                { text: '아이디어 세션', link: '/ko/examples/idea-sessions' },
+                { text: 'Growth Loop', link: '/ko/examples/growth-loop-in-action' },
+              ],
+            },
+            {
+              text: 'Research',
+              items: [
+                { text: 'Research Loop', link: '/ko/examples/research-loop' },
               ],
             },
           ],
@@ -153,13 +166,26 @@ export default defineConfig({
       ],
       '/examples/': [
         {
-          text: 'Examples',
+          text: 'Workflow',
           items: [
             { text: 'First Task', link: '/examples/first-task' },
             { text: 'Bug Fix', link: '/examples/bug-fix' },
             { text: 'Feature Planning', link: '/examples/feature-planning' },
-            { text: 'Distributed Experiments', link: '/examples/distributed-experiments' },
-            { text: 'Researcher Workflow', link: '/examples/researcher-workflow' },
+          ],
+        },
+        {
+          text: 'Brain',
+          items: [
+            { text: 'Connect Remote MCP', link: '/examples/remote-mcp' },
+            { text: 'ChatGPT → Claude', link: '/examples/chatgpt-to-claude' },
+            { text: 'Idea Sessions', link: '/examples/idea-sessions' },
+            { text: 'Growth Loop', link: '/examples/growth-loop-in-action' },
+          ],
+        },
+        {
+          text: 'Research',
+          items: [
+            { text: 'Research Loop', link: '/examples/research-loop' },
           ],
         },
       ],
