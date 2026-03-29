@@ -29,3 +29,10 @@ features:
   - icon: "\U0001F4C8"
     title: Evolve
     details: "Bad patterns fade. Good patterns become rules. By session 5, your AI already knows how you work — without being told."
+---
+
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
+```

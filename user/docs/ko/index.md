@@ -29,3 +29,10 @@ features:
   - icon: "\U0001F4C8"
     title: 진화 (Evolve)
     details: "나쁜 패턴은 도태. 좋은 패턴은 규칙으로 승격. 5번째 세션부터 AI가 물어보지 않아도 당신의 방식대로."
+---
+
+## 설치
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
+```
