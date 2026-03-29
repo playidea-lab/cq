@@ -165,6 +165,7 @@ var (
 	hubJobLogOffset      int
 	hubSubmitPrimaryMetric  string
 	hubSubmitLowerIsBetter  bool
+	hubSubmitWorkdir        string
 )
 
 func init() {
@@ -174,6 +175,7 @@ func init() {
 
 	hubWatchCmd.Flags().BoolVar(&hubWatchHistory, "history", false, "include historical metrics on connect")
 
+	hubSubmitCmd.Flags().StringVar(&hubSubmitWorkdir, "workdir", "~", "working directory on the worker (default: worker home)")
 	hubSubmitCmd.Flags().StringVar(&hubSubmitRun, "run", "", "command to execute on the worker")
 	hubSubmitCmd.Flags().StringVar(&hubSubmitExperiment, "experiment", "", "experiment name to register as a Hub experiment run (requires Hub)")
 	hubSubmitCmd.Flags().StringVar(&hubSubmitTarget, "target", "", "route job to a specific worker ID")
@@ -758,9 +760,9 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 	}
 
 	_ = context.Background() // reserved for future Drive upload
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("getwd: %w", err)
+	workdir := hubSubmitWorkdir
+	if workdir == "" {
+		workdir = "~"
 	}
 
 	// Drive snapshot upload is optional — skip for now (Supabase-native mode).
@@ -775,7 +777,7 @@ func runHubSubmit(cmd *cobra.Command, args []string) error {
 
 	req := &hub.JobSubmitRequest{
 		Name:                "hub-submit",
-		Workdir:             cwd,
+		Workdir:             workdir,
 		Command:             command,
 		SnapshotVersionHash: snapshotHash,
 		GitHash:             gitHash,
