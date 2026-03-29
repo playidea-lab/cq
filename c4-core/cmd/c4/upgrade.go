@@ -120,10 +120,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Updated: %s → %s\n", currentVersion, newVersion)
 
-	// Auto-restart cq serve if running.
+	// Auto-restart cq serve if installed or running.
 	// "cq serve install" handles: uninstall old → install new → start.
 	// This works for both OS service (LaunchAgent/systemd) and manual mode.
-	if isServeRunning() {
+	if isServeInstalledOrRunning() {
 		fmt.Println("Restarting cq serve...")
 		cmd := exec.Command(self, "serve", "install", "--dir", detectProjectDir())
 		cmd.Stdout = os.Stdout
@@ -165,13 +165,22 @@ func runUpgradeCheck(url, artifact string) error {
 	return nil
 }
 
-// isServeRunning checks if cq serve is running.
-func isServeRunning() bool {
-	out, err := exec.Command("cq", "serve", "status").CombinedOutput()
+// isServeInstalledOrRunning checks if cq serve is installed (as OS service) or running.
+// After binary replacement, the service may be stopped but still installed —
+// we need to restart it in both cases.
+func isServeInstalledOrRunning() bool {
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "cq"
+	} else {
+		exe, _ = filepath.EvalSymlinks(exe)
+	}
+	out, err := exec.Command(exe, "serve", "status").CombinedOutput()
 	if err != nil {
 		return false
 	}
-	return strings.Contains(string(out), "running")
+	s := string(out)
+	return strings.Contains(s, "running") || strings.Contains(s, "installed")
 }
 
 // detectProjectDir returns the current working directory (used for serve install --dir).
