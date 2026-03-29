@@ -876,14 +876,25 @@ func (c *Client) LogMetrics(jobID string, step int, metrics map[string]any) erro
 	return nil
 }
 
-// GetMetrics returns metrics for a job.
+// GetMetrics returns metrics for a job from the Supabase hub_metrics table.
 func (c *Client) GetMetrics(jobID string, limit int) (*MetricsResponse, error) {
-	path := fmt.Sprintf("/metrics/%s?limit=%d", jobID, limit)
-	var resp MetricsResponse
-	if err := c.get(path, &resp); err != nil {
+	path := fmt.Sprintf("/rest/v1/hub_metrics?job_id=eq.%s&order=step.asc&limit=%d", jobID, limit)
+	var rows []struct {
+		Step    int            `json:"step"`
+		Metrics string         `json:"metrics"`
+	}
+	if err := c.supabaseGet(path, &rows); err != nil {
 		return nil, fmt.Errorf("get metrics: %w", err)
 	}
-	return &resp, nil
+	resp := &MetricsResponse{JobID: jobID, TotalSteps: len(rows)}
+	for _, r := range rows {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(r.Metrics), &m); err != nil {
+			continue
+		}
+		resp.Metrics = append(resp.Metrics, MetricEntry{Step: r.Step, Metrics: m})
+	}
+	return resp, nil
 }
 
 // FetchJobLogs returns raw log rows from hub_job_logs for a job starting after sinceID.

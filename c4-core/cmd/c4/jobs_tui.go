@@ -171,6 +171,7 @@ type jobsTUIModel struct {
 	detailBest    map[string]float64   // metric name -> best value
 	detailLoading bool
 	detailErr     error
+	detailScroll  int // scroll offset for detail panel
 
 	// Compare mode: overlay two jobs' primary_metric trajectories.
 	compareMode      bool
@@ -355,7 +356,7 @@ func (m jobsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateCompareSelecting(msg)
 		}
 
-		// Detail or compare view: Esc exits.
+		// Detail or compare view: Esc exits, j/k scrolls detail.
 		if m.detailMode || m.compareMode {
 			if msg.Type == tea.KeyEsc {
 				m.detailMode = false
@@ -366,6 +367,16 @@ func (m jobsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Type == tea.KeyEnter && m.detailMode {
 				m.detailMode = false
 				return m, nil
+			}
+			if m.detailMode {
+				switch msg.String() {
+				case "j", "down":
+					m.detailScroll++
+				case "k", "up":
+					if m.detailScroll > 0 {
+						m.detailScroll--
+					}
+				}
 			}
 			return m, nil
 		}
@@ -428,6 +439,7 @@ func (m jobsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.detailErr = nil
 					m.detailMetrics = nil
 					m.detailBest = nil
+					m.detailScroll = 0
 					return m, fetchJobMetricsCmd(m.hubClient, jobID)
 				}
 			}
@@ -809,6 +821,10 @@ func (m jobsTUIModel) View() string {
 		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("Esc", "cancel"))
 	} else if m.detailMode || m.compareMode {
+		if m.detailMode {
+			helpBar.WriteString(helpEntry("↑↓/jk", "scroll"))
+			helpBar.WriteString("  ")
+		}
 		helpBar.WriteString(helpEntry("Esc", "close"))
 		if m.detailMode {
 			helpBar.WriteString("  ")
@@ -849,7 +865,11 @@ func (m *jobsTUIModel) renderJobRows(sb *strings.Builder, visible []hub.Job) {
 	// Reserve extra lines for detail/compare panels.
 	reserveLines := 8
 	if m.detailMode {
-		reserveLines += 12
+		// Detail takes 2/3 of screen — reserve heavily so job list shrinks.
+		reserveLines = m.height * 2 / 3
+		if reserveLines < 16 {
+			reserveLines = 16
+		}
 	}
 	if m.compareMode {
 		reserveLines += 14
@@ -1007,31 +1027,304 @@ func (m *jobsTUIModel) renderDetailPanel(sb *strings.Builder) {
 
 	names := sortedMetricNames(m.detailMetrics)
 
-	sparkW := 20
-	if m.width > 60 {
-		sparkW = m.width/4 - 2
-	}
-	if sparkW < 10 {
-		sparkW = 10
+	// Available height for detail panel.
+	detailHeight := m.height*2/3 - 4
+	if detailHeight < 8 {
+		detailHeight = 8
 	}
 
-	for _, name := range names {
+	// Chart width: nearly full terminal, minus small left margin and Y-axis labels.
+	chartIndent := 4 // left margin
+	yAxisW := 12     // right-side Y-axis labels
+	sparkW := m.width - chartIndent - yAxisW
+	if sparkW < 20 {
+		sparkW = 20
+	}
+
+	// Apply scroll.
+	if m.detailScroll >= len(names) {
+		m.detailScroll = len(names) - 1
+	}
+	if m.detailScroll < 0 {
+		m.detailScroll = 0
+	}
+	end := m.detailScroll + detailHeight
+	if end > len(names) {
+		end = len(names)
+	}
+
+	nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
+
+	// Adaptive height per metric based on data points.
+	// 1 pt → 1 row, 2-5 pts → 2 rows, 6-20 → 3 rows, 20+ → 4 rows
+	chartHeight := func(pts int) int {
+		switch {
+		case pts <= 1:
+			return 1
+		case pts <= 5:
+			return 2
+		case pts <= 20:
+			return 3
+		default:
+			return 4
+		}
+	}
+
+	// Calculate how many metrics fit in available height.
+	usedLines := 0
+	end = m.detailScroll
+	for end < len(names) && usedLines < detailHeight {
+		pts := len(m.detailMetrics[names[end]])
+		usedLines += chartHeight(pts) + 1 // chart + header
+		end++
+	}
+	if end > len(names) {
+		end = len(names)
+	}
+
+	for i := m.detailScroll; i < end; i++ {
+		name := names[i]
 		vals := m.detailMetrics[name]
 		if len(vals) == 0 {
 			continue
 		}
-		spark := renderSparkline(vals, sparkW)
 		latest := vals[len(vals)-1]
 		bestVal := m.detailBest[name]
 		dir := "↑"
 		if metricLowerIsBetter(name) {
 			dir = "↓"
 		}
-		line := fmt.Sprintf("  %-14s %s  latest: %.4f  %s best: %.4f  (%d pts)",
-			name, spark, latest, dir, bestVal, len(vals))
-		sb.WriteString(styleSummary.Render(line))
+
+		stats := fmt.Sprintf("latest: %.4f  %s best: %.4f  (%d pts)", latest, dir, bestVal, len(vals))
+		sb.WriteString("  ")
+		sb.WriteString(nameStyle.Render(name))
+		sb.WriteString("  ")
+		sb.WriteString(styleFaint.Render(stats))
+		sb.WriteString("\n")
+
+		h := chartHeight(len(vals))
+		renderTallSparkline(sb, vals, sparkW, h, chartIndent-2)
+	}
+	if end < len(names) {
+		sb.WriteString(styleFaint.Render(fmt.Sprintf("  ... %d more (↓ scroll)", len(names)-end)))
 		sb.WriteString("\n")
 	}
+}
+
+// renderTallSparkline renders a multi-row sparkline chart.
+func renderTallSparkline(sb *strings.Builder, values []float64, width, height, indent int) {
+	if len(values) == 0 || width <= 0 || height <= 0 {
+		return
+	}
+
+	// Resample to always fill the full width.
+	resampled := values
+	if len(values) != width && len(values) > 1 {
+		resampled = make([]float64, width)
+		for i := 0; i < width; i++ {
+			idx := i * (len(values) - 1) / (width - 1)
+			resampled[i] = values[idx]
+		}
+	} else if len(values) == 1 {
+		// Single point: fill entire width with that value.
+		resampled = make([]float64, width)
+		for i := range resampled {
+			resampled[i] = values[0]
+		}
+	}
+
+	mn, mx := resampled[0], resampled[0]
+	for _, v := range resampled {
+		if v < mn {
+			mn = v
+		}
+		if v > mx {
+			mx = v
+		}
+	}
+	rang := mx - mn
+	if rang == 0 {
+		rang = 1
+	}
+
+	chartColor := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	topColor := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
+	axisColor := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+	pad := strings.Repeat(" ", indent+2)
+
+	// For each row (top=max, bottom=min), render blocks.
+	for r := height - 1; r >= 0; r-- {
+		threshold := mn + rang*float64(r)/float64(height)
+		topThreshold := mn + rang*float64(r+1)/float64(height)
+
+		sb.WriteString(pad)
+		for _, v := range resampled {
+			if v >= topThreshold {
+				// Value is above this row — full block.
+				sb.WriteString(chartColor.Render("█"))
+			} else if v >= threshold {
+				// Value ends in this row — use partial block for precision.
+				frac := (v - threshold) / (topThreshold - threshold)
+				idx := int(frac * 7)
+				if idx > 7 {
+					idx = 7
+				}
+				chars := []string{"▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"}
+				sb.WriteString(topColor.Render(chars[idx]))
+			} else {
+				sb.WriteString(" ")
+			}
+		}
+
+		// Y-axis label on right.
+		if r == height-1 {
+			sb.WriteString(axisColor.Render(fmt.Sprintf("  %.4f", mx)))
+		} else if r == 0 {
+			sb.WriteString(axisColor.Render(fmt.Sprintf("  %.4f", mn)))
+		}
+		sb.WriteString("\n")
+	}
+}
+
+// renderASCIILineChart draws a clean line chart using braille-like dots.
+func renderASCIILineChart(sb *strings.Builder, values []float64, width, height int) {
+	if len(values) == 0 || width <= 0 || height <= 0 {
+		return
+	}
+
+	labelW := 10
+
+	// Chart area width (minus labels and axis).
+	chartW := width - labelW - 2
+	if chartW < 10 {
+		chartW = 10
+	}
+
+	// Resample values to fit chartW, spreading points evenly.
+	resampled := values
+	if len(values) > chartW {
+		resampled = make([]float64, chartW)
+		for i := 0; i < chartW; i++ {
+			idx := i * (len(values) - 1) / (chartW - 1)
+			resampled[i] = values[idx]
+		}
+	}
+
+	// Find min/max with 5% padding.
+	mn, mx := resampled[0], resampled[0]
+	for _, v := range resampled {
+		if v < mn {
+			mn = v
+		}
+		if v > mx {
+			mx = v
+		}
+	}
+	rang := mx - mn
+	if rang == 0 {
+		rang = 1
+	}
+	mn -= rang * 0.05
+	mx += rang * 0.05
+	rang = mx - mn
+
+	// Build grid: dots for data, spaces elsewhere.
+	grid := make([][]rune, height)
+	for r := 0; r < height; r++ {
+		grid[r] = make([]rune, chartW)
+		for c := range grid[r] {
+			grid[r][c] = ' '
+		}
+	}
+
+	// Map each value to a row and plot.
+	rows := make([]int, len(resampled))
+	for c, v := range resampled {
+		row := height - 1 - int((v-mn)/rang*float64(height-1))
+		if row < 0 {
+			row = 0
+		}
+		if row >= height {
+			row = height - 1
+		}
+		rows[c] = row
+		grid[row][c] = '●'
+	}
+
+	// Connect adjacent points with line characters.
+	for c := 0; c < len(resampled)-1; c++ {
+		r1, r2 := rows[c], rows[c+1]
+		if r1 == r2 {
+			// Same row — horizontal segment (already have dots).
+			continue
+		}
+		// Fill vertical gap between consecutive points.
+		step := 1
+		if r1 > r2 {
+			step = -1
+		}
+		for r := r1 + step; r != r2; r += step {
+			if grid[r][c] == ' ' {
+				grid[r][c] = '│'
+			}
+		}
+	}
+
+	// Render.
+	lineColor := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
+	dotColor := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
+	axisColor := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	gridColor := lipgloss.NewStyle().Foreground(lipgloss.Color("236"))
+
+	for r := 0; r < height; r++ {
+		// Y-axis label.
+		label := strings.Repeat(" ", labelW)
+		if r == 0 {
+			label = fmt.Sprintf("%*.4f ", labelW-1, mx)
+		} else if r == height/2 {
+			label = fmt.Sprintf("%*.4f ", labelW-1, (mn+mx)/2)
+		} else if r == height-1 {
+			label = fmt.Sprintf("%*.4f ", labelW-1, mn)
+		}
+		sb.WriteString(axisColor.Render(label))
+		sb.WriteString(axisColor.Render("│"))
+
+		// Render row character by character.
+		var row strings.Builder
+		for c := 0; c < chartW && c < len(resampled); c++ {
+			ch := grid[r][c]
+			switch ch {
+			case '●':
+				row.WriteString(dotColor.Render("●"))
+			case '│':
+				row.WriteString(lineColor.Render("│"))
+			default:
+				// Grid dots at label rows for reference.
+				if r == 0 || r == height/2 || r == height-1 {
+					row.WriteString(gridColor.Render("·"))
+				} else {
+					row.WriteRune(' ')
+				}
+			}
+		}
+		sb.WriteString(row.String())
+		sb.WriteString("\n")
+	}
+
+	// X-axis.
+	sb.WriteString(strings.Repeat(" ", labelW))
+	sb.WriteString(axisColor.Render("└"))
+	axisLen := len(resampled)
+	if axisLen > chartW {
+		axisLen = chartW
+	}
+	sb.WriteString(axisColor.Render(strings.Repeat("─", axisLen)))
+
+	// Step labels.
+	sb.WriteString("  ")
+	sb.WriteString(axisColor.Render(fmt.Sprintf("step 1 → %d", len(values))))
+	sb.WriteString("\n")
 }
 
 // renderComparePanel renders the compare overlay panel.
@@ -1230,26 +1523,16 @@ func (m *jobsTUIModel) renderJobRow(sb *strings.Builder, j hub.Job, isSelected b
 	wide := m.width >= 100
 
 	if wide {
-		// Full layout: cursor(3) + sym(2) + id(13) + status badge(12) + name(20) + worker(14) + metric(20) + duration(10) + created(10)
+		// Full layout: cursor(3) + sym(2) + id(13) + name(24) + worker(14) + metric(16) + duration(10) + created(10) + badge(12)
 		const idColW = 13
-		const badgeFieldW = 12
-		const nameColW = 20
+		const nameColW = 24
 		const workerColW = 14
-		const metricColW = 20
+		const metricColW = 16
 		const durationColW = 10
 		const createdColW = 10
+		const badgeFieldW = 12
 
 		idPadded := lsPadToWidth(idDisplay, idColW)
-
-		// Status badge.
-		badge := j.Status
-		if bs, ok := jobStatusBadgeStyles[j.Status]; ok {
-			badge = bs.Render(j.Status)
-		}
-		badgeW := lipgloss.Width(badge)
-		if badgeW < badgeFieldW {
-			badge += strings.Repeat(" ", badgeFieldW-badgeW)
-		}
 
 		nameTrunc := name
 		if lsDispWidth(nameTrunc) > nameColW {
@@ -1278,26 +1561,36 @@ func (m *jobsTUIModel) renderJobRow(sb *strings.Builder, j hub.Job, isSelected b
 		created := formatLastJob(j.CreatedAt)
 		createdPadded := lsPadToWidth(created, createdColW)
 
+		// Status badge (right-aligned, last column).
+		badge := j.Status
+		if bs, ok := jobStatusBadgeStyles[j.Status]; ok {
+			badge = bs.Render(j.Status)
+		}
+		badgeW := lipgloss.Width(badge)
+		if badgeW < badgeFieldW {
+			badge = strings.Repeat(" ", badgeFieldW-badgeW) + badge
+		}
+
 		if isSelected {
 			sb.WriteString(styleSelected.Render(cursor))
 			sb.WriteString(sym + " ")
 			sb.WriteString(styleSelected.Render(idPadded + " "))
-			sb.WriteString(badge + " ")
 			sb.WriteString(styleSelected.Render(namePadded + " "))
 			sb.WriteString(styleDate.Render(workerPadded) + " ")
 			sb.WriteString(styleTagName.Render(metricPadded) + " ")
 			sb.WriteString(styleDate.Render(durationPadded) + " ")
-			sb.WriteString(styleDate.Render(createdPadded))
+			sb.WriteString(styleDate.Render(createdPadded) + " ")
+			sb.WriteString(badge)
 		} else {
 			sb.WriteString(cursor)
 			sb.WriteString(sym + " ")
 			sb.WriteString(styleFaint.Render(idPadded) + " ")
-			sb.WriteString(badge + " ")
 			sb.WriteString(styleTagName.Render(namePadded) + " ")
 			sb.WriteString(styleDate.Render(workerPadded) + " ")
 			sb.WriteString(styleTagName.Render(metricPadded) + " ")
 			sb.WriteString(styleDate.Render(durationPadded) + " ")
-			sb.WriteString(styleDate.Render(createdPadded))
+			sb.WriteString(styleDate.Render(createdPadded) + " ")
+			sb.WriteString(badge)
 		}
 	} else {
 		// Compact layout: cursor(3) + sym(2) + id(13) + name(20) + status(12)
