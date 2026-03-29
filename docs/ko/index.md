@@ -5,10 +5,6 @@ hero:
   name: "CQ"
   text: "진화하는 외장 두뇌"
   tagline: "당신을 배우고, 당신 대신 일하고, 세션마다 진화하는 AI."
-  actions:
-    - theme: alt
-      text: "\U0001F4CB GitHub"
-      link: https://github.com/PlayIdea-Lab/cq
 
 features:
   - icon: "\U0001F310"
@@ -29,26 +25,8 @@ features:
 
 ---
 
-<div class="install-block">
-  <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh</code>
-  <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('install-cmd').textContent).then(()=>{this.textContent='복사됨!';setTimeout(()=>this.textContent='복사',1500)})">복사</button>
+<div class="community-block">
+  <a href="https://github.com/PlayIdea-Lab/cq/discussions" target="_blank">💬 GitHub 토론</a>
+  &nbsp;·&nbsp;
+  <a href="/cq/ko/examples/first-task">📖 예제 보기</a>
 </div>
-
-## 동작 원리
-
-```
-    분산 → 연결 → 모방 → 진화
-     ↑                      │
-     └──────────────────────┘
-```
-
-```
- 당신이 말하면     CQ가 실행            결과
-─────────────────────────────────────────────────────────────
- "이런 거 만들자"   /pi  → 브레인스토밍 + 조사     idea.md
- "만들어"          /c4-plan → 태스크 + 리뷰       계획
- ⏳               /c4-run  → 병렬 Worker          코드 + 테스트
- ☕               /c4-finish → 다듬기 + 검증      완성
-```
-
-**[예제 보기 →](/cq/ko/examples/first-task)**

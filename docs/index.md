@@ -5,10 +5,6 @@ hero:
   name: "CQ"
   text: "The Evolving External Brain"
   tagline: "AI that learns you, works for you, and evolves with every session."
-  actions:
-    - theme: alt
-      text: "\U0001F4CB GitHub"
-      link: https://github.com/PlayIdea-Lab/cq
 
 features:
   - icon: "\U0001F310"
@@ -29,26 +25,8 @@ features:
 
 ---
 
-<div class="install-block">
-  <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh</code>
-  <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('install-cmd').textContent).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})">Copy</button>
+<div class="community-block">
+  <a href="https://github.com/PlayIdea-Lab/cq/discussions" target="_blank">💬 Join the Discussion</a>
+  &nbsp;·&nbsp;
+  <a href="/cq/examples/first-task">📖 Examples</a>
 </div>
-
-## How It Works
-
-```
-    Distribute → Connect → Mimic → Evolve
-         ↑                            │
-         └────────────────────────────┘
-```
-
-```
- You say              CQ does                    Result
-──────────────────────────────────────────────────────────
- "build this"         /pi  → brainstorm + research   idea.md
- "go"                 /c4-plan → tasks + review       plan
- ⏳                   /c4-run  → parallel workers     code + tests
- ☕                   /c4-finish → polish + verify    done
-```
-
-**[See Examples →](/cq/examples/first-task)**

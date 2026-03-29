@@ -40,3 +40,20 @@
 .install-block .copy-btn:hover {
   background: var(--vp-c-brand-2);
 }
+
+/* Community links */
+.community-block {
+  text-align: center;
+  margin: 16px auto 48px;
+  font-size: 15px;
+}
+
+.community-block a {
+  color: var(--vp-c-brand-1);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.community-block a:hover {
+  text-decoration: underline;
+}
