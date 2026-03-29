@@ -81,7 +81,7 @@ func defaultBoards() []boardItem {
 		{key: "a", label: "Add", desc: "스킬·에이전트 설치", screen: screenAdd},
 		{key: "d", label: "Doctor", desc: "설치 환경 진단", screen: screenDoctor},
 		{key: "g", label: "Config", desc: "설정 관리", screen: screenConfig},
-		{key: "w", label: "Workers", desc: "워커 모니터링", comingSoon: true},
+		{key: "w", label: "Workers", desc: "워커 모니터링", screen: screenWorkers},
 		{key: "m", label: "Metrics", desc: "실험 메트릭 추적", comingSoon: true},
 	}
 }

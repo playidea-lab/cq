@@ -19,6 +19,7 @@ const (
 	screenHelp      = "help"
 	screenLogin     = "login"
 	screenLaunch    = "launch"
+	screenWorkers   = "workers"
 	screenQuit      = "quit"
 )
 
@@ -29,6 +30,7 @@ var navMapping = map[string]string{
 	"g": screenConfig,
 	"d": screenDoctor,
 	"i": screenIdeas,
+	"w": screenWorkers,
 	"?": screenHelp,
 }
 
@@ -68,6 +70,7 @@ var navBarItems = []struct {
 	{"g", "Config", screenConfig},
 	{"d", "Doctor", screenDoctor},
 	{"i", "Ideas", screenIdeas},
+	{"w", "Workers", screenWorkers},
 	{"?", "Help", screenHelp},
 }
 

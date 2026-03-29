@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/changmin/c4-core/internal/config"
 	"github.com/changmin/c4-core/internal/hub"
 )
 
@@ -1235,4 +1236,25 @@ func runWorkersTUI(client *hub.Client, relayURL string) error {
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
+}
+
+// runWorkersNav runs the workers TUI from the dashboard navigation loop.
+// It returns the next screen name for the main loop.
+func runWorkersNav() string {
+	client, err := newHubClient()
+	if err != nil {
+		// Hub not configured — silently return to dashboard.
+		return screenDashboard
+	}
+	relayURL := ""
+	if cfgMgr, err2 := config.New(projectDir, config.CloudDefaults{
+		URL:     builtinSupabaseURL,
+		AnonKey: builtinSupabaseKey,
+	}); err2 == nil {
+		relayURL = cfgMgr.GetConfig().Relay.URL
+	}
+	if err := runWorkersTUI(client, relayURL); err != nil {
+		return screenDashboard
+	}
+	return screenDashboard
 }

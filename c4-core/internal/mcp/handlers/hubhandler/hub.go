@@ -13,4 +13,5 @@ func RegisterHubHandlers(reg *mcp.Registry, hubClient *hub.Client) {
 	registerHubDAGHandlers(reg, hubClient)
 	registerHubInfraHandlers(reg, hubClient)
 	registerCronHandlers(reg, hubClient)
+	registerHubWorkersUnified(reg, hubClient)
 }

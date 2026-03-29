@@ -372,6 +372,8 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 			nextScreen = runDoctorNav()
 		case screenIdeas:
 			nextScreen = runIdeasNav()
+		case screenWorkers:
+			nextScreen = runWorkersNav()
 		case screenDashboard:
 			nextScreen = runDashboardNav()
 		case screenHelp:
