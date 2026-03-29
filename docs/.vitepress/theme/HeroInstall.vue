@@ -91,6 +91,7 @@ function copy() {
   justify-content: center;
   gap: 12px;
   margin-top: 16px;
+  margin-bottom: 48px;
 }
 
 .hero-link-btn {
