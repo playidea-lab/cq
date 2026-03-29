@@ -74,3 +74,7 @@
 
 ### Key Finding: MCP Apps Widget System (2026-03-23)
 - [review_mcp_apps_widgets.md](review_mcp_apps_widgets.md) — 11 widgets, 2 dead (nodes-map, experiment-compare never wired), 4 untested handlers, XSS defense verified
+
+### Key Finding: Dashboard Board Menu + Help TUI (2026-03-29)
+- [review_dashboard_board_menu.md](review_dashboard_board_menu.md) — `s` key safe (not in navMapping), TestRenderNavBar missing screenHelp, comingSoon cursor UX issue, link-strip bug in parseChangelogBullets
+- **Pattern**: When adding a new screen constant, also add it to `TestRenderNavBar_HighlightsCurrent` screens slice.
