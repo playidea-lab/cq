@@ -80,8 +80,8 @@ func (w *WorkerComponent) Start(ctx context.Context) error {
 	w.started = true
 	w.mu.Unlock()
 
-	go w.heartbeatLoop(ctx)
-	go w.jobLoop(ctx)
+	safeGo("heartbeat", func() { w.heartbeatLoop(ctx) })
+	safeGo("jobLoop", func() { w.jobLoop(ctx) })
 	return nil
 }
 
@@ -176,7 +176,7 @@ func (w *WorkerComponent) jobLoop(ctx context.Context) {
 		// Start lease renewal for this job.
 		leaseCtx, leaseCancel := context.WithCancel(ctx)
 		if leaseID != "" {
-			go w.leaseRenewLoop(leaseCtx, leaseID, jobID)
+			safeGo("leaseRenew", func() { w.leaseRenewLoop(leaseCtx, leaseID, jobID) })
 		}
 
 		// Execute job.
