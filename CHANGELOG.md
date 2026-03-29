@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.46.0] - 2026-03-29
+
+### ✨ Features
+
+- **watchdog**: `cq serve --watchdog` — 자식 프로세스 감독, crash 시 exponential backoff 자동 재시작 (5s→5min cap)
+- **watchdog**: Relay 경유 원격 재시작 — `cq relay call <worker> restart`로 어디서든 워커 재시작
+- **worker**: `safeGo()` 헬퍼 — goroutine panic recovery + 자동 재시작 (heartbeatLoop/jobLoop/leaseRenewLoop)
+- **hub**: 429 adaptive backoff — Retry-After 헤더 존중, 최대 5분 backoff, 10회 재시도
+- **worker**: heartbeat self-healing circuit breaker — 5회 실패 시 경고, 10회 시 자가 재시작
+- **hub**: crash log remote upload — RingBuffer(500줄) + `hub_worker_logs` Supabase 테이블
+- **serve**: OS 서비스 등록 시 `--watchdog` 플래그 자동 포함
+- **cli**: `cq jobs` bubbletea TUI — Hub job 모니터링 대시보드
+- **cli**: Worker Connection Board TUI + `hub_workers_unified` 통합 API
+- **dashboard**: 커맨드 카탈로그 → board menu 전환
+
+### 🐛 Bug Fixes
+
+- **worker**: goroutine panic 시 전체 프로세스 crash 방지 (safeGo 래핑)
+- **docs**: GitHub Pages subpath 배포 base path 수정
+
+### 📚 Documentation
+
+- docs site 전면 리뉴얼 — EN landing, KO guide, quickstart 재작성
+- hero install button, version badge, skill names 정리
+
+### 🔧 Chores
+
+- specs, migrations, orchestrator 파일 정리
+
+---
+
 ## [v1.32.1] - 2026-03-25
 
 ### ✨ Features
