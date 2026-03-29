@@ -16,6 +16,7 @@ const (
 	screenDoctor    = "doctor"
 	screenIdeas     = "ideas"
 	screenDashboard = "dashboard"
+	screenHelp      = "help"
 	screenLogin     = "login"
 	screenLaunch    = "launch"
 	screenQuit      = "quit"
@@ -28,7 +29,7 @@ var navMapping = map[string]string{
 	"g": screenConfig,
 	"d": screenDoctor,
 	"i": screenIdeas,
-	"?": screenDashboard,
+	"?": screenHelp,
 }
 
 // handleGlobalKey checks if a key press is a global navigation key.
@@ -67,7 +68,7 @@ var navBarItems = []struct {
 	{"g", "Config", screenConfig},
 	{"d", "Doctor", screenDoctor},
 	{"i", "Ideas", screenIdeas},
-	{"?", "Help", screenDashboard},
+	{"?", "Help", screenHelp},
 }
 
 var (

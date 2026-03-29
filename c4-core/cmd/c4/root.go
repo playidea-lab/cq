@@ -374,6 +374,8 @@ func runCQStart(cmd *cobra.Command, args []string) error {
 			nextScreen = runIdeasNav()
 		case screenDashboard:
 			nextScreen = runDashboardNav()
+		case screenHelp:
+			nextScreen = runHelpNav()
 		case screenLaunch:
 			writeGlobalConfig("last_seen_version", version)
 			_ = launchTool(defaultTool, projectDir)

@@ -19,15 +19,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// --- Custom messages for dashboard actions ---
+// --- Custom messages for dashboard ---
+// tickMsg is declared in doctor_tui.go (shared across TUIs).
 
-type launchToolMsg struct{ tool string }
-type changeConfigMsg struct{}
-type openSessionsMsg struct{}
-type openDoctorMsg struct{}
-type openIdeasMsg struct{}
-type openCraftMsg struct{}
-type openConfigTUIMsg struct{}
+// boardItem represents a menu entry in the dashboard board list.
+type boardItem struct {
+	key        string // shortcut key (e.g. "t")
+	label      string // display name
+	desc       string // one-line description
+	screen     string // target screen name
+	comingSoon bool   // true = not yet implemented
+}
 
 // --- Dashboard TUI Model ---
 
@@ -55,11 +57,11 @@ type toolChangelog struct {
 type dashboardModel struct {
 	version     string
 	rows        []dashboardRow
-	components  []componentRow  // service health details
-	cmdRows     []cmdRow        // command reference rows
-	cmdScroll   int             // scroll offset for commands section
-	changelog   *toolChangelog  // tool changelog (nil if unavailable)
-	whatsNew    string          // "New in vX.Y.Z: ..." or ""
+	components  []componentRow // service health details
+	boards      []boardItem    // board menu items
+	selectedIdx int            // cursor position in boards
+	changelog   *toolChangelog // tool changelog (nil if unavailable)
+	whatsNew    string         // "New in vX.Y.Z: ..." or ""
 	defaultTool string
 	action      string // "launch", "status", "config", or "" (quit)
 	showDetail  bool   // toggle: show component details
@@ -71,78 +73,84 @@ type dashboardModel struct {
 	nextScreen string
 }
 
-// cmdRow is a single row in the commands reference (header or command).
-type cmdRow struct {
-	isHeader bool
-	category string // header label
-	name     string
-	desc     string
+// defaultBoards defines the board menu items displayed on the dashboard.
+func defaultBoards() []boardItem {
+	return []boardItem{
+		{key: "t", label: "Sessions", desc: "세션 목록 관리", screen: screenSessions},
+		{key: "i", label: "Ideas", desc: "아이디어 탐색·연결", screen: screenIdeas},
+		{key: "a", label: "Add", desc: "스킬·에이전트 설치", screen: screenAdd},
+		{key: "d", label: "Doctor", desc: "설치 환경 진단", screen: screenDoctor},
+		{key: "g", label: "Config", desc: "설정 관리", screen: screenConfig},
+		{key: "w", label: "Workers", desc: "워커 모니터링", comingSoon: true},
+		{key: "m", label: "Metrics", desc: "실험 메트릭 추적", comingSoon: true},
+	}
 }
 
-// buildCommandRows returns the full command reference with category headers.
-func buildCommandRows() []cmdRow {
-	return []cmdRow{
+// BuildCommandRows returns the full command reference with category headers.
+// Used by the Help TUI screen.
+func BuildCommandRows() []HelpCmdRow {
+	return []HelpCmdRow{
 		// CLI Commands
-		{isHeader: true, category: "CLI"},
-		{name: "cq claude", desc: "Claude Code 시작"},
-		{name: "cq cursor", desc: "Cursor 시작"},
-		{name: "cq codex", desc: "Codex CLI 시작"},
-		{name: "cq gemini", desc: "Gemini CLI 시작"},
-		{name: "cq -t <name>", desc: "이름 붙인 세션 시작/이어가기"},
-		{name: "cq sessions", desc: "세션 목록 관리"},
-		{name: "cq status", desc: "서비스 + 프로젝트 상태"},
-		{name: "cq doctor", desc: "설치 환경 진단"},
-		{name: "cq update", desc: "CQ 최신 버전 업데이트"},
-		{name: "cq stop", desc: "CQ 서비스 중지"},
-		{name: "cq add", desc: "스킬/에이전트/룰 설치 (프리셋 + GitHub)"},
-		{name: "cq add <url>", desc: "GitHub에서 원격 설치"},
-		{name: "cq list --mine", desc: "설치된 커스텀 도구 목록"},
-		{name: "cq remove <name>", desc: "설치된 도구 삭제"},
-		{name: "cq update <name>", desc: "원격 설치 도구 업데이트"},
+		{IsHeader: true, Category: "CLI"},
+		{Name: "cq claude", Desc: "Claude Code 시작"},
+		{Name: "cq cursor", Desc: "Cursor 시작"},
+		{Name: "cq codex", Desc: "Codex CLI 시작"},
+		{Name: "cq gemini", Desc: "Gemini CLI 시작"},
+		{Name: "cq -t <name>", Desc: "이름 붙인 세션 시작/이어가기"},
+		{Name: "cq sessions", Desc: "세션 목록 관리"},
+		{Name: "cq status", Desc: "서비스 + 프로젝트 상태"},
+		{Name: "cq doctor", Desc: "설치 환경 진단"},
+		{Name: "cq update", Desc: "CQ 최신 버전 업데이트"},
+		{Name: "cq stop", Desc: "CQ 서비스 중지"},
+		{Name: "cq add", Desc: "스킬/에이전트/룰 설치 (프리셋 + GitHub)"},
+		{Name: "cq add <url>", Desc: "GitHub에서 원격 설치"},
+		{Name: "cq list --mine", Desc: "설치된 커스텀 도구 목록"},
+		{Name: "cq remove <name>", Desc: "설치된 도구 삭제"},
+		{Name: "cq update <name>", Desc: "원격 설치 도구 업데이트"},
 
 		// Slash Commands (Skills)
-		{isHeader: true, category: "Slash Commands"},
-		{name: "/pi", desc: "아이디어 발산·수렴 (plan 이전 단계)"},
-		{name: "/plan", desc: "구조화된 구현 계획 생성"},
-		{name: "/run", desc: "워커 스폰, 태스크 병렬 실행"},
-		{name: "/finish", desc: "품질 수렴 + 빌드 + 커밋"},
-		{name: "/quick", desc: "태스크 1개 빠른 실행"},
-		{name: "/status", desc: "프로젝트 상태 + 태스크 그래프"},
-		{name: "/review", desc: "6축 코드 리뷰"},
-		{name: "/craft", desc: "대화형 스킬/에이전트/룰 생성"},
-		{name: "/help", desc: "스킬/에이전트/도구 레퍼런스"},
-		{name: "/attach", desc: "현재 세션에 이름 붙이기"},
-		{name: "/reboot", desc: "세션 재시작"},
-		{name: "/release", desc: "릴리스 노트 + 태그 생성"},
-		{name: "/simplify", desc: "변경 코드 품질·효율 점검"},
+		{IsHeader: true, Category: "Slash Commands"},
+		{Name: "/pi", Desc: "아이디어 발산·수렴 (plan 이전 단계)"},
+		{Name: "/plan", Desc: "구조화된 구현 계획 생성"},
+		{Name: "/run", Desc: "워커 스폰, 태스크 병렬 실행"},
+		{Name: "/finish", Desc: "품질 수렴 + 빌드 + 커밋"},
+		{Name: "/quick", Desc: "태스크 1개 빠른 실행"},
+		{Name: "/status", Desc: "프로젝트 상태 + 태스크 그래프"},
+		{Name: "/review", Desc: "6축 코드 리뷰"},
+		{Name: "/craft", Desc: "대화형 스킬/에이전트/룰 생성"},
+		{Name: "/help", Desc: "스킬/에이전트/도구 레퍼런스"},
+		{Name: "/attach", Desc: "현재 세션에 이름 붙이기"},
+		{Name: "/reboot", Desc: "세션 재시작"},
+		{Name: "/release", Desc: "릴리스 노트 + 태그 생성"},
+		{Name: "/simplify", Desc: "변경 코드 품질·효율 점검"},
 
 		// MCP Tools (Core)
-		{isHeader: true, category: "MCP Tools — 태스크"},
-		{name: "cq_status", desc: "프로젝트 상태 조회"},
-		{name: "cq_add_todo", desc: "태스크 추가"},
-		{name: "cq_get_task", desc: "워커에 태스크 할당"},
-		{name: "cq_submit", desc: "태스크 완료 제출"},
-		{name: "cq_claim / cq_report", desc: "Direct 모드 태스크 수행"},
-		{name: "cq_task_list", desc: "태스크 목록 필터링"},
-		{name: "cq_start", desc: "EXECUTE 상태로 전환"},
+		{IsHeader: true, Category: "MCP Tools — 태스크"},
+		{Name: "cq_status", Desc: "프로젝트 상태 조회"},
+		{Name: "cq_add_todo", Desc: "태스크 추가"},
+		{Name: "cq_get_task", Desc: "워커에 태스크 할당"},
+		{Name: "cq_submit", Desc: "태스크 완료 제출"},
+		{Name: "cq_claim / cq_report", Desc: "Direct 모드 태스크 수행"},
+		{Name: "cq_task_list", Desc: "태스크 목록 필터링"},
+		{Name: "cq_start", Desc: "EXECUTE 상태로 전환"},
 
 		// MCP Tools (Knowledge)
-		{isHeader: true, category: "MCP Tools — 지식"},
-		{name: "cq_knowledge_search", desc: "지식 베이스 검색"},
-		{name: "cq_knowledge_record", desc: "지식 문서 저장"},
-		{name: "cq_save_spec", desc: "EARS 스펙 저장"},
-		{name: "cq_save_design", desc: "설계 문서 저장"},
-		{name: "cq_lighthouse", desc: "API 계약 관리 (TDD)"},
+		{IsHeader: true, Category: "MCP Tools — 지식"},
+		{Name: "cq_knowledge_search", Desc: "지식 베이스 검색"},
+		{Name: "cq_knowledge_record", Desc: "지식 문서 저장"},
+		{Name: "cq_save_spec", Desc: "EARS 스펙 저장"},
+		{Name: "cq_save_design", Desc: "설계 문서 저장"},
+		{Name: "cq_lighthouse", Desc: "API 계약 관리 (TDD)"},
 
 		// MCP Tools (Infra)
-		{isHeader: true, category: "MCP Tools — 인프라"},
-		{name: "cq_read_file", desc: "파일 읽기"},
-		{name: "cq_find_file", desc: "파일 검색"},
-		{name: "cq_search_for_pattern", desc: "코드 패턴 검색"},
-		{name: "cq_run_validation", desc: "lint/test 실행"},
-		{name: "cq_notify", desc: "알림 전송 (텔레그램 등)"},
-		{name: "cq_relay_call", desc: "원격 서버 MCP 호출"},
-		{name: "cq_llm_call", desc: "LLM Gateway 호출"},
+		{IsHeader: true, Category: "MCP Tools — 인프라"},
+		{Name: "cq_read_file", Desc: "파일 읽기"},
+		{Name: "cq_find_file", Desc: "파일 검색"},
+		{Name: "cq_search_for_pattern", Desc: "코드 패턴 검색"},
+		{Name: "cq_run_validation", Desc: "lint/test 실행"},
+		{Name: "cq_notify", Desc: "알림 전송 (텔레그램 등)"},
+		{Name: "cq_relay_call", Desc: "원격 서버 MCP 호출"},
+		{Name: "cq_llm_call", Desc: "LLM Gateway 호출"},
 	}
 }
 
@@ -264,8 +272,8 @@ func newDashboardModel() dashboardModel {
 	// Tool changelog (cached, fetched on version change)
 	m.changelog = loadToolChangelog(m.defaultTool)
 
-	// Command reference
-	m.cmdRows = buildCommandRows()
+	// Board menu items
+	m.boards = defaultBoards()
 
 	return m
 }
@@ -292,97 +300,95 @@ func readProjectState() (name, phase string) {
 	return
 }
 
-// cmdVisibleLines returns how many command rows fit in the viewport.
-func (m dashboardModel) cmdVisibleLines() int {
-	// Estimate: total height minus logo(5) + gap(1) + version(1) + gap(1)
-	// + info rows + changelog(~7) + cmd header(1) + help bar(2) + margins
-	used := 10 + len(m.rows)
-	if m.showDetail {
-		used += len(m.components)
-	}
-	if m.changelog != nil && len(m.changelog.Items) > 0 {
-		used += 7
-	}
-	if m.whatsNew != "" {
-		used += 2
-	}
-	visible := m.height - used
-	if visible < 5 {
-		visible = 5
-	}
-	if visible > len(m.cmdRows) {
-		visible = len(m.cmdRows)
-	}
-	return visible
-}
+// tickInterval is the dashboard refresh interval.
+const tickInterval = 3 * time.Second
 
 func (m dashboardModel) Init() tea.Cmd {
-	return nil
+	return tea.Tick(tickInterval, func(t time.Time) tea.Msg {
+		return tickMsg{}
+	})
 }
 
 func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg.(type) {
-	case launchToolMsg:
-		m.action = "launch"
-		return m, tea.Quit
-	case changeConfigMsg:
-		m.action = "config"
-		return m, tea.Quit
-	case openSessionsMsg:
-		m.action = "sessions"
-		return m, tea.Quit
-	case openDoctorMsg:
-		m.action = "doctor"
-		return m, tea.Quit
-	case openIdeasMsg:
-		m.action = "ideas"
-		return m, tea.Quit
-	case openCraftMsg:
-		m.action = "craft"
-		return m, tea.Quit
-	case openConfigTUIMsg:
-		m.action = "configtui"
-		return m, tea.Quit
-	}
 	switch msg := msg.(type) {
+	case tickMsg:
+		// Refresh service health
+		components, err := fetchServeHealth(servePort)
+		if err == nil {
+			okCount := 0
+			m.components = nil
+			for name, h := range components {
+				if h.Status == "ok" {
+					okCount++
+				}
+				m.components = append(m.components, componentRow{
+					name:   name,
+					status: h.Status,
+					detail: h.Detail,
+				})
+			}
+			sort.Slice(m.components, func(i, j int) bool {
+				return m.components[i].name < m.components[j].name
+			})
+			// Update Service row
+			for i, row := range m.rows {
+				if row.label == "Service" {
+					badge := "active"
+					if okCount == len(components) {
+						badge = "running"
+					}
+					m.rows[i].value = fmt.Sprintf("%d/%d components", okCount, len(components))
+					m.rows[i].badge = badge
+					break
+				}
+			}
+		}
+		return m, tea.Tick(tickInterval, func(t time.Time) tea.Msg {
+			return tickMsg{}
+		})
+
 	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC:
+		// Global navigation keys
+		if next, ok := handleGlobalKey(msg, false); ok {
+			if next == screenQuit {
+				return m, tea.Quit
+			}
+			m.nextScreen = next
 			return m, tea.Quit
+		}
+
+		switch msg.Type {
 		case tea.KeyEnter:
-			return m, func() tea.Msg { return launchToolMsg{tool: m.defaultTool} }
+			if len(m.boards) > 0 {
+				b := m.boards[m.selectedIdx]
+				if b.comingSoon {
+					// Do nothing for coming soon items
+				} else {
+					m.nextScreen = b.screen
+					return m, tea.Quit
+				}
+			}
 		case tea.KeyUp:
-			if m.cmdScroll > 0 {
-				m.cmdScroll--
+			for idx := m.selectedIdx - 1; idx >= 0; idx-- {
+				if !m.boards[idx].comingSoon {
+					m.selectedIdx = idx
+					break
+				}
 			}
 		case tea.KeyDown:
-			maxScroll := len(m.cmdRows) - m.cmdVisibleLines()
-			if maxScroll < 0 {
-				maxScroll = 0
-			}
-			if m.cmdScroll < maxScroll {
-				m.cmdScroll++
+			for idx := m.selectedIdx + 1; idx < len(m.boards); idx++ {
+				if !m.boards[idx].comingSoon {
+					m.selectedIdx = idx
+					break
+				}
 			}
 		case tea.KeyRunes:
 			switch string(msg.Runes) {
-			case "q":
-				return m, tea.Quit
 			case "s":
 				m.showDetail = !m.showDetail
-			case "c":
-				return m, func() tea.Msg { return changeConfigMsg{} }
-			case "t":
-				return m, func() tea.Msg { return openSessionsMsg{} }
-			case "d":
-				return m, func() tea.Msg { return openDoctorMsg{} }
-			case "i":
-				return m, func() tea.Msg { return openIdeasMsg{} }
-			case "a":
-				return m, func() tea.Msg { return openCraftMsg{} }
-			case "g":
-				return m, func() tea.Msg { return openConfigTUIMsg{} }
 			}
 		}
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -413,7 +419,6 @@ func (m dashboardModel) View() string {
 			if !ok {
 				bStyle = statusBadgeStyles["active"]
 			}
-			// Pad badge text to fixed 11-char width (same as sessions)
 			badgeText := row.badge
 			padTotal := 11 - len(badgeText)
 			if padTotal > 0 {
@@ -484,69 +489,49 @@ func (m dashboardModel) View() string {
 		}
 	}
 
-	// Commands reference (scrollable)
+	// Board menu list
 	sb.WriteString("\n")
-	visible := m.cmdVisibleLines()
-	end := m.cmdScroll + visible
-	if end > len(m.cmdRows) {
-		end = len(m.cmdRows)
-	}
-
-	if m.cmdScroll > 0 {
-		sb.WriteString(styleFaint.Render("  ▲ more"))
-		sb.WriteString("\n")
-	}
-
-	for _, row := range m.cmdRows[m.cmdScroll:end] {
-		if row.isHeader {
-			header := fmt.Sprintf(" ── %s ", row.category)
-			hs2 := groupHeaderStyle("active")
-			sb.WriteString(hs2.Render(header))
-			hdrW := m.width
-			if hdrW < 74 {
-				hdrW = 74
-			}
-			rem := hdrW - lipgloss.Width(header)
-			if rem > 0 {
-				sb.WriteString(styleFaint.Render(strings.Repeat("─", rem)))
-			}
-			sb.WriteString("\n")
-		} else {
-			sb.WriteString(styleHelpKey.Render(fmt.Sprintf("  %-24s", row.name)))
-			sb.WriteString(styleFaint.Render(row.desc))
-			sb.WriteString("\n")
+	for i, b := range m.boards {
+		cursor := "  "
+		if i == m.selectedIdx {
+			cursor = "> "
 		}
-	}
 
-	if end < len(m.cmdRows) {
-		sb.WriteString(styleFaint.Render("  ▼ more"))
+		keyStyle := styleHelpKey
+		descStyle := styleFaint
+		suffix := ""
+		if b.comingSoon {
+			keyStyle = styleFaint
+			descStyle = styleFaint
+			suffix = " (coming soon)"
+		}
+
+		line := fmt.Sprintf("%s[%s] %-12s%s%s", cursor, b.key, b.label, b.desc, suffix)
+		if i == m.selectedIdx && !b.comingSoon {
+			sb.WriteString(styleTagName.Render(line))
+		} else if b.comingSoon {
+			sb.WriteString(descStyle.Render(line))
+		} else {
+			sb.WriteString(keyStyle.Render(fmt.Sprintf("%s[%s] %-12s", cursor, b.key, b.label)))
+			sb.WriteString(descStyle.Render(b.desc))
+		}
 		sb.WriteString("\n")
 	}
 
 	// Build help bar
 	var helpBar strings.Builder
 	helpBar.WriteString(" ")
-	helpBar.WriteString(helpEntry("Enter", m.defaultTool+" 시작"))
+	helpBar.WriteString(helpEntry("↑↓", "이동"))
 	helpBar.WriteString("  ")
-	helpBar.WriteString(helpEntry("↑↓", "스크롤"))
+	helpBar.WriteString(helpEntry("Enter", "진입"))
 	helpBar.WriteString("  ")
 	helpBar.WriteString(helpEntry("s", "상태"))
 	helpBar.WriteString("  ")
-	helpBar.WriteString(helpEntry("i", "ideas"))
-	helpBar.WriteString("  ")
-	helpBar.WriteString(helpEntry("a", "add"))
-	helpBar.WriteString("  ")
-	helpBar.WriteString(helpEntry("t", "sessions"))
-	helpBar.WriteString("  ")
-	helpBar.WriteString(helpEntry("d", "doctor"))
-	helpBar.WriteString("  ")
-	helpBar.WriteString(helpEntry("c", "도구"))
-	helpBar.WriteString("  ")
-	helpBar.WriteString(helpEntry("g", "config"))
+	helpBar.WriteString(helpEntry("?", "Help"))
 	helpBar.WriteString("  ")
 	helpBar.WriteString(helpEntry("q", "종료"))
 
-	// Pin help bar at bottom — same as cq sessions
+	// Pin help bar at bottom
 	content := sb.String()
 	contentLines := strings.Count(content, "\n")
 	if m.height > 0 {
@@ -579,25 +564,10 @@ func runDashboardNav() string {
 	if !ok {
 		return screenQuit
 	}
-	// Map dashboard actions to screen names.
-	switch dm.action {
-	case "sessions":
-		return screenSessions
-	case "doctor":
-		return screenDoctor
-	case "ideas":
-		return screenIdeas
-	case "craft":
-		return screenAdd
-	case "configtui":
-		return screenConfig
-	case "config":
-		return screenConfig
-	case "launch":
-		return screenLaunch
-	default:
-		return screenQuit
+	if dm.nextScreen != "" {
+		return dm.nextScreen
 	}
+	return screenQuit
 }
 
 // --- Tool changelog: fetch + cache ---

@@ -20,7 +20,7 @@ func TestHandleGlobalKey_Mapping(t *testing.T) {
 		{"g → config", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}}, false, screenConfig, true},
 		{"d → doctor", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}}, false, screenDoctor, true},
 		{"i → ideas", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}}, false, screenIdeas, true},
-		{"? → dashboard", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}, false, screenDashboard, true},
+		{"? → help", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}}, false, screenHelp, true},
 		{"q → quit", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}, false, screenQuit, true},
 		{"Esc → dashboard", tea.KeyMsg{Type: tea.KeyEsc}, false, screenDashboard, true},
 		{"Ctrl+C → quit", tea.KeyMsg{Type: tea.KeyCtrlC}, false, screenQuit, true},
@@ -52,7 +52,7 @@ func TestRenderNavBar_ContainsAllItems(t *testing.T) {
 
 func TestRenderNavBar_HighlightsCurrent(t *testing.T) {
 	// Just verify it doesn't panic and returns non-empty for various screens.
-	screens := []string{screenSessions, screenConfig, screenAdd, screenDoctor, screenIdeas, screenDashboard}
+	screens := []string{screenSessions, screenConfig, screenAdd, screenDoctor, screenIdeas, screenDashboard, screenHelp}
 	for _, s := range screens {
 		bar := renderNavBar(s, 80)
 		if bar == "" {
