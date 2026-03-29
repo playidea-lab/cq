@@ -1,0 +1,42 @@
+/* Center hero actions */
+.VPHero .actions {
+  justify-content: center !important;
+}
+
+/* Install command block */
+.install-block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: -20px auto 32px;
+  max-width: 680px;
+}
+
+.install-block code {
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace;
+  font-size: 14px;
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  padding: 10px 16px;
+  color: var(--vp-c-text-1);
+  user-select: all;
+  flex: 1;
+}
+
+.install-block .copy-btn {
+  font-size: 13px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-brand-1);
+  color: var(--vp-c-white);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.install-block .copy-btn:hover {
+  background: var(--vp-c-brand-2);
+}

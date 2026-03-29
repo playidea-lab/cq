@@ -6,11 +6,8 @@ hero:
   text: "진화하는 외장 두뇌"
   tagline: "당신을 배우고, 당신 대신 일하고, 세션마다 진화하는 AI."
   actions:
-    - theme: brand
-      text: "curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh"
-      link: /cq/ko/guide/install
     - theme: alt
-      text: GitHub
+      text: "\U0001F4CB GitHub"
       link: https://github.com/PlayIdea-Lab/cq
 
 features:
@@ -31,6 +28,11 @@ features:
     details: "나쁜 패턴은 도태. 좋은 패턴은 규칙으로 승격. 5번째 세션부터 AI가 물어보지 않아도 당신의 방식대로."
 
 ---
+
+<div class="install-block">
+  <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh</code>
+  <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('install-cmd').textContent).then(()=>{this.textContent='복사됨!';setTimeout(()=>this.textContent='복사',1500)})">복사</button>
+</div>
 
 ## 동작 원리
 

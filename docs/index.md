@@ -6,11 +6,8 @@ hero:
   text: "The Evolving External Brain"
   tagline: "AI that learns you, works for you, and evolves with every session."
   actions:
-    - theme: brand
-      text: "curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh"
-      link: /cq/guide/install
     - theme: alt
-      text: GitHub
+      text: "\U0001F4CB GitHub"
       link: https://github.com/PlayIdea-Lab/cq
 
 features:
@@ -31,6 +28,11 @@ features:
     details: "Bad patterns fade. Good patterns become rules. By session 5, your AI already knows how you work — without being told."
 
 ---
+
+<div class="install-block">
+  <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh</code>
+  <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('install-cmd').textContent).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})">Copy</button>
+</div>
 
 ## How It Works
 
