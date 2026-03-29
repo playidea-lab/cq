@@ -124,6 +124,7 @@ func (w *WorkerComponent) Health() ComponentHealth {
 func (w *WorkerComponent) heartbeatLoop(ctx context.Context) {
 	ticker := time.NewTicker(workerHeartbeat)
 	defer ticker.Stop()
+	consecutiveFails := 0
 	for {
 		select {
 		case <-ctx.Done():
@@ -136,7 +137,17 @@ func (w *WorkerComponent) heartbeatLoop(ctx context.Context) {
 			}
 			w.mu.Unlock()
 			if err := w.client.Heartbeat(status); err != nil {
+				consecutiveFails++
 				fmt.Fprintf(os.Stderr, "cq serve: hub worker heartbeat: %v\n", err)
+				if consecutiveFails >= 10 {
+					fmt.Fprintf(os.Stderr, "fatal: heartbeat failed %d consecutive times, exiting for watchdog restart\n", consecutiveFails)
+					os.Exit(1)
+				}
+				if consecutiveFails >= 5 {
+					fmt.Fprintf(os.Stderr, "heartbeat: %d consecutive failures, attempting JWT refresh\n", consecutiveFails)
+				}
+			} else {
+				consecutiveFails = 0
 			}
 		}
 	}
