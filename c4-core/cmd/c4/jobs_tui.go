@@ -152,6 +152,8 @@ type jobsTUIModel struct {
 	err          error
 	tickCount    int
 	hubClient    *hub.Client
+	confirmKill  bool   // true when showing kill confirmation prompt
+	killTargetID string // job ID pending kill confirmation
 }
 
 func newJobsTUIModel(client *hub.Client) jobsTUIModel {
@@ -241,6 +243,30 @@ func (m jobsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Kill confirmation mode input handling.
+		if m.confirmKill {
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.confirmKill = false
+				m.killTargetID = ""
+				return m, nil
+			case tea.KeyRunes:
+				ch := msg.String()
+				switch ch {
+				case "y", "Y":
+					jobID := m.killTargetID
+					m.confirmKill = false
+					m.killTargetID = ""
+					return m, cancelJobCmd(m.hubClient, jobID)
+				case "n", "N":
+					m.confirmKill = false
+					m.killTargetID = ""
+					return m, nil
+				}
+			}
+			return m, nil
+		}
+
 		// Search mode input handling.
 		if m.searchMode {
 			switch msg.Type {
@@ -304,8 +330,14 @@ func (m jobsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.searchMode = true
 				return m, nil
 			case "k":
-				if m.cursor > 0 {
-					m.cursor--
+				// Kill selected job (only if QUEUED or RUNNING).
+				visible := m.visibleJobs()
+				if m.cursor >= 0 && m.cursor < len(visible) {
+					j := visible[m.cursor]
+					if j.Status == "QUEUED" || j.Status == "RUNNING" {
+						m.confirmKill = true
+						m.killTargetID = j.GetID()
+					}
 				}
 				return m, nil
 			case "j":
@@ -320,12 +352,13 @@ func (m jobsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				return m, tea.Batch(fetchJobsCmd(m.hubClient, m.currentStatusFilter(), jobsLimit), jobsTickCmd())
 			case "x":
-				// Cancel selected job (only if QUEUED or RUNNING).
+				// Alias for kill — same as 'k'.
 				visible := m.visibleJobs()
 				if m.cursor >= 0 && m.cursor < len(visible) {
 					j := visible[m.cursor]
 					if j.Status == "QUEUED" || j.Status == "RUNNING" {
-						return m, cancelJobCmd(m.hubClient, j.GetID())
+						m.confirmKill = true
+						m.killTargetID = j.GetID()
 					}
 				}
 				return m, nil
@@ -499,18 +532,25 @@ func (m jobsTUIModel) View() string {
 
 	var helpBar strings.Builder
 	helpBar.WriteString(" ")
-	if m.searchMode {
+	if m.confirmKill {
+		killIDDisplay := m.killTargetID
+		if len(killIDDisplay) > 12 {
+			killIDDisplay = killIDDisplay[len(killIDDisplay)-12:]
+		}
+		helpBar.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true).Render(
+			fmt.Sprintf("Kill %s? [y/N]", killIDDisplay)))
+	} else if m.searchMode {
 		helpBar.WriteString(helpEntry("Enter", "confirm"))
 		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("Esc", "cancel"))
 	} else {
-		helpBar.WriteString(helpEntry("↑↓/jk", "navigate"))
+		helpBar.WriteString(helpEntry("↑↓/j", "navigate"))
 		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("Tab", "filter"))
 		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("/", "search"))
 		helpBar.WriteString("  ")
-		helpBar.WriteString(helpEntry("x", "cancel job"))
+		helpBar.WriteString(helpEntry("k", "kill job"))
 		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("r", "refresh"))
 		helpBar.WriteString("  ")

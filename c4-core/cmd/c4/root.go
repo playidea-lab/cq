@@ -75,7 +75,7 @@ Run 'cq claude' to launch Claude Code, 'cq cursor' for Cursor.`,
 			if cmd.Name() != "mcp" && cmd.Name() != "cq" &&
 				cmd.Name() != "claude" && cmd.Name() != "codex" && cmd.Name() != "cursor" &&
 				cmd.Name() != "serve" && cmd.Name() != "mail" && cmd.Name() != "completion" &&
-				cmd.Name() != "version" &&
+				cmd.Name() != "version" && cmd.Name() != "jobs" && cmd.Name() != "workers" &&
 				cmd.Name() != "__complete" && cmd.Name() != "__completeNoDesc" &&
 				cmd.Parent() != nil && cmd.Parent().Name() != "hub" && cmd.Parent().Name() != "serve" &&
 				cmd.Parent().Name() != "auth" && cmd.Parent().Name() != "mail" &&
