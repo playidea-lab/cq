@@ -62,6 +62,17 @@ Updates: re-run `cq claude` or `cq init` to refresh.
 
 ---
 
+## Hub 워커 (원격 GPU 실행)
+
+- `cq serve`에 worker 컴포넌트가 **내장**됨. `cq hub run` 별도 실행 불필요.
+- `cq serve --watchdog`로 실행 시 crash 자동 복구 (exponential backoff).
+- 단순 조회 (ls, nvidia-smi, tail 등) → `cq_relay_call(worker_id, tool, args)`로 직접 실행.
+- 긴 학습 job → `cq_hub_submit`으로 제출. **workdir는 워커 경로**로 지정 (로컬 경로 X).
+- job이 QUEUED 상태로 claim 안 되면 → workdir 경로가 워커에 존재하는지 확인.
+- 워커 목록: `cq_workers` / 워커 재시작: `cq relay call <worker> restart`
+
+---
+
 ## Agent Rules
 
 - **Surgical Changes**: 요청 관련 줄만 수정. 인접 코드 "개선" 금지.
