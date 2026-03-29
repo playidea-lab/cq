@@ -23,7 +23,9 @@ import (
 // the hub build tag is active and worker is enabled.
 // Checks: --worker flag, worker.enabled config, hub.auto_worker (legacy compat).
 func registerWorkerServeComponent(mgr *serve.Manager, cfg config.C4Config, hubClientAny any) {
-	enabled := serveWorker || cfg.Worker.Enabled || cfg.Hub.AutoWorker
+	// Worker is enabled by default when hub is enabled.
+	// Disable explicitly with worker.enabled: false in config.
+	enabled := serveWorker || cfg.Worker.Enabled || cfg.Hub.AutoWorker || cfg.Hub.Enabled
 	if !enabled {
 		return
 	}
