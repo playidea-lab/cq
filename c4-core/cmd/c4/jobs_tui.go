@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -139,6 +141,13 @@ type jobCancelledMsg struct {
 	err   error
 }
 
+type jobMetricsFetchedMsg struct {
+	jobID   string
+	metrics []hub.MetricEntry
+	total   int
+	err     error
+}
+
 // jobsTUIModel is the bubbletea model for the jobs TUI.
 type jobsTUIModel struct {
 	jobs         []hub.Job
@@ -154,6 +163,26 @@ type jobsTUIModel struct {
 	hubClient    *hub.Client
 	confirmKill  bool   // true when showing kill confirmation prompt
 	killTargetID string // job ID pending kill confirmation
+
+	// Detail mode: show all metrics for the selected job.
+	detailMode    bool
+	detailJobID   string
+	detailMetrics map[string][]float64 // metric name -> values by step
+	detailBest    map[string]float64   // metric name -> best value
+	detailLoading bool
+	detailErr     error
+
+	// Compare mode: overlay two jobs' primary_metric trajectories.
+	compareMode      bool
+	compareSelecting bool   // true when user is picking second job
+	compareJobA      string // first job ID (the one selected when 'c' was pressed)
+	compareJobB      string // second job ID
+	compareCursor    int    // cursor for selecting second job
+	compareMetricName string // primary_metric name (must match)
+	compareDataA     []float64
+	compareDataB     []float64
+	compareLoading   bool
+	compareErr       error
 }
 
 func newJobsTUIModel(client *hub.Client) jobsTUIModel {
@@ -198,6 +227,20 @@ func cancelJobCmd(client *hub.Client, jobID string) tea.Cmd {
 	}
 }
 
+func fetchJobMetricsCmd(client *hub.Client, jobID string) tea.Cmd {
+	return func() tea.Msg {
+		resp, err := client.GetMetrics(jobID, 500)
+		if err != nil {
+			return jobMetricsFetchedMsg{jobID: jobID, err: err}
+		}
+		return jobMetricsFetchedMsg{
+			jobID:   jobID,
+			metrics: resp.Metrics,
+			total:   resp.TotalSteps,
+		}
+	}
+}
+
 func (m jobsTUIModel) currentStatusFilter() string {
 	return jobStatusFilters[m.statusFilter]
 }
@@ -227,6 +270,46 @@ func (m jobsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			// Refresh after cancel.
 			return m, fetchJobsCmd(m.hubClient, m.currentStatusFilter(), jobsLimit)
+		}
+		return m, nil
+
+	case jobMetricsFetchedMsg:
+		if msg.err != nil {
+			if m.detailLoading && msg.jobID == m.detailJobID {
+				m.detailLoading = false
+				m.detailErr = msg.err
+			}
+			if m.compareLoading {
+				m.compareLoading = false
+				m.compareErr = msg.err
+			}
+			return m, nil
+		}
+		// Parse metric entries into per-metric float64 slices.
+		data, best := parseMetricEntries(msg.metrics)
+
+		if m.detailLoading && msg.jobID == m.detailJobID {
+			m.detailLoading = false
+			m.detailMetrics = data
+			m.detailBest = best
+			return m, nil
+		}
+		if m.compareLoading {
+			if msg.jobID == m.compareJobA && m.compareDataA == nil {
+				if vals, ok := data[m.compareMetricName]; ok {
+					m.compareDataA = vals
+				}
+			}
+			if msg.jobID == m.compareJobB && m.compareDataB == nil {
+				if vals, ok := data[m.compareMetricName]; ok {
+					m.compareDataB = vals
+				}
+			}
+			// Check if both loaded.
+			if m.compareDataA != nil && m.compareDataB != nil {
+				m.compareLoading = false
+			}
+			return m, nil
 		}
 		return m, nil
 
@@ -263,6 +346,26 @@ func (m jobsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.killTargetID = ""
 					return m, nil
 				}
+			}
+			return m, nil
+		}
+
+		// Compare selection mode: user picking second job.
+		if m.compareSelecting {
+			return m.updateCompareSelecting(msg)
+		}
+
+		// Detail or compare view: Esc exits.
+		if m.detailMode || m.compareMode {
+			if msg.Type == tea.KeyEsc {
+				m.detailMode = false
+				m.compareMode = false
+				m.compareSelecting = false
+				return m, nil
+			}
+			if msg.Type == tea.KeyEnter && m.detailMode {
+				m.detailMode = false
+				return m, nil
 			}
 			return m, nil
 		}
@@ -310,6 +413,25 @@ func (m jobsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(visible)-1 {
 				m.cursor++
 			}
+		case tea.KeyEnter:
+			// Toggle detail panel for selected job.
+			visible := m.visibleJobs()
+			if m.cursor >= 0 && m.cursor < len(visible) {
+				j := visible[m.cursor]
+				jobID := j.GetID()
+				if m.detailMode && m.detailJobID == jobID {
+					m.detailMode = false
+				} else {
+					m.detailMode = true
+					m.detailJobID = jobID
+					m.detailLoading = true
+					m.detailErr = nil
+					m.detailMetrics = nil
+					m.detailBest = nil
+					return m, fetchJobMetricsCmd(m.hubClient, jobID)
+				}
+			}
+			return m, nil
 		case tea.KeyEsc:
 			if m.query != "" {
 				m.query = ""
@@ -352,17 +474,94 @@ func (m jobsTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				return m, tea.Batch(fetchJobsCmd(m.hubClient, m.currentStatusFilter(), jobsLimit), jobsTickCmd())
 			case "x":
-				// Alias for kill — same as 'k'.
+				// Cancel selected job (only if QUEUED or RUNNING).
 				visible := m.visibleJobs()
 				if m.cursor >= 0 && m.cursor < len(visible) {
 					j := visible[m.cursor]
 					if j.Status == "QUEUED" || j.Status == "RUNNING" {
-						m.confirmKill = true
-						m.killTargetID = j.GetID()
+						return m, cancelJobCmd(m.hubClient, j.GetID())
+					}
+				}
+				return m, nil
+			case "c":
+				// Enter compare mode: select current job as A, then pick B.
+				visible := m.visibleJobs()
+				if len(visible) < 2 {
+					return m, nil
+				}
+				if m.cursor >= 0 && m.cursor < len(visible) {
+					j := visible[m.cursor]
+					m.compareJobA = j.GetID()
+					m.compareMetricName = j.PrimaryMetric
+					m.compareSelecting = true
+					m.compareCursor = 0
+					if m.compareCursor == m.cursor && len(visible) > 1 {
+						m.compareCursor = 1
 					}
 				}
 				return m, nil
 			}
+		}
+	}
+	return m, nil
+}
+
+// updateCompareSelecting handles key input while selecting the second job for compare.
+func (m jobsTUIModel) updateCompareSelecting(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	visible := m.visibleJobs()
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.compareSelecting = false
+		m.compareJobA = ""
+		return m, nil
+	case tea.KeyUp:
+		if m.compareCursor > 0 {
+			m.compareCursor--
+		}
+	case tea.KeyDown:
+		if m.compareCursor < len(visible)-1 {
+			m.compareCursor++
+		}
+	case tea.KeyRunes:
+		ch := msg.String()
+		if ch == "j" && m.compareCursor < len(visible)-1 {
+			m.compareCursor++
+		} else if ch == "k" && m.compareCursor > 0 {
+			m.compareCursor--
+		}
+	case tea.KeyEnter:
+		if m.compareCursor >= 0 && m.compareCursor < len(visible) {
+			jB := visible[m.compareCursor]
+			if jB.GetID() == m.compareJobA {
+				// Same job selected — ignore.
+				return m, nil
+			}
+			// Check primary_metric compatibility.
+			if jB.PrimaryMetric != m.compareMetricName {
+				m.compareSelecting = false
+				m.compareMode = true
+				m.compareJobB = jB.GetID()
+				m.compareErr = fmt.Errorf("비교 불가: primary_metric이 다릅니다 (%s vs %s)", m.compareMetricName, jB.PrimaryMetric)
+				return m, nil
+			}
+			if m.compareMetricName == "" {
+				m.compareSelecting = false
+				m.compareMode = true
+				m.compareJobB = jB.GetID()
+				m.compareErr = fmt.Errorf("비교 불가: primary_metric이 설정되지 않았습니다")
+				return m, nil
+			}
+			m.compareSelecting = false
+			m.compareMode = true
+			m.compareJobB = jB.GetID()
+			m.compareLoading = true
+			m.compareErr = nil
+			m.compareDataA = nil
+			m.compareDataB = nil
+			return m, tea.Batch(
+				fetchJobMetricsCmd(m.hubClient, m.compareJobA),
+				fetchJobMetricsCmd(m.hubClient, m.compareJobB),
+			)
 		}
 	}
 	return m, nil
@@ -454,6 +653,47 @@ func formatBestMetric(j hub.Job) string {
 	return val + dir
 }
 
+// parseMetricEntries converts MetricEntry slices into per-metric float64 slices and best values.
+func parseMetricEntries(entries []hub.MetricEntry) (data map[string][]float64, best map[string]float64) {
+	data = make(map[string][]float64)
+	best = make(map[string]float64)
+
+	// Sort by step to guarantee order.
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Step < entries[j].Step
+	})
+
+	for _, e := range entries {
+		for k, v := range e.Metrics {
+			var fv float64
+			switch val := v.(type) {
+			case float64:
+				fv = val
+			case json.Number:
+				fv, _ = val.Float64()
+			default:
+				continue
+			}
+			data[k] = append(data[k], fv)
+
+			if _, ok := best[k]; !ok {
+				best[k] = fv
+			} else {
+				if metricLowerIsBetter(k) {
+					if fv < best[k] {
+						best[k] = fv
+					}
+				} else {
+					if fv > best[k] {
+						best[k] = fv
+					}
+				}
+			}
+		}
+	}
+	return data, best
+}
+
 func (m jobsTUIModel) View() string {
 	var sb strings.Builder
 
@@ -467,6 +707,18 @@ func (m jobsTUIModel) View() string {
 	} else {
 		visible := m.visibleJobs()
 		sb.WriteString(styleCount.Render(fmt.Sprintf("%d jobs", len(visible))))
+	}
+
+	// Mode indicator.
+	if m.compareSelecting {
+		sb.WriteString("  ")
+		sb.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("5")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1).Render("COMPARE: select 2nd job"))
+	} else if m.compareMode {
+		sb.WriteString("  ")
+		sb.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("5")).Foreground(lipgloss.Color("15")).Bold(true).Padding(0, 1).Render("COMPARE"))
+	} else if m.detailMode {
+		sb.WriteString("  ")
+		sb.WriteString(lipgloss.NewStyle().Background(lipgloss.Color("12")).Foreground(lipgloss.Color("0")).Bold(true).Padding(0, 1).Render("DETAIL"))
 	}
 
 	// Status filter indicator.
@@ -508,8 +760,22 @@ func (m jobsTUIModel) View() string {
 			sb.WriteString(styleFaint.Render("  No jobs found."))
 			sb.WriteString("\n")
 		} else {
-			m.renderJobRows(&sb, visible)
+			if m.compareSelecting {
+				m.renderJobRowsCompareSelect(&sb, visible)
+			} else {
+				m.renderJobRows(&sb, visible)
+			}
 		}
+	}
+
+	// Detail panel below the list.
+	if m.detailMode && !m.compareSelecting {
+		m.renderDetailPanel(&sb)
+	}
+
+	// Compare panel below the list.
+	if m.compareMode && !m.compareSelecting {
+		m.renderComparePanel(&sb)
 	}
 
 	// Fill remaining space to pin help bar at bottom.
@@ -532,25 +798,34 @@ func (m jobsTUIModel) View() string {
 
 	var helpBar strings.Builder
 	helpBar.WriteString(" ")
-	if m.confirmKill {
-		killIDDisplay := m.killTargetID
-		if len(killIDDisplay) > 12 {
-			killIDDisplay = killIDDisplay[len(killIDDisplay)-12:]
-		}
-		helpBar.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true).Render(
-			fmt.Sprintf("Kill %s? [y/N]", killIDDisplay)))
-	} else if m.searchMode {
+	if m.searchMode {
 		helpBar.WriteString(helpEntry("Enter", "confirm"))
 		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("Esc", "cancel"))
+	} else if m.compareSelecting {
+		helpBar.WriteString(helpEntry("↑↓/jk", "navigate"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Enter", "select"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Esc", "cancel"))
+	} else if m.detailMode || m.compareMode {
+		helpBar.WriteString(helpEntry("Esc", "close"))
+		if m.detailMode {
+			helpBar.WriteString("  ")
+			helpBar.WriteString(helpEntry("Enter", "close"))
+		}
 	} else {
-		helpBar.WriteString(helpEntry("↑↓/j", "navigate"))
+		helpBar.WriteString(helpEntry("↑↓/jk", "navigate"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("Enter", "detail"))
+		helpBar.WriteString("  ")
+		helpBar.WriteString(helpEntry("c", "compare"))
 		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("Tab", "filter"))
 		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("/", "search"))
 		helpBar.WriteString("  ")
-		helpBar.WriteString(helpEntry("k", "kill job"))
+		helpBar.WriteString(helpEntry("x", "cancel job"))
 		helpBar.WriteString("  ")
 		helpBar.WriteString(helpEntry("r", "refresh"))
 		helpBar.WriteString("  ")
@@ -571,10 +846,17 @@ func (m *jobsTUIModel) renderJobRows(sb *strings.Builder, visible []hub.Job) {
 		c = len(visible) - 1
 	}
 
-	// Determine how many rows we can show (reserve 8 lines for header/footer).
+	// Reserve extra lines for detail/compare panels.
+	reserveLines := 8
+	if m.detailMode {
+		reserveLines += 12
+	}
+	if m.compareMode {
+		reserveLines += 14
+	}
 	maxRows := len(visible)
 	if m.height > 0 {
-		available := m.height - 8
+		available := m.height - reserveLines
 		if available < 5 {
 			available = 5
 		}
@@ -603,6 +885,321 @@ func (m *jobsTUIModel) renderJobRows(sb *strings.Builder, visible []hub.Job) {
 	if len(visible) > maxRows {
 		sb.WriteString(styleFaint.Render(fmt.Sprintf("  ... %d more jobs (scroll to see)\n", len(visible)-maxRows)))
 	}
+}
+
+// renderJobRowsCompareSelect renders job list with compare selection cursor.
+func (m *jobsTUIModel) renderJobRowsCompareSelect(sb *strings.Builder, visible []hub.Job) {
+	c := m.compareCursor
+	if c < 0 {
+		c = 0
+	}
+	if c >= len(visible) {
+		c = len(visible) - 1
+	}
+
+	maxRows := len(visible)
+	if m.height > 0 {
+		available := m.height - 8
+		if available < 5 {
+			available = 5
+		}
+		if maxRows > available {
+			maxRows = available
+		}
+	}
+
+	start := 0
+	if c >= maxRows {
+		start = c - maxRows + 1
+	}
+	end := start + maxRows
+	if end > len(visible) {
+		end = len(visible)
+	}
+
+	compareAStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
+
+	for i := start; i < end; i++ {
+		j := visible[i]
+		isJobA := j.GetID() == m.compareJobA
+		isCursorHere := i == c
+
+		if isJobA {
+			sb.WriteString(compareAStyle.Render(" A "))
+		} else if isCursorHere {
+			sb.WriteString(" ▸ ")
+		} else {
+			sb.WriteString("   ")
+		}
+
+		sym := jobStatusSymbol(j.Status)
+		id := j.GetID()
+		idDisplay := id
+		if len(idDisplay) > 12 {
+			idDisplay = "…" + idDisplay[len(idDisplay)-11:]
+		}
+		name := j.Name
+		if name == "" {
+			name = j.Command
+		}
+		if name == "" {
+			name = "-"
+		}
+		nameTrunc := name
+		if lsDispWidth(nameTrunc) > 20 {
+			nameTrunc = lsTruncateToWidth(nameTrunc, 19) + "…"
+		}
+		metric := formatBestMetric(j)
+
+		if isCursorHere {
+			sb.WriteString(sym + " ")
+			sb.WriteString(styleSelected.Render(lsPadToWidth(idDisplay, 13) + " " + lsPadToWidth(nameTrunc, 20) + " "))
+			sb.WriteString(styleTagName.Render(metric))
+		} else if isJobA {
+			sb.WriteString(sym + " ")
+			sb.WriteString(compareAStyle.Render(lsPadToWidth(idDisplay, 13) + " " + lsPadToWidth(nameTrunc, 20) + " "))
+			sb.WriteString(styleTagName.Render(metric))
+		} else {
+			sb.WriteString(sym + " ")
+			sb.WriteString(styleFaint.Render(lsPadToWidth(idDisplay, 13)) + " ")
+			sb.WriteString(styleTagName.Render(lsPadToWidth(nameTrunc, 20)) + " ")
+			sb.WriteString(styleFaint.Render(metric))
+		}
+		sb.WriteString("\n")
+	}
+
+	if len(visible) > maxRows {
+		sb.WriteString(styleFaint.Render(fmt.Sprintf("  ... %d more jobs\n", len(visible)-maxRows)))
+	}
+}
+
+// renderDetailPanel renders the detail panel showing all metrics for the selected job.
+func (m *jobsTUIModel) renderDetailPanel(sb *strings.Builder) {
+	sb.WriteString("\n")
+	borderW := m.width
+	if borderW <= 0 {
+		borderW = 74
+	}
+	sb.WriteString(styleFaint.Render(strings.Repeat("─", borderW)))
+	sb.WriteString("\n")
+
+	title := lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true).Render("detail")
+	idDisplay := m.detailJobID
+	if len(idDisplay) > 16 {
+		idDisplay = "…" + idDisplay[len(idDisplay)-15:]
+	}
+	sb.WriteString("  " + title + " " + styleFaint.Render(idDisplay) + "\n")
+
+	if m.detailLoading {
+		spinner := spinnerFrames[m.tickCount%len(spinnerFrames)]
+		sb.WriteString(fmt.Sprintf("  %s loading metrics...\n", spinner))
+		return
+	}
+	if m.detailErr != nil {
+		sb.WriteString(fmt.Sprintf("  error: %s\n", m.detailErr.Error()))
+		return
+	}
+	if len(m.detailMetrics) == 0 {
+		sb.WriteString(styleFaint.Render("  No metrics recorded for this job."))
+		sb.WriteString("\n")
+		return
+	}
+
+	names := sortedMetricNames(m.detailMetrics)
+
+	sparkW := 20
+	if m.width > 60 {
+		sparkW = m.width/4 - 2
+	}
+	if sparkW < 10 {
+		sparkW = 10
+	}
+
+	for _, name := range names {
+		vals := m.detailMetrics[name]
+		if len(vals) == 0 {
+			continue
+		}
+		spark := renderSparkline(vals, sparkW)
+		latest := vals[len(vals)-1]
+		bestVal := m.detailBest[name]
+		dir := "↑"
+		if metricLowerIsBetter(name) {
+			dir = "↓"
+		}
+		line := fmt.Sprintf("  %-14s %s  latest: %.4f  %s best: %.4f  (%d pts)",
+			name, spark, latest, dir, bestVal, len(vals))
+		sb.WriteString(styleSummary.Render(line))
+		sb.WriteString("\n")
+	}
+}
+
+// renderComparePanel renders the compare overlay panel.
+func (m *jobsTUIModel) renderComparePanel(sb *strings.Builder) {
+	sb.WriteString("\n")
+	borderW := m.width
+	if borderW <= 0 {
+		borderW = 74
+	}
+	sb.WriteString(styleFaint.Render(strings.Repeat("─", borderW)))
+	sb.WriteString("\n")
+
+	title := lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Bold(true).Render("compare")
+	sb.WriteString("  " + title + "  ")
+
+	idA := m.compareJobA
+	if len(idA) > 12 {
+		idA = "…" + idA[len(idA)-11:]
+	}
+	idB := m.compareJobB
+	if len(idB) > 12 {
+		idB = "…" + idB[len(idB)-11:]
+	}
+	sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(idA))
+	sb.WriteString(styleFaint.Render(" vs "))
+	sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(idB))
+	sb.WriteString("  " + styleFaint.Render(m.compareMetricName))
+	sb.WriteString("\n")
+
+	if m.compareErr != nil {
+		sb.WriteString(fmt.Sprintf("  %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render(m.compareErr.Error())))
+		return
+	}
+	if m.compareLoading {
+		spinner := spinnerFrames[m.tickCount%len(spinnerFrames)]
+		sb.WriteString(fmt.Sprintf("  %s loading metrics...\n", spinner))
+		return
+	}
+	if m.compareDataA == nil || m.compareDataB == nil {
+		sb.WriteString(styleFaint.Render("  No metric data available."))
+		sb.WriteString("\n")
+		return
+	}
+
+	// Render step-aligned overlay chart.
+	chartW := m.width - 14
+	if chartW < 20 {
+		chartW = 20
+	}
+	chartH := 8
+
+	sb.WriteString(renderCompareChart(m.compareDataA, m.compareDataB, chartW, chartH))
+
+	// Legend.
+	sb.WriteString("  ")
+	sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render("●"))
+	sb.WriteString(" " + idA + "  ")
+	sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("○"))
+	sb.WriteString(" " + idB)
+	sb.WriteString("\n")
+}
+
+// renderCompareChart renders a step-aligned ASCII chart overlaying two metric series.
+func renderCompareChart(dataA, dataB []float64, chartW, chartH int) string {
+	if len(dataA) == 0 && len(dataB) == 0 {
+		return ""
+	}
+	if chartW < 4 || chartH < 2 {
+		return ""
+	}
+
+	// Find global min/max across both series.
+	globalMin := math.MaxFloat64
+	globalMax := -math.MaxFloat64
+	for _, v := range dataA {
+		if v < globalMin {
+			globalMin = v
+		}
+		if v > globalMax {
+			globalMax = v
+		}
+	}
+	for _, v := range dataB {
+		if v < globalMin {
+			globalMin = v
+		}
+		if v > globalMax {
+			globalMax = v
+		}
+	}
+	if globalMin == globalMax {
+		globalMax = globalMin + 1
+	}
+
+	// Max steps for x-axis alignment.
+	maxSteps := len(dataA)
+	if len(dataB) > maxSteps {
+		maxSteps = len(dataB)
+	}
+
+	mapY := func(v float64) int {
+		y := int((v - globalMin) / (globalMax - globalMin) * float64(chartH-1))
+		if y < 0 {
+			y = 0
+		}
+		if y >= chartH {
+			y = chartH - 1
+		}
+		return y
+	}
+
+	mapX := func(step, total int) int {
+		if total <= 1 {
+			return 0
+		}
+		x := step * (chartW - 1) / (total - 1)
+		if x >= chartW {
+			x = chartW - 1
+		}
+		return x
+	}
+
+	// Build grid: [row][col] -> 0=empty, 1=A(green), 2=B(gray), 3=both.
+	grid := make([][]int, chartH)
+	for r := range grid {
+		grid[r] = make([]int, chartW)
+	}
+
+	for i, v := range dataA {
+		x := mapX(i, maxSteps)
+		y := mapY(v)
+		grid[y][x] |= 1
+	}
+	for i, v := range dataB {
+		x := mapX(i, maxSteps)
+		y := mapY(v)
+		grid[y][x] |= 2
+	}
+
+	greenStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	grayStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	bothStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+
+	var sb strings.Builder
+	labelW := 10
+
+	for row := chartH - 1; row >= 0; row-- {
+		val := globalMin + (globalMax-globalMin)*float64(row)/float64(chartH-1)
+		label := fmt.Sprintf("%*.4f", labelW, val)
+		sb.WriteString(styleFaint.Render(label))
+		sb.WriteString(" ")
+
+		for col := 0; col < chartW; col++ {
+			switch grid[row][col] {
+			case 0:
+				sb.WriteString(" ")
+			case 1:
+				sb.WriteString(greenStyle.Render("●"))
+			case 2:
+				sb.WriteString(grayStyle.Render("○"))
+			case 3:
+				sb.WriteString(bothStyle.Render("◉"))
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
 }
 
 // renderJobRow renders a single job row.

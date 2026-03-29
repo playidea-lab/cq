@@ -18,12 +18,14 @@ import (
 	"github.com/changmin/c4-core/internal/secrets"
 	"github.com/changmin/c4-core/internal/serve"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
-	servePort   int
-	servePIDDir string
-	serveWorker bool // --worker: auto-register as Hub worker
+	servePort     int
+	servePIDDir   string
+	serveWorker   bool // --worker: auto-register as Hub worker
+	serveWatchdog bool // --watchdog: supervise child cq serve, restart on crash
 )
 
 var serveCmd = &cobra.Command{
@@ -59,6 +61,7 @@ func init() {
 	serveCmd.Flags().IntVar(&servePort, "port", 4140, "health endpoint port")
 	serveCmd.Flags().StringVar(&servePIDDir, "pid-dir", "", "PID file directory (default: ~/.c4/serve)")
 	serveCmd.Flags().BoolVar(&serveWorker, "worker", false, "auto-register as Hub worker (claims and executes jobs)")
+	serveCmd.Flags().BoolVar(&serveWatchdog, "watchdog", false, "supervise child cq serve process; restart on crash with exponential backoff")
 
 	serveStopCmd.Flags().StringVar(&servePIDDir, "pid-dir", "", "PID file directory (default: ~/.c4/serve)")
 
@@ -81,6 +84,14 @@ func resolveServePIDDir() (string, error) {
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
+	if serveWatchdog {
+		// Build child args: same binary, "serve" + all flags except --watchdog.
+		childArgs := buildWatchdogChildArgs(cmd)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		return runWatchdog(ctx, nil, childArgs)
+	}
+
 	pidDir, err := resolveServePIDDir()
 	if err != nil {
 		return err
@@ -289,6 +300,19 @@ func tryStopOSService(stopFn func() error) error {
 		return nil
 	}
 	return err
+}
+
+// buildWatchdogChildArgs constructs the argument list for the child "cq serve" process.
+// It includes "serve" plus all explicitly-set flags on cmd, omitting --watchdog itself.
+func buildWatchdogChildArgs(cmd *cobra.Command) []string {
+	childArgs := []string{"serve"}
+	cmd.Flags().Visit(func(f *pflag.Flag) {
+		if f.Name == "watchdog" {
+			return // do not pass --watchdog to child
+		}
+		childArgs = append(childArgs, "--"+f.Name+"="+f.Value.String())
+	})
+	return childArgs
 }
 
 // acquireServePIDLock writes the current PID to a file and checks for existing process.
