@@ -5,6 +5,13 @@ hero:
   name: "CQ"
   text: "The Evolving External Brain"
   tagline: "AI that learns you, works for you, and evolves with every session."
+  actions:
+    - theme: brand
+      text: Quick Start
+      link: /guide/quickstart
+    - theme: alt
+      text: Installation
+      link: /guide/install
 
 features:
   - icon: "\U0001F310"

@@ -5,6 +5,13 @@ hero:
   name: "CQ"
   text: "진화하는 외장 두뇌"
   tagline: "당신을 배우고, 당신 대신 일하고, 세션마다 진화하는 AI."
+  actions:
+    - theme: brand
+      text: 빠른 시작
+      link: /ko/guide/quickstart
+    - theme: alt
+      text: 설치 가이드
+      link: /ko/guide/install
 
 features:
   - icon: "\U0001F310"
