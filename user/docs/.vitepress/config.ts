@@ -7,14 +7,8 @@ export default defineConfig({
 
   ignoreDeadLinks: true,
 
-  vue: {
-    template: {
-      compilerOptions: {
-        // Treat all tags with lowercase letters as custom elements
-        // to prevent VitePress from parsing <tag>, <id>, etc. in markdown
-        isCustomElement: (tag) => /^[a-z]/.test(tag),
-      },
-    },
+  markdown: {
+    attrs: { disable: true },
   },
 
   srcExclude: [
