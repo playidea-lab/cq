@@ -7,107 +7,32 @@
 
 ---
 
-## Cloud-First Architecture (v1.37+)
-
-> connected/full tier에서 CQ의 "두뇌"는 클라우드, 로컬은 "손발"만 담당.
-
-```
-┌──────────────┐          ┌──────────────────────┐
-│ 로컬 (Thin    │   JWT    │ 클라우드 (Supabase)    │
-│  Agent)      │◄────────►│                       │
-│              │          │ 두뇌:                  │
-│ 손발:         │          │  ├ Tasks (Postgres)    │
-│  ├ 파일 I/O  │          │  ├ Knowledge (pgvector)│
-│  ├ Git       │          │  ├ Drive (Storage)     │
-│  ├ 빌드/테스트│          │  ├ LLM Proxy (Edge Fn) │
-│  └ LSP       │          │  ├ Hub (distributed)   │
-│              │          │  └ Sessions            │
-│ 캐시:         │          │                       │
-│  └ SQLite    │          └──────────────────────┘
-│              │   WSS     ┌──────────────────────┐
-│ 서비스 (cq):  │◄────────►│ Relay (Fly.io)        │
-│  ├ Relay     │          │  └ NAT 관통 MCP 접근   │
-│  ├ EventBus  │          └──────────────────────┘
-│  └ Token갱신 │
-└──────────────┘          ┌──────────────────────┐
-                          │ External Brain (CF)   │
-Any AI (ChatGPT, ──MCP──►│  ├ OAuth 2.1 proxy    │
- Claude, Gemini)          │  ├ Knowledge R/W      │
-                          │  └ Session summary    │
-                          └──────────────────────┘
-```
-
-| 모드 | 데이터 SSOT | LLM | 설정 |
-|------|-----------|-----|------|
-| **solo** | 로컬 SQLite | 사용자 API 키 | config.yaml 필요 |
-| **connected** | Supabase (cloud-primary) | PI Lab LLM Proxy | `cq` (로그인+서비스 자동) |
-| **full** | Supabase (cloud-primary) | PI Lab LLM Proxy | `cq` (로그인+서비스 자동) |
-
-- `cq` → 로그인 + `cloud.mode: cloud-primary` + relay + serve 자동 설정
-- Cloud 실패 시 SQLite fallback (읽기)
-- ~70개 도구가 클라우드, ~48개 도구가 로컬 필수 (파일/Git/빌드)
-- External Brain: ChatGPT/Claude/Gemini에서 OAuth MCP로 직접 접근 (로컬 설치 불필요)
-
----
-
 ## Go Core (c4-core/) — Primary MCP Server
 
-> Go 기반 MCP 서버. 169 도구 (118 base + 26 Hub + 25 conditional). 44 패키지.
+> Go 기반 MCP 서버. ~45.0K LOC(src) + ~38.7K LOC(test). ~1,950개 테스트, 37 패키지.
 
 ### 아키텍처
 ```
-Claude Code → Go MCP Server (stdio, 169 tools, tool tiering: 40 core + 129 extended)
-                ├→ Go native (28): 상태/설정, 태스크, 파일, git, validation, config, health
+Claude Code → Go MCP Server (stdio, 118 base + 26 Hub = 144 tools)
+                ├→ Go native (28): 상태/설정, 태스크, 파일, git, validation, config, health, eventbus rules
                 ├→ Go + SQLite (13): spec, design, checkpoint, artifact, lighthouse
-                ├→ Soul/Persona/Twin (10): soul_evolve, soul_check, persona_learn, ...
+                ├→ Soul/Persona/Twin (10): soul_evolve, soul_check, soul_sync, persona_learn, persona_analyze, persona_diff, whoami, reflect
                 ├→ LLM Gateway (3): llm_call, llm_providers, llm_costs
-                ├→ CDP Runner + WebMCP (5): cdp_run, webmcp_discover, webmcp_call, ...
-                ├→ WebContent (1): web_fetch (content negotiation, SSRF, HTML→MD)
-                ├→ Drive (6): upload, download, list, delete, info, mkdir + TUS resumable
-                ├→ File Index (2): fileindex_search, fileindex_status (cross-device)
-                ├→ Session (3): session_index, session_summarize, snapshot/recall
-                ├→ Memory (1): memory_import (ChatGPT/Claude session import)
-                ├→ Relay (2): cq_workers, cq_relay_call
-                ├→ Knowledge (13): Store+FTS5+Vector+Embedding+Usage+Ingest+Sync+Publish
-                ├→ Hub Client (19, 조건부): job, worker, DAG, artifact, cron
+                ├→ CDP Runner + WebMCP (5): cdp_run, cdp_list, webmcp_discover, webmcp_call, webmcp_context
+                ├→ WebContent (1): web_fetch (content negotiation, SSRF, HTML→MD) — c2/webcontent
+                ├→ C1 Messenger (5): search, mentions, briefing, send_message, update_presence + ContextKeeper
+                ├→ Drive (6): upload, download, list, delete, info, mkdir
+                ├→ Go Native — Tier 1 (18): Research (5) + C2 (7) + GPU (6) + Soul Evolution (1)
+                ├→ Go Native — Tier 2 (13): Knowledge (Store+FTS5+Vector+Embedding+Usage+Ingest+Sync+Publish)
+                ├→ C7 Observe (4, c7_observe 조건부): observe_metrics, observe_logs, observe_config, observe_health
+                ├→ C6 Guard (5, c6_guard 조건부): guard_check, guard_audit, guard_policy_set/list, guard_role_assign
+                ├→ C8 Gate (6, c8_gate 조건부): gate_webhook_register/list/test, gate_schedule_add/list, gate_connector_status
+                ├→ Hub Client (26, 조건부): job, worker, DAG, edge, deploy, artifact
                 ├→ Worker Standby (3, Hub 조건부): standby, complete, shutdown
-                ├→ C7 Observe (4, c7_observe 조건부): observe_metrics, observe_logs, ...
-                ├→ C6 Guard (5, c6_guard 조건부): guard_check, guard_audit, ...
-                ├→ C8 Gate (6, c8_gate 조건부): gate_webhook, gate_schedule, ...
-                ├→ EventSink (1) + HubPoller (1)
+                ├→ EventSink (1): HTTP POST /v1/events/publish 수신 → C3 EventBus 전달
+                ├→ HubPoller (1): 30s 간격 C5 RUNNING jobs 상태 감시 → hub.job.completed/failed 발행
                 └→ JSON-RPC proxy (10) → Python Sidecar (LSP 7 + C2 Doc 2 + Onboard 1)
 ```
-
-### MCP Apps (위젯 시스템)
-
-도구 호출 시 `format=widget`이면 `_meta.ui.resourceUri`를 포함한 응답을 반환.
-클라이언트(Claude, Cursor, VS Code 등)가 `resources/read`로 HTML을 가져와 iframe 렌더링.
-
-```
-Tool call (format=widget)
-  → handler returns {data: {...}, _meta: {ui: {resourceUri: "ui://cq/..."}}}
-  → client calls resources/read("ui://cq/...")
-  → ResourceStore returns embedded HTML
-  → client renders in sandboxed iframe
-```
-
-**인프라**: `internal/mcp/apps/` — ResourceStore (sync.RWMutex), Go embed
-**위젯**: `internal/mcp/apps/widgets/` — 11개 HTML (바닐라, 외부 의존성 0, 다크/라이트 테마)
-**등록**: `cmd/c4/mcp_init.go` — 시작 시 appStore에 ui:// 리소스 등록
-
-| 리소스 URI | 도구 | 용도 |
-|-----------|------|------|
-| `ui://cq/dashboard` | `c4_dashboard` | 상태 요약 |
-| `ui://cq/job-progress` | `c4_job_status` | 잡 진행률 |
-| `ui://cq/job-result` | `c4_job_summary` | 잡 결과 |
-| `ui://cq/experiment-compare` | `c4_experiment_search` | 실험 비교 |
-| `ui://cq/task-graph` | `c4_task_graph` | 태스크 의존성 |
-| `ui://cq/nodes-map` | `c4_nodes_map` | 노드 상태 |
-| `ui://cq/knowledge-feed` | `c4_knowledge_search` | 지식 검색 |
-| `ui://cq/cost-tracker` | `c4_llm_costs` | 비용 추적 |
-| `ui://cq/test-results` | `c4_run_validation` | 테스트 결과 |
-| `ui://cq/git-diff` | `c4_diff_summary` | 변경 요약 |
-| `ui://cq/error-trace` | `c4_error_trace` | 에러 트레이스 |
 
 ### 패키지 구조
 ```
@@ -115,7 +40,6 @@ c4-core/
 ├── cmd/c4/           # CLI (cobra) + MCP server 진입점
 ├── internal/
 │   ├── mcp/          # Registry + stdio transport
-│   │   ├── apps/     # MCP Apps ResourceStore + embedded widget HTML
 │   │   └── handlers/ # 도구별 핸들러 (sqlite_store, files, git, proxy, ...)
 │   ├── bridge/       # Python sidecar 관리 (JSON-RPC/TCP, lazy start)
 │   ├── task/         # TaskStore (SQLite, Memory, Supabase)
@@ -130,11 +54,7 @@ c4-core/
 │   ├── knowledge/    # C9 Knowledge (Store+FTS5+Vector+Embedding+Usage+Chunker+Ingest+Sync)
 │   ├── research/     # Research iteration store (paper+experiment loop)
 │   ├── c2/           # C2 Workspace/Profile/Persona + webcontent (fetch, HTML→MD, llms.txt)
-│   ├── drive/        # C0 Drive client (TUS resumable upload, dataset sync)
-│   ├── fileindex/    # Cross-device file search
-│   ├── session/      # Session tracking, LLM summarizer, context injection
-│   ├── memory/       # ChatGPT/Claude session import pipeline
-│   ├── relay/        # WebSocket relay client (NAT traversal)
+│   ├── drive/        # C0 Drive client (Supabase Storage)
 │   ├── llm/          # LLM Gateway (Anthropic, OpenAI, Gemini, Ollama)
 │   ├── cdp/          # Chrome DevTools Protocol runner + WebMCP + CDP auto-discovery
 │   ├── observe/      # C7 Observe: Logger(slog) + Metrics + Middleware (c7_observe build tag)
@@ -147,11 +67,14 @@ c4-core/
 ### 빌드/테스트/설치
 
 ```bash
-# 빌드 + 설치 (CRITICAL — 반드시 make install 사용)
-cd c4-core && make install
+# 빌드 + 테스트
+cd c4-core && go build ./... && go test ./...
 
-# 테스트
-cd c4-core && go test ./...
+# 사용자 설치 (CRITICAL — .mcp.json이 이 경로를 참조)
+cd c4-core && go build -o ~/.local/bin/cq ./cmd/c4/
+
+# 개발용 바이너리 (CI/로컬 테스트)
+cd c4-core && go build -o bin/cq ./cmd/c4/
 
 # 환경 진단
 cq doctor              # 8개 항목 건강 체크
@@ -264,12 +187,9 @@ cq serve --port 4141   # 포트 지정
 | `eventsink` | `serve.eventsink.enabled: true` + `c3_eventbus` 빌드 태그 | C5→C4 HTTP 이벤트 수신 (:4141) |
 | `gpu` | `serve.gpu.enabled: true` | GPU/CPU 작업 스케줄러 (daemon 패키지 래핑) |
 | `agent` | `serve.agent.enabled: true` + `cloud.url` + `cloud.anon_key` 설정 | Supabase Realtime @cq mention → claude -p 디스패치; claim 직후 `c1_members.status="typing"` 비동기 알림, 완료 시 `"online"` 복원; `claude -p --dir <projectDir>` |
-| `ssesubscriber` | `serve.ssesubscriber.enabled: true` + `hub && c3_eventbus` 빌드 태그 | Hub SSE 스트림 구독 → EventBus 전달 |
+| `ssesubscriber` | `serve.ssesubscriber.enabled: true` + `c5_hub && c3_eventbus` 빌드 태그 | Hub SSE 스트림 구독 → EventBus 전달 |
 | `stale_checker` | `serve.stale_checker.enabled: true` | 주기적 stale 태스크(in_progress stuck) 감지 → pending 리셋 + `task.stale` 이벤트 발행 |
 | `hub` | `serve.hub.enabled: true` | Supabase 기반 Hub 작업 큐 연동 (cloud.url + cloud.anon_key 필요) |
-| `relay` | `relay.enabled: true` + `cloud.url` 설정 | relay.fly.dev에 WSS 상시 연결 → 외부 MCP 클라이언트 NAT 관통 접근 허용 |
-| `cron` | `serve.hub.enabled: true` | hub_cron_schedules 테이블 폴링 → 만료된 크론 잡 자동 submit |
-| `pg_notify` | `serve.hub.enabled: true` + Postgres LISTEN 지원 | LISTEN 'new_job' → 즉시 ClaimJob; polling fallback 내장 |
 
 **컴포넌트 활성화** (`.c4/config.yaml`):
 ```yaml
@@ -283,7 +203,7 @@ serve:
   agent:
     enabled: true   # cloud.url + cloud.anon_key 필요
   ssesubscriber:
-    enabled: true   # hub && c3_eventbus 빌드 태그 필요; hub.enabled: true 필요
+    enabled: true   # c5_hub && c3_eventbus 빌드 태그 필요; hub.enabled: true 필요
   stale_checker:
     enabled: true
     threshold_minutes: 30   # 이 시간 이상 in_progress이면 stale 판정
@@ -390,37 +310,15 @@ cd c1 && bun install && bun test
 
 ---
 
-## External Brain (infra/cloudflare-worker/)
-
-> Cloudflare Worker 기반 OAuth 2.1 MCP proxy. ChatGPT/Claude/Gemini에서 CQ 지식 베이스에 직접 접근.
-
-### 도구
-| 도구 | 설명 |
-|------|------|
-| `c4_knowledge_record` | AI가 proactive하게 지식 저장 (5가지 호출 조건 tool description에 내장) |
-| `c4_knowledge_search` | 벡터 + FTS + ilike 3단 fallback 검색 |
-| `c4_session_summary` | 세션 종료 시 전체 요약 캡처 (안전망) |
-| `c4_status` | 프로젝트 상태 조회 |
-
-### 핵심 설계
-- **AI Self-Capture**: tool description engineering으로 AI가 자발적으로 지식 기록
-- **MCP initialize instructions**: 3단계 행동 지침 (시작→검색, 중간→기록, 종료→요약)
-- **OAuth 2.1**: GitHub 로그인 → Supabase user 매핑 (user_metadata 기반)
-- **resolveProjectId**: owner_id 기반 프로젝트 자동 조회/생성
-
----
-
 ## Infra (infra/supabase/)
 
-> PostgreSQL 마이그레이션 52개 (00001~00052). Supabase 기반 클라우드 레이어.
+> PostgreSQL 마이그레이션 21개 (00001~00021). Supabase 기반 클라우드 레이어.
 
 ### 주요 테이블
 - `c4_tasks`, `c4_documents`, `c4_projects` — C4 핵심 데이터
-- `c4_drive_files`, `c4_datasets` — Drive 파일 및 데이터셋 관리
-- `hub_jobs`, `hub_workers`, `hub_dags`, `hub_cron_schedules` — Hub 분산 실행
-- `c1_channels`, `c1_messages`, `c1_members` — 메시징
-- `notification_channels` — Telegram/Dooray 알림 채널
-- RLS 정책 (52 migrations, pgvector, tsvector FTS)
+- `c1_channels`, `c1_messages`, `c1_participants`, `c1_channel_summaries` — C1 메시징
+- `c1_members` — 통합 멤버 모델 (user/agent/system + presence)
+- RLS 정책 (migration 00014: 보안 픽스)
 
 ---
 
@@ -489,158 +387,3 @@ guard.denied      ← C6 Guard가 발행 (ActionDeny 시)
 
 > Hub 기능은 Supabase + c4-core로 이전 완료. Worker Pull + Lease 모델.
 > 설정: `cloud.url` + `cloud.anon_key` 필요. `serve.hub.enabled: true` 활성화.
-
----
-
-## Relay MCP Server (NAT 관통)
-
-> Fly.io에 배포된 Go relay 서버(`cq-relay.fly.dev`). 워커가 WSS로 상시 연결을 유지하고, 외부 MCP 클라이언트가 HTTP-MCP로 접근할 수 있게 해주는 NAT 관통 레이어.
-
-### 아키텍처
-
-```
-외부 MCP 클라이언트 (Cursor / Codex / Gemini CLI / ...)
-    ↓ HTTPS  (MCP over HTTP)
-cq-relay.fly.dev  [Go relay server]
-    ↑ WSS    (outbound, 워커가 먼저 연결)
-cq serve  [로컬 / 클라우드 워커]
-    ↓
-Go MCP Server (stdio) + Python Sidecar
-```
-
-### 인증 흐름
-1. `cq auth login` → Supabase Auth API → JWT 발급 + relay URL 자동 설정
-2. `cq serve` 시작 → relay WSS 연결 (Authorization: Bearer JWT)
-3. relay → 토큰 검증 → 워커 터널 등록
-4. 외부 클라이언트 → `https://cq-relay.fly.dev/<worker-id>` → relay → WSS → 워커
-
-### 설정 (`.c4/config.yaml`)
-
-```yaml
-relay:
-  enabled: true
-  url: wss://cq-relay.fly.dev   # cq auth login 시 자동 설정
-  # jwt는 cloud.token_provider에서 자동 주입
-```
-
-### CLI
-
-| 명령 | 설명 |
-|------|------|
-| `cq relay status` | 연결 상태, 레이턴시, 활성 터널 수 확인 |
-| `cq auth login` | relay URL + JWT 자동 설정 포함 |
-| `cq serve` | relay 연결 자동 시작 (`relay.enabled: true` 시) |
-
----
-
-## Hub Execution Engine
-
-> DAG 파이프라인, Cron 스케줄링, pg_notify 실시간 트리거를 결합한 Hub 실행 엔진.
-
-### DAG 파이프라인
-
-```
-c4_hub_dag_create (노드 + 엣지 정의)
-    ↓
-Hub: topological sort → root 노드 자동 submit
-    ↓
-워커가 잡 완료 시 → advance_dag RPC → 다음 레이어 자동 submit
-    ↓
-모든 노드 완료 → DAG 완료 이벤트 발행
-```
-
-- **위상 정렬**: 의존성 그래프를 레이어로 나눠 병렬 실행 극대화
-- **advance_dag**: 잡 완료 시 RPC 호출 → Hub가 의존성 충족 여부 확인 후 다음 노드 release
-- **상태**: `pending → queued → running → completed/failed` (노드별)
-
-### Cron 스케줄링
-
-```yaml
-# hub_cron_schedules 테이블
-schedule:
-  cron: "0 */6 * * *"      # 6시간마다
-  job_spec:
-    type: "build"
-    payload: { target: "nightly" }
-  enabled: true
-```
-
-| MCP 도구 | 설명 |
-|---------|------|
-| `c4_cron_create` | 크론 표현식 + job_spec으로 스케줄 등록 |
-| `c4_cron_list` | 등록된 스케줄 목록 + 마지막 실행 시각 |
-| `c4_cron_delete` | 스케줄 삭제 |
-
-### pg_notify 실시간 트리거
-
-```
-INSERT INTO hub_jobs → Postgres trigger → pg_notify('new_job', job_id)
-    ↓
-cq serve: LISTEN 'new_job' → 즉시 ClaimJob
-    ↓ (LISTEN 불가 시)
-polling fallback: 30초 간격 ClaimJob 폴링
-```
-
-- **대기 레이턴시**: LISTEN 경로 ~5ms (vs 폴링 최대 30초)
-- **폴백 보장**: pg_notify 지원 안 되는 환경에서도 폴링으로 동작
-- `cq serve` 컴포넌트로 통합 — 별도 설정 불필요
-
----
-
-## Job Routing
-
-> Hub 잡을 특정 워커 또는 워커 그룹에 라우팅하는 3가지 메커니즘.
-
-### 라우팅 필드
-
-| 필드 | 타입 | 설명 | 예시 |
-|------|------|------|------|
-| `target_worker` | string | 워커 이름으로 직접 지정 | `"gpu-server-1"` |
-| `capability` | string | 워커 capability 매칭 (정확 일치) | `"gpu"`, `"llm-inference"` |
-| `required_tags` | []string | 워커가 모든 태그를 보유해야 함 | `["prod", "eu-west"]` |
-
-**우선순위**: `target_worker` > `capability` + `required_tags` (AND 조건)
-
-### 워커 등록
-
-```bash
-cq serve --name gpu-server-1 --capability gpu --tags prod,eu-west
-```
-
-### CLI / MCP
-
-```bash
-# CLI
-cq hub submit --target gpu-server-1 --capability gpu --tags prod,eu-west job.json
-
-# MCP
-c4_job_submit(spec={...}, routing={target_worker: "gpu-server-1", required_tags: ["prod"]})
-```
-
----
-
-## cq transfer (P2P 파일 전송)
-
-> relay WSS 터널을 경유한 바이너리 파이프 기반 P2P 파일 전송. 추가 의존성 없음.
-
-### 전송 흐름
-
-```
-송신측: cq transfer data/ --to gpu-server --dest /data/
-    ↓  relay WSS 터널 (이미 연결된 상시 채널 재사용)
-수신측: cq serve (gpu-server) → 스트림 수신 → /data/ 저장
-```
-
-- **NAT 관통**: 양쪽 모두 outbound WSS만 사용 — 방화벽 포트 개방 불필요
-- **대용량 지원**: 청크 스트리밍, 재개 가능 (향후)
-- **제로 의존성**: relay 연결 재사용, 별도 rsync/scp 불필요
-
-### CLI
-
-```bash
-cq transfer <src-path> --to <worker-name> --dest <dest-path>
-
-# 예시
-cq transfer data/ --to gpu-server --dest /data/
-cq transfer model.bin --to edge-device-1 --dest /models/
-```
