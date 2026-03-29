@@ -33,6 +33,7 @@ function copy() {
   justify-content: center;
   gap: 12px;
   margin-top: 24px;
+  margin-bottom: 48px;
 }
 
 .install-btn {
