@@ -1,5 +1,6 @@
 ---
 name: session-distill
+essential: true
 description: >
   Distill conversation context into CQ knowledge records at session end or on demand.
   Extracts decisions, insights, strategy, and discoveries from human-agent dialogue

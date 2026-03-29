@@ -1,5 +1,6 @@
 ---
 name: review
+essential: true
 description: |
   Comprehensive 3-pass academic paper review with detailed math verification,
   formal tone rules, and 6-axis evaluation (quality, novelty, technical soundness,

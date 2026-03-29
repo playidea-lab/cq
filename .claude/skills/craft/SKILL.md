@@ -1,5 +1,6 @@
 ---
 name: craft
+essential: true
 description: |
   대화형으로 나만의 skill, agent, rule, CLAUDE.md를 생성합니다.
   사용자 의도를 파악해 타입을 자동 판단하고, 5턴 이내에 파일을 생성합니다.
@@ -93,6 +94,7 @@ Glob("~/.claude/rules/*.md")          # 기존 rule 목록
 ```markdown
 ---
 name: {name}
+essential: true
 description: |
   {한 줄 설명}. {상세 설명}.
   Triggers: "{trigger1}", "{trigger2}".
@@ -134,6 +136,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ```markdown
 ---
 name: {name}
+essential: true
 description: {한 줄 설명}. 트리거: "{trigger1}", "{trigger2}".
 ---
 

@@ -1,5 +1,6 @@
 ---
 name: add-task
+essential: true
 description: |
   [internal] Add new tasks to the C4 project queue with conversational guidance. Helps users
   define clear task descriptions, Definition of Done (DoD), scope, and domain through

@@ -1,5 +1,6 @@
 ---
 name: attach
+essential: true
 description: |
   [internal] Attach a name to the current Claude Code session so it can be resumed later
   with `cq -t <name>`. Works even if the session was started without -t.

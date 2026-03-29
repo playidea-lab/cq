@@ -1,5 +1,6 @@
 ---
 name: checkpoint
+essential: true
 description: |
   [internal] Review checkpoints with strategic 4-lens analysis (holistic/user-flow/cascade/ship-ready).
   Handles CHECKPOINT state by guiding approve/request-changes/replan/redesign decisions.

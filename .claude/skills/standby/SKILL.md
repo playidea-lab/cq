@@ -1,5 +1,6 @@
 ---
 name: standby
+essential: true
 description: "Convert this Claude Code session into a persistent worker that waits for jobs from C5 Hub. Auto-triggers on: standby, worker mode, 대기 모드"
 allowed-tools: mcp__cq__*
 ---

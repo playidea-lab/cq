@@ -279,6 +279,82 @@ func TestSetupSkills_NoC4Root(t *testing.T) {
 	}
 }
 
+func TestSetupSkills_DeploysEssentialGlobally(t *testing.T) {
+	// Create a fake C4 root with one essential and one non-essential skill
+	c4Root := t.TempDir()
+	essentialDir := filepath.Join(c4Root, ".claude", "skills", "plan")
+	if err := os.MkdirAll(essentialDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(essentialDir, "SKILL.md"), []byte("---\nname: plan\nessential: true\n---\n# Plan\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	normalDir := filepath.Join(c4Root, ".claude", "skills", "optional-skill")
+	if err := os.MkdirAll(normalDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(normalDir, "SKILL.md"), []byte("---\nname: optional-skill\n---\n# Optional\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("C4_SOURCE_ROOT", c4Root)
+
+	targetDir := t.TempDir()
+	if err := setupSkills(targetDir); err != nil {
+		t.Fatalf("setupSkills failed: %v", err)
+	}
+
+	// Essential skill should be in both project and global
+	globalPlan := filepath.Join(fakeHome, ".claude", "skills", "plan")
+	if info, err := os.Lstat(globalPlan); err != nil {
+		t.Errorf("essential skill 'plan' not deployed globally: %v", err)
+	} else if info.Mode()&os.ModeSymlink == 0 {
+		t.Error("expected symlink for global essential skill")
+	}
+
+	// Non-essential skill should NOT be in global
+	globalOptional := filepath.Join(fakeHome, ".claude", "skills", "optional-skill")
+	if _, err := os.Lstat(globalOptional); err == nil {
+		t.Error("non-essential skill should not be deployed globally")
+	}
+
+	// Both should be in project-local
+	for _, name := range []string{"plan", "optional-skill"} {
+		localPath := filepath.Join(targetDir, ".claude", "skills", name)
+		if _, err := os.Lstat(localPath); err != nil {
+			t.Errorf("skill %s not deployed locally: %v", name, err)
+		}
+	}
+}
+
+func TestIsEssentialSkill(t *testing.T) {
+	tests := []struct {
+		name     string
+		content  string
+		expected bool
+	}{
+		{"with essential true", "---\nname: done\nessential: true\n---\n# Done\n", true},
+		{"without essential", "---\nname: done\n---\n# Done\n", false},
+		{"essential false", "---\nname: done\nessential: false\n---\n# Done\n", false},
+		{"no frontmatter", "# Done\n", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(tt.content), 0644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			got := isEssentialSkill(dir)
+			if got != tt.expected {
+				t.Errorf("isEssentialSkill() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestFindC4Root_EnvVar(t *testing.T) {
 	c4Root := t.TempDir()
 	skillDir := filepath.Join(c4Root, ".claude", "skills")

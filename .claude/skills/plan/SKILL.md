@@ -1,5 +1,6 @@
 ---
 name: plan
+essential: true
 description: |
   ★ Create structured implementation plans for C4 projects. Scans project state,
   specs, designs, docs, and Lighthouse contracts, then guides through Discovery

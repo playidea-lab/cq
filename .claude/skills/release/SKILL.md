@@ -1,5 +1,6 @@
 ---
 name: release
+essential: true
 description: |
   Generate release notes and changelogs from Git commit history. Analyzes commits
   since last tag using Conventional Commits format, categorizes changes (features,

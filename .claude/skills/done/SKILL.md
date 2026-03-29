@@ -1,5 +1,6 @@
 ---
 name: done
+essential: true
 description: |
   [internal] Mark the current session as done with full capture (summary + knowledge + persona).
   Creates a .done marker so cq runs captureSessionFull on exit.
@@ -47,7 +48,17 @@ echo "SESSION: ${CQ_SESSION_NAME:-<unnamed>} / UUID: ${CQ_SESSION_UUID:-<unknown
 mkdir -p ~/.c4/running && touch ~/.c4/running/${CQ_SESSION_NAME}.done && echo "session '${CQ_SESSION_NAME}' marked as done — closing with full capture..."
 ```
 
-`.done` 마커 파일을 생성합니다. cq 부모 프로세스가 2초 간격으로 감시하여
-자동으로 SIGINT → captureSessionFull → 세션 종료.
+`.done` 마커 파일을 생성합니다. cq 부모 프로세스가 2초 ticker로 감지하여
+SIGINT → captureSessionFull → 세션 종료.
 
-위 명령 실행 후 **아무것도 하지 않아도 됩니다** — cq가 자동으로 처리합니다.
+마커 작성 후 claude 프로세스에 SIGINT를 보내 즉시 종료합니다:
+
+```bash
+CLAUDE_PID=$(cat ~/.c4/running/${CQ_SESSION_NAME}.pid 2>/dev/null)
+if [ -n "$CLAUDE_PID" ]; then
+  kill -INT "$CLAUDE_PID" 2>/dev/null && echo "SIGINT sent to claude (PID $CLAUDE_PID) — cq will run captureSessionFull"
+fi
+```
+
+cq 부모 프로세스가 claude 종료를 감지하면 `.done` 마커 유무를 확인하고
+captureSessionFull을 실행합니다. ticker 대기(최대 2초) 없이 즉시 종료.

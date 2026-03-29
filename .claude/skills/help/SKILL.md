@@ -1,5 +1,6 @@
 ---
 name: help
+essential: true
 description: |
   Quick reference for C4 skills, agents, and tools. Provides summaries,
   decision trees, and keyword search across 22 skills, 37 agents (9 categories),

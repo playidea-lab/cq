@@ -57,19 +57,25 @@ func setupClaudeMD(dir string) error {
 	return nil
 }
 
-// setupSkills deploys C4 skills to the target project.
+// setupSkills deploys C4 skills to the target project and essential skills globally.
 // Priority order:
 //  1. findC4Root() succeeds → symlink mode (development)
 //  2. EmbeddedSkillsFS != nil → extract to ~/.c4/skills/ (installed binary)
 //  3. Neither → skip gracefully
+//
+// After project-local deployment, essential skills are also deployed to
+// ~/.claude/skills/ so they are available in every project, even without cq init.
 func setupSkills(dir string) error {
+	var sourceSkillsDir string
+
 	// 1. Development mode: symlink from source root
 	if c4Root, err := findC4Root(); err == nil {
-		return setupSkillsSymlink(dir, c4Root)
-	}
-
-	// 2. Embedded mode: extract to ~/.c4/skills/
-	if EmbeddedSkillsFS != nil {
+		sourceSkillsDir = filepath.Join(c4Root, ".claude", "skills")
+		if err := setupSkillsSymlink(dir, c4Root); err != nil {
+			return err
+		}
+	} else if EmbeddedSkillsFS != nil {
+		// 2. Embedded mode: extract to ~/.c4/skills/
 		home, err := os.UserHomeDir()
 		if err != nil {
 			slog.Warn("skills embed: cannot determine home dir", "err", err)
@@ -80,11 +86,101 @@ func setupSkills(dir string) error {
 			slog.Warn("skills embed: extraction failed", "err", err)
 			return nil
 		}
-		return setupSkillsFromExtracted(dir, skillsDir)
+		sourceSkillsDir = skillsDir
+		if err := setupSkillsFromExtracted(dir, skillsDir); err != nil {
+			return err
+		}
+	} else {
+		// 3. Neither available
+		slog.Info("skills not embedded, skipping")
+		return nil
 	}
 
-	// 3. Neither available
-	slog.Info("skills not embedded, skipping")
+	// Deploy essential skills to ~/.claude/skills/ for global availability
+	if sourceSkillsDir != "" {
+		if err := setupGlobalEssentialSkills(sourceSkillsDir); err != nil {
+			slog.Warn("global essential skills deployment failed", "err", err)
+		}
+	}
+	return nil
+}
+
+// isEssentialSkill checks if a skill directory contains essential: true in its SKILL.md frontmatter.
+func isEssentialSkill(skillDir string) bool {
+	data, err := os.ReadFile(filepath.Join(skillDir, "SKILL.md"))
+	if err != nil {
+		return false
+	}
+	content := string(data)
+	// Quick frontmatter check: look for essential: true between --- markers
+	if !strings.HasPrefix(content, "---") {
+		return false
+	}
+	endIdx := strings.Index(content[3:], "---")
+	if endIdx < 0 {
+		return false
+	}
+	frontmatter := content[3 : 3+endIdx]
+	for _, line := range strings.Split(frontmatter, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "essential: true" {
+			return true
+		}
+	}
+	return false
+}
+
+// setupGlobalEssentialSkills deploys essential skills to ~/.claude/skills/
+// so they are available globally across all projects.
+func setupGlobalEssentialSkills(sourceSkillsDir string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine home dir: %w", err)
+	}
+	globalSkillsDir := filepath.Join(home, ".claude", "skills")
+	if err := os.MkdirAll(globalSkillsDir, 0755); err != nil {
+		return fmt.Errorf("creating ~/.claude/skills/: %w", err)
+	}
+
+	entries, err := os.ReadDir(sourceSkillsDir)
+	if err != nil {
+		return nil
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		sourcePath := filepath.Join(sourceSkillsDir, entry.Name())
+		if !isEssentialSkill(sourcePath) {
+			continue
+		}
+		targetPath := filepath.Join(globalSkillsDir, entry.Name())
+
+		// Skip if already exists and points to the same source (or is valid)
+		if info, err := os.Lstat(targetPath); err == nil {
+			// If it's a symlink, check if it's still valid
+			if info.Mode()&os.ModeSymlink != 0 {
+				if dest, err := os.Readlink(targetPath); err == nil && dest == sourcePath {
+					continue // already correct
+				}
+				// Stale symlink — remove and recreate
+				os.Remove(targetPath)
+			} else {
+				continue // directory exists (user-managed), don't overwrite
+			}
+		}
+
+		if err := os.Symlink(sourcePath, targetPath); err != nil {
+			fmt.Fprintf(os.Stderr, "cq: warning: global symlink skill %s: %v\n", entry.Name(), err)
+			continue
+		}
+		count++
+	}
+	if count > 0 {
+		fmt.Fprintf(os.Stderr, "cq: %d essential skills deployed globally (~/.claude/skills/)\n", count)
+	}
 	return nil
 }
 

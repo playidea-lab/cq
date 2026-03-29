@@ -1,5 +1,6 @@
 ---
 name: interview
+essential: true
 description: |
   [internal] Deep exploratory requirements interview to discover hidden requirements, edge
   cases, failure scenarios, and tradeoffs. Acts as senior PM/architect to ask

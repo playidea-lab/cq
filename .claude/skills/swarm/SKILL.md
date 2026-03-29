@@ -1,5 +1,6 @@
 ---
 name: swarm
+essential: true
 description: |
   [internal] Agent Teams-based parallel collaboration for C4 tasks. Spawns coordinator-led
   teams with direct member communication. Supports standard (implementation),

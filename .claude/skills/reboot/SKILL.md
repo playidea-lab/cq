@@ -1,5 +1,6 @@
 ---
 name: reboot
+essential: true
 description: |
   [internal] Reboot the current named Claude Code session. Writes a reboot flag so cq
   automatically resumes with the same session UUID after exit.

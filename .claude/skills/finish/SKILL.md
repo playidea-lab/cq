@@ -1,5 +1,6 @@
 ---
 name: finish
+essential: true
 description: |
   ★ Post-implementation completion workflow: Polish Loop (quality convergence) →
   build verification → testing → binary installation → documentation → knowledge

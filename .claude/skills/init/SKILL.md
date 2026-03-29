@@ -1,5 +1,6 @@
 ---
 name: init
+essential: true
 description: |
   [internal] Initialize C4 in the current project directory. Detects C4 installation path,
   runs init with optional project-id, and handles session restart logic. Use when

@@ -1,5 +1,6 @@
 ---
 name: stop
+essential: true
 description: |
   Stop C4 project execution and transition to HALTED state. Checks current state,
   halts execution if running, and reports interrupted tasks. Use when the user wants

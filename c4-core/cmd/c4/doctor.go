@@ -72,6 +72,7 @@ var doctorChecks = []doctorCheckEntry{
 	{Name: "zombie serve", Fn: checkZombieServe},
 	{Name: "sidecar hang", Fn: checkSidecarHang},
 	{Name: "skill health", Fn: checkSkillHealth},
+	{Name: "essential skills", Fn: func() checkResult { return checkEssentialSkills(doctorFix) }, FixSafe: true},
 	{Name: "standards", Fn: checkStandards},
 	{Name: "ontology L1", Fn: checkOntologyL1},
 	{Name: "ontology L2", Fn: checkOntologyL2},
@@ -1088,6 +1089,83 @@ func parseSkillEvalAccuracy(content string) (float64, bool) {
 	return 0, false
 }
 
+
+// checkEssentialSkills verifies that all essential C4 skills are present in ~/.claude/skills/.
+// With --fix, it attempts to recreate missing symlinks.
+func checkEssentialSkills(fix bool) checkResult {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return checkResult{Name: "essential-skills", Status: checkWarn, Message: "cannot determine home directory"}
+	}
+	globalSkillsDir := filepath.Join(home, ".claude", "skills")
+
+	// Find skills source directory
+	var sourceSkillsDir string
+	if c4Root, err := findC4Root(); err == nil {
+		sourceSkillsDir = filepath.Join(c4Root, ".claude", "skills")
+	} else if EmbeddedSkillsFS != nil {
+		sourceSkillsDir = filepath.Join(home, ".c4", "skills")
+	}
+	if sourceSkillsDir == "" {
+		return checkResult{Name: "essential-skills", Status: checkInfo, Message: "C4 source not found (skipped)"}
+	}
+
+	// Scan source for essential skills
+	entries, err := os.ReadDir(sourceSkillsDir)
+	if err != nil {
+		return checkResult{Name: "essential-skills", Status: checkInfo, Message: "source skills dir not readable"}
+	}
+
+	var missing []string
+	totalEssential := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		sourcePath := filepath.Join(sourceSkillsDir, entry.Name())
+		if !isEssentialSkill(sourcePath) {
+			continue
+		}
+		totalEssential++
+		targetPath := filepath.Join(globalSkillsDir, entry.Name())
+		if _, err := os.Lstat(targetPath); os.IsNotExist(err) {
+			missing = append(missing, entry.Name())
+			if fix {
+				_ = os.MkdirAll(globalSkillsDir, 0755)
+				if symErr := os.Symlink(sourcePath, targetPath); symErr == nil {
+					fmt.Fprintf(os.Stderr, "  fixed: symlinked %s → ~/.claude/skills/\n", entry.Name())
+				}
+			}
+		}
+	}
+
+	if totalEssential == 0 {
+		return checkResult{Name: "essential-skills", Status: checkInfo, Message: "no essential skills found in source"}
+	}
+
+	if len(missing) == 0 {
+		return checkResult{
+			Name:    "essential-skills",
+			Status:  checkOK,
+			Message: fmt.Sprintf("all %d essential skills present in ~/.claude/skills/", totalEssential),
+		}
+	}
+
+	if fix {
+		return checkResult{
+			Name:    "essential-skills",
+			Status:  checkOK,
+			Message: fmt.Sprintf("fixed %d missing essential skills", len(missing)),
+		}
+	}
+
+	return checkResult{
+		Name:    "essential-skills",
+		Status:  checkWarn,
+		Message: fmt.Sprintf("%d/%d essential skills missing from ~/.claude/skills/: %s", len(missing), totalEssential, strings.Join(missing, ", ")),
+		Fix:     "cq doctor --fix",
+	}
+}
 
 // checkOntologyL1 checks the personal ontology file at ~/.c4/personas/$USER/ontology.yaml.
 func checkOntologyL1() checkResult {

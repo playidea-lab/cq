@@ -1,5 +1,6 @@
 ---
 name: quick
+essential: true
 description: |
   Quick start C4 workflow: create task + assign in one command. Handles state
   transitions (PLAN/HALTED → EXECUTE), creates task with DoD and validations,

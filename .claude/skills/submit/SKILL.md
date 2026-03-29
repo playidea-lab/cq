@@ -1,5 +1,6 @@
 ---
 name: submit
+essential: true
 description: |
   [internal] Submit completed C4 tasks with automated validation (lint, unit tests, DDD-CLEANCODE
   checks). Auto-detects in-progress tasks, runs required validators, verifies commit SHA,

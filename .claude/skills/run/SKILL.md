@@ -1,5 +1,6 @@
 ---
 name: run
+essential: true
 description: |
   ★ Spawn C4 workers to execute implementation tasks in parallel. **Always runs in
   continuous mode** (auto-respawn until queue empty). Analyzes task dependency
