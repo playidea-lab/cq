@@ -25,7 +25,7 @@
 |----|---------|------|
 | REQ-C1 | Event-Driven | When a Hub job completes (SUCCEEDED), the system shall evaluate all enabled deploy rules whose trigger matches the job (e.g. job_tag:*, job_id) and create a deployment for each matching rule with edges from MatchEdges(edge_filter). |
 | REQ-C2 | Event-Driven | When a DAG completes (all nodes done), the system shall evaluate deploy rules whose trigger matches the DAG (e.g. dag_complete:pipeline-*) and create deployments for matching rules. |
-| REQ-C3 | State-Driven | Trigger expression shall support at least: job_tag:<tag>, job_id:<id>, dag_complete:<dag_id_pattern>. Matching is string prefix or glob. |
+| REQ-C3 | State-Driven | Trigger expression shall support at least: `job_tag:<tag>`, `job_id:<id>`, `dag_complete:<dag_id_pattern>`. Matching is string prefix or glob. |
 | REQ-C4 | Unwanted | If no edges match the rule's edge_filter, the system shall not create a deployment (or create with 0 targets and mark skipped). |
 
 ### C-2. 배포 실행(아티팩트 전달)
@@ -124,7 +124,7 @@ T-C02 (rule evaluation DAG) ──┼──► T-C03 (assignments API) ──►
 - **DoD**:
   - Goal: Job이 SUCCEEDED로 완료될 때 enabled deploy rules 중 trigger가 해당 job과 매칭되는 규칙에 대해 MatchEdges(edge_filter)로 엣지 목록을 구하고, CreateDeployment(rule_id, job_id, edges)로 배포 생성.
   - Rationale: REQ-C1, REQ-C3, DEC-C1.
-  - ContractSpec: Trigger 표현식 파서: job_tag:<tag> (job tags에 tag 포함), job_id:<id> (완전 일치 또는 prefix). Store에 ListDeployRulesEnabled, MatchRuleTrigger(jobID, jobTags, rule) 또는 EvaluateRulesForJob(jobID, status, jobTags) 반환 규칙 목록. CreateDeployment 시 rule_id 전달 가능하도록 시그니처/INSERT 확장. onJobComplete(또는 CompleteJob 핸들러 내)에서 status==SUCCEEDED일 때만 평가 호출.
+  - ContractSpec: Trigger 표현식 파서: `job_tag:<tag>` (job tags에 tag 포함), `job_id:<id>` (완전 일치 또는 prefix). Store에 ListDeployRulesEnabled, MatchRuleTrigger(jobID, jobTags, rule) 또는 EvaluateRulesForJob(jobID, status, jobTags) 반환 규칙 목록. CreateDeployment 시 rule_id 전달 가능하도록 시그니처/INSERT 확장. onJobComplete(또는 CompleteJob 핸들러 내)에서 status==SUCCEEDED일 때만 평가 호출.
   - CodePlacement: store: EvaluateDeployRulesForJob; CreateDeployment에 rule_id 추가. jobs.go: handleJobComplete 후 평가 호출.
 - **Dependencies**: (none)
 - **mode**: worker
@@ -137,9 +137,9 @@ T-C02 (rule evaluation DAG) ──┼──► T-C03 (assignments API) ──►
 - **Title**: C5 DAG 완료 시 Deploy Rule 자동 평가·배포 생성
 - **Scope**: `c5/internal/api/dags.go`, `c5/internal/store/sqlite.go`
 - **DoD**:
-  - Goal: DAG가 완료(모든 노드 처리)될 때 deploy rules 중 trigger가 dag_complete:<pattern> 형태로 해당 DAG와 매칭되는 규칙에 대해 배포 생성.
+  - Goal: DAG가 완료(모든 노드 처리)될 때 deploy rules 중 trigger가 `dag_complete:<pattern>` 형태로 해당 DAG와 매칭되는 규칙에 대해 배포 생성.
   - Rationale: REQ-C2, DEC-C1.
-  - ContractSpec: DAG 완료 감지: AdvanceDAG 후 또는 기존 로직에서 “DAG status가 completed/failed로 바뀐 시점”에서 EvaluateDeployRulesForDAG(dagID) 호출. Trigger 표현식에 dag_complete:<dag_id_pattern> 지원 (prefix/glob). CreateDeployment 시 job_id는 DAG의 “대표 job” 또는 마지막 job 등 정책 결정 후 전달(또는 rule에 따라 다를 수 있음 — MVP는 DAG ID로 아티팩트를 묶거나 대표 job_id 사용).
+  - ContractSpec: DAG 완료 감지: AdvanceDAG 후 또는 기존 로직에서 “DAG status가 completed/failed로 바뀐 시점”에서 EvaluateDeployRulesForDAG(dagID) 호출. Trigger 표현식에 `dag_complete:<dag_id_pattern>` 지원 (prefix/glob). CreateDeployment 시 job_id는 DAG의 “대표 job” 또는 마지막 job 등 정책 결정 후 전달(또는 rule에 따라 다를 수 있음 — MVP는 DAG ID로 아티팩트를 묶거나 대표 job_id 사용).
   - CodePlacement: store: EvaluateDeployRulesForDAG; dags.go: DAG 완료 분기에서 호출.
 - **Dependencies**: T-C01-0 (trigger parsing and CreateDeployment with rule_id shared)
 - **mode**: worker
@@ -215,7 +215,7 @@ domain: implementation
 # T-C02-0
 title: "C5 DAG 완료 시 Deploy Rule 평가 및 배포 생성"
 scope: "c5/internal/api/dags.go, c5/internal/store/sqlite.go"
-dod: "DAG 완료 시점에서 EvaluateDeployRulesForDAG(dagID) 호출. trigger dag_complete:<pattern> 지원. 매칭 규칙에 대해 배포 생성. 빌드 및 테스트 통과."
+dod: "DAG 완료 시점에서 EvaluateDeployRulesForDAG(dagID) 호출. trigger `dag_complete:<pattern>` 지원. 매칭 규칙에 대해 배포 생성. 빌드 및 테스트 통과."
 dependencies: ["T-C01-0"]
 mode: worker
 domain: implementation
