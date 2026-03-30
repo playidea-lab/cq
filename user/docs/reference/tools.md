@@ -1,6 +1,6 @@
 # MCP Tools Reference
 
-CQ exposes **217 MCP tools** to AI agents (Claude Code, Cursor, Codex CLI, Gemini, ChatGPT via External Brain). Tools are organized into categories based on their function.
+CQ exposes **217 MCP tools** to AI agents (Claude Code, Cursor, Codex CLI, Gemini, ChatGPT via Remote AI Workspace). Tools are organized into categories based on their function.
 
 **Tool tiers:**
 - **Core** — always loaded, available immediately

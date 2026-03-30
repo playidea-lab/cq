@@ -147,4 +147,4 @@ TUI dashboard showing task progress, worker health, queue depth...
 ## Next Steps
 
 - [Feature Planning](feature-planning.md) — the full /pi → /plan → /run workflow
-- [Growth Loop](growth-loop-in-action.md) — how CQ learns your preferences over time
+- [Knowledge Loop](growth-loop-in-action.md) — how CQ learns your preferences over time

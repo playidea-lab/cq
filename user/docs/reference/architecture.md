@@ -1,6 +1,6 @@
 # Architecture Reference
 
-CQ is a **GPU orchestration platform** — GPU Anywhere, Anytime, Anything. Every AI conversation becomes permanent knowledge, quality gates ensure code integrity, and E2E encrypted relay enables remote GPU training from any machine, any network. This document describes the core components.
+CQ is a **GPU orchestration platform** — Device Anywhere, Anytime, Anything. Every AI conversation becomes permanent knowledge, quality gates ensure code integrity, and E2E encrypted relay enables remote GPU training from any machine, any network. This document describes the core components.
 
 ---
 
@@ -20,7 +20,7 @@ CQ is a **GPU orchestration platform** — GPU Anywhere, Anytime, Anything. Ever
 |  +- Relay --------+-------->|  Relay (Fly.io)             |
 |  +- EventBus     |         |  +- NAT traversal            |
 |  +- Token refresh|         |                             |
-+------------------+          | External Brain (CF Worker)  |
++------------------+          | Remote AI Workspace (CF Worker)  |
                               |  +- OAuth 2.1 MCP proxy     |
 Any AI (ChatGPT,   --- MCP -->|  +- Knowledge record/search |
  Claude, Gemini)              |  +- Session summary         |

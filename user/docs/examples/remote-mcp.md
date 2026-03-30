@@ -1,12 +1,12 @@
 # Connect Remote MCP
 
-Access your CQ brain from any MCP-compatible AI — ChatGPT, Claude Desktop, Cursor — without installing CQ locally.
+Access your CQ knowledge base from any MCP-compatible AI — ChatGPT, Claude Desktop, Cursor — without installing CQ locally.
 
 ---
 
 ## What You'll Do
 
-Connect ChatGPT (or any MCP client) to your CQ knowledge base via `mcp.pilab.kr`. After setup, you can search knowledge, save snapshots, and check project status from anywhere.
+Connect ChatGPT (or any MCP client) to your CQ AI Workspace via `mcp.pilab.kr`. After setup, you can search knowledge, save snapshots, and check project status from anywhere.
 
 ---
 
@@ -105,11 +105,11 @@ Your AI tool → mcp.pilab.kr/mcp
              Your knowledge base (Supabase DB)
 ```
 
-No CQ binary needed on the remote machine. The brain lives in the cloud.
+No CQ binary needed on the remote machine. The AI Workspace lives in the cloud.
 
 ---
 
 ## Next Steps
 
 - [ChatGPT → Claude workflow](chatgpt-to-claude.md) — start ideas in ChatGPT, implement in Claude
-- [Growth Loop](growth-loop-in-action.md) — see how preferences evolve across sessions
+- [Knowledge Loop](growth-loop-in-action.md) — see how preferences evolve across sessions

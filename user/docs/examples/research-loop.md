@@ -172,5 +172,5 @@ After 3 autonomous cycles:
 
 ## Next Steps
 
-- [Growth Loop](growth-loop-in-action.md) — how CQ learns your research preferences
+- [Knowledge Loop](growth-loop-in-action.md) — how CQ learns your research preferences
 - [Remote MCP](remote-mcp.md) — access results from any AI tool

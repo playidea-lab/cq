@@ -1,10 +1,10 @@
-# Growth Loop in Action
+# Knowledge Loop in Action
 
 Watch CQ evolve over 5 sessions — from knowing nothing about you to anticipating your preferences.
 
 ---
 
-## What is the Growth Loop?
+## What is the Knowledge Loop?
 
 Most AI tools start every session from zero. CQ closes the loop:
 

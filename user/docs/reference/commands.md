@@ -240,41 +240,41 @@ Skills are invoked inside Claude Code as `/skill-name`.
 
 | Skill | Trigger | Description |
 |-------|---------|-------------|
-| `/pi` | "play idea", "아이디어", "ideation" | Brainstorm before planning; auto-launches `/c4-plan` |
-| `/c4-plan` | "계획", "plan", "설계" | Discovery → Design → Tasks |
-| `/c4-run` | "실행", "run", "ㄱㄱ" | Spawn workers for pending tasks |
-| `/c4-finish` | "마무리", "finish" | Build → test → docs → commit |
-| `/c4-status` | "상태", "status" | Visual task progress |
-| `/c4-quick` | "quick", "빠르게" | Single task, no planning |
+| `/pi` | "play idea", "idea", "ideation" | Brainstorm before planning; auto-launches `/c4-plan` |
+| `/c4-plan` | "plan", "planning", "design" | Discovery → Design → Tasks |
+| `/c4-run` | "run", "execute", "go" | Spawn workers for pending tasks |
+| `/c4-finish` | "finish", "complete", "wrap up" | Build → test → docs → commit |
+| `/c4-status` | "status", "progress" | Visual task progress |
+| `/c4-quick` | "quick", "fast" | Single task, no planning |
 | `/c4-polish` | "polish" | *(Deprecated — built into `/c4-finish`)* |
 | `/c4-refine` | "refine" | *(Deprecated — built into `/c4-finish`)* |
 | `/c4-checkpoint` | checkpoint reached | Approve / request changes / replan |
-| `/c4-validate` | "검증", "validate" | Run lint + tests |
+| `/c4-validate` | "validate", "check" | Run lint + tests |
 | `/c4-review` | "review" | 3-pass code review with 6-axis evaluation |
-| `/company-review` | "PR 리뷰", "diff 리뷰" | PI Lab 표준 코드 리뷰 |
-| `/c4-submit` | "제출", "submit" | Submit completed task |
-| `/simplify` | "simplify", "단순화" | Review changed code for quality and efficiency |
-| `/c4-add-task` | "태스크 추가" | Add task interactively |
-| `/c4-stop` | "stop", "중단" | Halt execution, preserve progress |
+| `/company-review` | "code review", "diff review" | PI Lab standard code review |
+| `/c4-submit` | "submit", "send" | Submit completed task |
+| `/simplify` | "simplify", "clean up" | Review changed code for quality and efficiency |
+| `/c4-add-task` | "add task" | Add task interactively |
+| `/c4-stop` | "stop", "halt" | Halt execution, preserve progress |
 | `/c4-clear` | "clear" | Reset C4 state for debugging |
 | `/c4-swarm` | "swarm" | Spawn coordinator-led agent team |
-| `/c4-standby` | "대기", "standby" | Become a distributed worker via Supabase (full tier) |
-| `/done` | "done", "세션 종료" | Mark session done with full capture |
-| `/c4-attach` | "세션 이름", "attach" | Name the current session for later resume |
-| `/c4-reboot` | "reboot", "재시작" | Reboot the current named session |
-| `/session-distill` | "session distill", "세션 요약" | Distill session into persistent knowledge |
-| `/init` | "init", "초기화" | Initialize C4 in current project |
+| `/c4-standby` | "wait", "standby" | Become a distributed worker via Supabase (full tier) |
+| `/done` | "done", "session end" | Mark session done with full capture |
+| `/c4-attach` | "session name", "attach" | Name the current session for later resume |
+| `/c4-reboot` | "reboot", "restart" | Reboot the current named session |
+| `/session-distill` | "session distill", "session summary" | Distill session into persistent knowledge |
+| `/init` | "init", "initialize" | Initialize C4 in current project |
 | `/c4-release` | "release" | Generate CHANGELOG from git history |
 | `/c4-help` | "help" | Quick reference for all skills |
-| `/claude-md-improver` | "CLAUDE.md 개선" | Analyze and improve CLAUDE.md |
-| `/skill-tester` | "skill tester", "스킬 테스트" | Test and evaluate skill quality |
-| `/pr-review` | "PR 만들어", "PR 체크리스트" | PR/MR creation checklist and review guide |
-| `/craft` | "craft", "스킬 만들어줘" | Interactively create skills, agents, rules |
+| `/claude-md-improver` | "improve CLAUDE.md" | Analyze and improve CLAUDE.md |
+| `/skill-tester` | "skill test", "skill eval" | Test and evaluate skill quality |
+| `/pr-review` | "create PR", "PR checklist" | PR/MR creation checklist and review guide |
+| `/craft` | "craft", "create skill" | Interactively create skills, agents, rules |
 | `/tdd-cycle` | "TDD", "RED-GREEN-REFACTOR" | TDD cycle guide |
-| `/debugging` | "debugging", "디버깅" | Systematic debugging workflow |
-| `/spec-first` | "spec-first", "설계 문서" | Spec-First development guide |
-| `/incident-response` | "incident", "장애", "서버 다운" | Production incident response workflow |
-| `/c2-paper-review` | "논문 리뷰", "paper review" | Academic paper review (deprecated) |
+| `/debugging` | "debug", "debugging" | Systematic debugging workflow |
+| `/spec-first` | "spec-first", "design doc" | Spec-First development guide |
+| `/incident-response` | "incident", "outage", "server down" | Production incident response workflow |
+| `/c2-paper-review` | "paper review", "academic review" | Academic paper review (deprecated) |
 | `/research-loop` | "research loop" | Paper-experiment improvement loop |
 | `/experiment-workflow` | "experiment workflow" | End-to-end experiment lifecycle |
 | `/c9-init` | "c9-init" | Initialize C9 ML research project |
