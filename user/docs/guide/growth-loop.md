@@ -1,146 +1,236 @@
 # Knowledge Loop
 
-CQ learns how you work — and how your GPU experiments perform — and permanently changes AI behavior to match your preferences and findings.
+> Connect, Adapt, Evolve — every AI session feeds the next.
 
-## The Problem It Solves
+Every time you work with an AI, you teach it something. Usually that knowledge disappears when the session ends. The Knowledge Loop captures it, accumulates it, and injects it back — so each session starts smarter than the last.
 
-Every AI session starts from zero. You explain your conventions, correct the same mistakes, re-state the same constraints — session after session. The Knowledge Loop closes that loop.
+---
+
+## The Problem
+
+AI sessions start from zero. You explain your conventions, correct the same mistakes, re-state the same constraints — every time. By session 100, you've spent hours re-teaching what the AI already learned and forgot.
+
+The Knowledge Loop closes that loop permanently.
+
+---
+
+## What Is the Knowledge Loop?
+
+A three-stage pipeline that runs automatically every time a session ends:
+
+```
+You work with AI
+       │
+       ▼
+Session ends → CQ extracts what was learned
+       │
+       ▼
+Knowledge record → count increments in PreferenceLedger
+       │
+       ├── count ≥ 3 → hint added to CLAUDE.md (soft guidance)
+       │
+       └── count ≥ 5 → promoted to rule in .claude/rules/ (permanent behavior)
+                               │
+                               ▼
+                    Next session: AI already knows this
+```
+
+No configuration required. No tagging. CQ observes and extracts automatically.
+
+---
 
 ## How It Works
 
-```
-Session ends → preferences extracted → count incremented
-                                              │
-                                    count ≥ 3 → hint written to CLAUDE.md
-                                    count ≥ 5 → promoted to rule in .claude/rules/
-                                                 AI behavior changes permanently
-```
+### Stage 1: Session → Knowledge Record
 
-Four components:
+When a session closes, CQ analyzes what happened:
 
-| Component | Role |
-|-----------|------|
-| **PreferenceLedger** | Stores observed preferences with occurrence counts |
-| **Hints** | Suggestions added to `CLAUDE.md` (count ≥ 3) |
-| **Rules** | Permanent behavior rules in `.claude/rules/` (count ≥ 5) |
-| **GlobalPromoter** | Depersonalizes your patterns and shares them to the community pool |
-
-## A Real Example
-
-After 5 ML research sessions, CQ auto-learned these patterns from observed behavior:
-
-| Occurrences | Level | What CQ Learned |
-|-------------|-------|-----------------|
-| 5x | **Rule** | "Run experiments via Hub automatically" |
-| 4x | Hint | "Use `@key=value` metric output format" |
-| 4x | Hint | "Check MPJPE/HD/MSD metrics first" |
-| 3x | Hint | "Always run `cq doctor` before starting" |
-
-These rules are injected into `CLAUDE.md` and `.claude/rules/` — loaded into every future session's system prompt.
-
-## Preference → Hint → Rule Lifecycle
-
-### Stage 1: Observation
-
-Preferences are extracted when a session closes. Sources:
-- Corrections you made to AI output
-- Patterns in how you reviewed code or experiment results
-- Commands you ran repeatedly
+- Corrections you made to AI output ("not like that, do it this way")
+- Patterns in commands you ran repeatedly
 - Explicit instructions you gave during the session
+- Experiment results and which approaches worked
 
-### Stage 2: Hint (count ≥ 3)
-
-CQ adds a suggestion to `CLAUDE.md`:
-
-```markdown
-<!-- CQ hint: count=3 -->
-Check MPJPE/HD/MSD metrics first when evaluating pose estimation results.
-```
-
-Hints are soft guidance — the AI sees them but they don't gate behavior.
-
-### Stage 3: Rule (count ≥ 5)
-
-CQ promotes to a permanent rule in `.claude/rules/`:
-
-```markdown
-# Auto-generated rule (promoted from hint, count=5)
-## Experiment Metrics
-Always evaluate MPJPE, HD, and MSD in that order.
-Report all three before drawing conclusions.
-```
-
-Rules are loaded into the system prompt on every session start. They are as binding as anything in your `CLAUDE.md`.
-
-### Suppression
-
-Delete a rule and CQ permanently suppresses it — it will never be re-promoted from that preference pattern:
+Each observation becomes a knowledge record with a type and content:
 
 ```sh
-cq rule delete "check mpjpe first"    # Suppresses permanently
+cq knowledge search "test patterns"
+# → "prefer table-driven tests in Go, name subtests descriptively" (session 2026-03-28)
+# → "use t.Run() for subtests, not nested test functions" (session 2026-03-22)
 ```
 
-## PreferenceLedger
+### Stage 2: Knowledge Record → Preference Ledger
 
-The ledger stores your preference history:
+Related records accumulate in the PreferenceLedger. Each time the same pattern appears, its count increments:
+
+```sh
+cq preferences list
+```
+
+```
+ID       Count  Level  Preference
+pref-01  7      RULE   Use table-driven tests in Go
+pref-02  5      RULE   Run go vet before committing
+pref-03  4      HINT   Check MPJPE/HD/MSD metrics in that order
+pref-04  2      -      Sort imports before committing
+```
+
+### Stage 3: Next Session Context Injection
+
+Before each session starts, CQ injects relevant knowledge into the AI's context:
+
+- **Rules** (count ≥ 5): Written to `.claude/rules/` — loaded into every system prompt
+- **Hints** (count ≥ 3): Added to `CLAUDE.md` — soft suggestions the AI sees
+
+The AI doesn't need to be told. It already knows.
+
+---
+
+## Cross-Platform: Claude Discovers, ChatGPT Uses It
+
+In **Pro** and **Team** tiers, the PreferenceLedger lives in the cloud, not on your machine.
+
+A preference observed in a Claude Code session is available in your ChatGPT session the next day. A pattern learned in Cursor shows up in Claude Desktop. Your AI knowledge is unified across tools.
+
+```
+Monday: You correct Claude Code three times about a pattern.
+        → pref-07 count: 3 → hint created
+
+Tuesday: You open ChatGPT.
+         → CQ injects pref-07 hint into ChatGPT's MCP context
+         → ChatGPT already knows the pattern. No correction needed.
+
+Friday: pref-07 count reaches 5.
+        → Promoted to rule in .claude/rules/
+        → All AI tools now treat this as a permanent constraint.
+```
+
+No export, no import, no manual sync. The Knowledge Loop handles it.
+
+---
+
+## Persona: AI Learns to Code Like You
+
+Over time, the Knowledge Loop builds a model of your preferences across every dimension of how you work:
+
+- Code style (naming conventions, error handling patterns, test structure)
+- Review criteria (what you approve, what you reject, why)
+- Experiment methodology (which metrics matter, how you evaluate results)
+- Communication style (how detailed you want explanations, what you skip)
+
+```sh
+cq preferences list --rules
+```
+
+```
+ID       Count  Preference
+pref-01  12     Always use context.Context as first parameter
+pref-02  9      Return errors, don't log and return
+pref-03  7      Table-driven tests with descriptive subtest names
+pref-04  6      Check MPJPE before HD before MSD in pose estimation
+pref-05  5      Commit messages: imperative mood, 50 char subject limit
+```
+
+These rules load into every AI session automatically. The AI doesn't just follow instructions — it has internalized your judgment.
+
+---
+
+## Team: Teammate's Discovery Becomes Your Context
+
+In **Team** tier, the Knowledge Loop extends across your team.
+
+When Alice's AI discovers that "gradient norm > 10 before epoch 5 predicts training instability", that pattern — after it's confirmed through multiple sessions — propagates to your AI's context automatically.
+
+You skip the trial-and-error Alice already paid for.
+
+```
+Alice's sessions (week 1):
+  → Discovers: gradient norm check pattern
+  → count reaches 5 → team rule created
+
+Your session (week 2):
+  → CQ injects Alice's rule into your context
+  → "Check gradient norms before epoch 5"
+  → You never ran into the instability Alice debugged
+```
+
+What gets shared: behavioral patterns, workflow sequences, tool preferences.
+What never gets shared: file paths, repo names, email addresses, personal identifiers.
+
+---
+
+## A Concrete Example: Day 1 vs Day 30
+
+**Day 1 — AI doesn't know you:**
+
+```
+You: "Write a test for this function"
+AI: func TestFoo(t *testing.T) {
+      result := Foo(input)
+      if result != expected {
+        t.Errorf("...")
+      }
+    }
+
+You: "Use table-driven tests. And use t.Run for subtests."
+AI: [rewrites with table-driven pattern]
+
+You: "The subtest names should be descriptive, not 'case 1'"
+AI: [rewrites again]
+```
+
+Three corrections. Fifteen minutes of back-and-forth.
+
+**Day 30 — AI codes like you:**
+
+```
+You: "Write a test for this function"
+AI: func TestFoo(t *testing.T) {
+      tests := []struct{
+        name   string
+        input  string
+        expect string
+      }{
+        {name: "empty input returns error", ...},
+        {name: "valid input returns processed result", ...},
+      }
+      for _, tc := range tests {
+        t.Run(tc.name, func(t *testing.T) { ... })
+      }
+    }
+```
+
+Zero corrections. The AI already knows your style.
+
+---
+
+## Managing Your Knowledge
 
 ```sh
 cq preferences list              # All preferences with counts
 cq preferences list --hints      # Only hints (count ≥ 3)
 cq preferences list --rules      # Only rules (count ≥ 5)
 cq preferences show <id>         # Detail for one preference
+
+cq rule delete "check mpjpe first"    # Delete + permanently suppress
 ```
 
-Example output:
+Deleting a rule suppresses it permanently — CQ will never re-promote that pattern.
 
-```
-ID       Count  Level  Preference
-pref-01  5      RULE   Run experiments via Hub automatically
-pref-02  4      HINT   Use @key=value metric output format
-pref-03  4      HINT   Check MPJPE/HD/MSD metrics first
-pref-04  2      -      Sort imports before committing
-```
+---
 
-## Knowledge Flows Outward
+## Tier Scope
 
-Your preferences don't stay local. The **GlobalPromoter** strips identifying information (paths, usernames, emails, project names) and contributes the pattern to the community knowledge pool.
+| Tier | Knowledge scope |
+|------|----------------|
+| Free | Single project, local SQLite |
+| Pro | All your projects + all your AI tools, cloud-synced |
+| Team | Everything in Pro + teammates' discoveries |
 
-What gets shared:
-- Behavioral patterns ("check metric X before Y")
-- Workflow sequences ("run Z after W")
-- Tool preferences ("use T instead of U")
+---
 
-What never gets shared:
-- File paths
-- Repository names
-- Email addresses
-- Personal identifiers
+## Configuration
 
-Community patterns are available to all users. If many users independently discover the same best practice, it surfaces in the community pool — skipping your trial-and-error phase.
-
-## Interaction with Sessions
-
-The Knowledge Loop is triggered automatically on session close:
-
-```sh
-cq session close    # Triggers summary + preference extraction
-```
-
-Or configure it to run on every `cq claude` exit. Preferences extracted from the session are merged into the ledger and count increments happen atomically.
-
-## Pro and Team Tiers
-
-In **Pro** and **Team** tiers, the PreferenceLedger lives in Supabase — shared across:
-- All your devices
-- All AI tools (Claude Code, ChatGPT, Cursor, Gemini)
-
-A preference observed in a Claude Code session is available in your ChatGPT session the next day. The Knowledge Loop accumulates across your entire AI usage, not just one tool.
-
-In **Free** tier, the ledger is local SQLite. Preferences accumulate but don't sync across devices or tools.
-
-## Opt Out
-
-To disable automatic extraction on session close:
+The Knowledge Loop runs automatically. To disable:
 
 ```yaml
 # .c4/config.yaml
@@ -148,4 +238,8 @@ growth_loop:
   enabled: false
 ```
 
-Individual rules can be deleted and suppressed without disabling the whole system.
+To trigger manually after a session:
+
+```sh
+cq session close    # Triggers summary + preference extraction
+```
