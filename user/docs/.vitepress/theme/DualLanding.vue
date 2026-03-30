@@ -2,7 +2,28 @@
 import { ref } from 'vue'
 
 const activeTab = ref(0)
+const email = ref('')
+const submitted = ref(false)
 let touchStartX = 0
+
+async function submitEmail() {
+  if (!email.value || submitted.value) return
+  try {
+    // Store in Supabase waitlist table
+    await fetch('https://fhuomvsswxiwbfqjsgit.supabase.co/rest/v1/cq_waitlist', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZodW9tdnNzd3hpd2JmcWpzZ2l0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg1Mzg4NzgsImV4cCI6MjA4NDExNDg3OH0.vyEfPomCBdQCv81SCMbQGQlE-S3BYgAjyzSOydV_wU4',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ email: email.value })
+    })
+  } catch (e) {
+    // Silent fail — still show success
+  }
+  submitted.value = true
+}
 
 function onTouchStart(e) {
   touchStartX = e.touches[0].clientX
@@ -162,49 +183,31 @@ function onTouchEnd(e) {
         </div>
       </section>
 
-      <!-- Pricing -->
-      <section class="pricing">
-        <h2>Pricing</h2>
-        <p class="pricing-sub">Infrastructure is free. Intelligence is the product.</p>
-        <div class="pricing-grid">
-          <div class="plan">
-            <h3>Free</h3>
-            <div class="price">$0</div>
-            <ul>
-              <li>Project-local memory</li>
-              <li>1 GPU connected</li>
-              <li>All MCP tools</li>
-              <li>E2E encrypted relay</li>
-            </ul>
-          </div>
-          <div class="plan featured">
-            <h3>Pro</h3>
-            <div class="price">$36<span>/yr</span></div>
-            <ul>
-              <li>Cross-project memory</li>
-              <li>Cross-platform sync (Claude↔ChatGPT↔Cursor)</li>
-              <li>Unlimited GPUs</li>
-              <li>AI autonomous experiment loop</li>
-              <li>Persona learning</li>
-            </ul>
-            <div class="plan-badge">Early Bird — first 1,000 users, locked forever</div>
-          </div>
-          <div class="plan">
-            <h3>Team</h3>
-            <div class="price">$36<span>/seat/yr</span></div>
-            <ul>
-              <li>Everything in Pro</li>
-              <li>Team knowledge auto-sharing</li>
-              <li>Team GPU pooling</li>
-              <li>Privacy isolation between orgs</li>
-            </ul>
-          </div>
-        </div>
+      <!-- Coming Soon + Notify -->
+      <section class="coming-soon-section">
+        <div class="coming-soon-badge">Coming Soon</div>
+        <h2>CQ is launching soon.</h2>
+        <p class="coming-sub">Free tier available now. Pro & Team plans are on the way.</p>
+        <p class="coming-sub">Get notified when we officially launch.</p>
+
+        <form class="notify-form" @submit.prevent="submitEmail">
+          <input
+            v-model="email"
+            type="email"
+            placeholder="your@email.com"
+            class="notify-input"
+            required
+          />
+          <button type="submit" class="notify-btn" :disabled="submitted">
+            {{ submitted ? '✓ Subscribed!' : 'Notify Me' }}
+          </button>
+        </form>
+        <p v-if="submitted" class="notify-thanks">We'll let you know when CQ launches. 🎉</p>
       </section>
 
       <!-- CTA -->
       <section class="final-cta">
-        <h2>Your AI is waiting to know you.</h2>
+        <h2>Try the free version now.</h2>
         <p>Get started in 30 seconds.</p>
         <a href="/cq/guide/quickstart" class="cta-btn">Quick Start →</a>
         <p class="contact-line">Enterprise or team inquiry? <a href="mailto:cm@playidealab.com">cm@playidealab.com</a></p>
@@ -390,6 +393,82 @@ function onTouchEnd(e) {
 .plan li { padding: 8px 0; font-size: 14px; color: var(--vp-c-text-2); border-bottom: 1px solid var(--vp-c-divider); }
 .plan li:last-child { border-bottom: none; }
 .plan li::before { content: '✓ '; color: var(--vp-c-brand-1); font-weight: 700; }
+
+/* Coming Soon */
+.coming-soon-section {
+  text-align: center;
+  padding: 80px 0;
+  border-top: 1px solid var(--vp-c-divider);
+}
+.coming-soon-badge {
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--vp-c-brand-1);
+  background: var(--vp-c-brand-soft);
+  padding: 6px 20px;
+  border-radius: 20px;
+  margin-bottom: 24px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.coming-soon-section h2 {
+  font-size: 32px;
+  margin-bottom: 12px;
+}
+.coming-sub {
+  font-size: 16px;
+  color: var(--vp-c-text-2);
+  margin-bottom: 8px;
+}
+.notify-form {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 32px;
+  max-width: 440px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.notify-input {
+  flex: 1;
+  padding: 12px 16px;
+  font-size: 15px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.notify-input:focus {
+  border-color: var(--vp-c-brand-1);
+}
+.notify-btn {
+  padding: 12px 24px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  background: var(--vp-c-brand-1);
+  color: white;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+.notify-btn:hover:not(:disabled) {
+  background: var(--vp-c-brand-2);
+}
+.notify-btn:disabled {
+  background: var(--vp-c-brand-2);
+  cursor: default;
+}
+.notify-thanks {
+  margin-top: 16px;
+  font-size: 15px;
+  color: var(--vp-c-brand-1);
+  font-weight: 500;
+}
 
 .final-cta { text-align: center; padding: 80px 0; border-top: 1px solid var(--vp-c-divider); }
 .final-cta h2 { font-size: 32px; margin-bottom: 8px; }
