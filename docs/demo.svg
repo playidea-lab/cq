@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="340" viewBox="0 0 700 340" role="img" aria-label="CQ terminal demo">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap');
+      .term-bg    { fill: #0d1117; }
+      .titlebar   { fill: #161b22; }
+      .dot-red    { fill: #ff5f56; }
+      .dot-yellow { fill: #ffbd2e; }
+      .dot-green  { fill: #27c93f; }
+      .prompt     { fill: #7ee787; font-weight: 700; }
+      .cmd        { fill: #e6edf3; }
+      .dim        { fill: #8b949e; }
+      .success    { fill: #3fb950; }
+      .url        { fill: #79c0ff; }
+      .gpu        { fill: #d2a8ff; }
+      .mono       { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 13px; }
+      .cursor     { fill: #7ee787; }
+    </style>
+
+    <!-- Fade-in animation for each line group -->
+    <style>
+      .line-1  { opacity: 0; animation: fadein 0.2s 0.8s forwards; }
+      .line-2  { opacity: 0; animation: fadein 0.2s 1.8s forwards; }
+      .line-3  { opacity: 0; animation: fadein 0.2s 2.4s forwards; }
+      .line-4  { opacity: 0; animation: fadein 0.2s 3.0s forwards; }
+      .line-5  { opacity: 0; animation: fadein 0.2s 3.6s forwards; }
+      .line-6  { opacity: 0; animation: fadein 0.2s 4.8s forwards; }
+      .line-7  { opacity: 0; animation: fadein 0.2s 5.6s forwards; }
+      .line-8  { opacity: 0; animation: fadein 0.2s 6.2s forwards; }
+      .line-9  { opacity: 0; animation: fadein 0.2s 6.8s forwards; }
+      .line-10 { opacity: 0; animation: fadein 0.2s 7.4s forwards; }
+      .cursor-blink { animation: blink 1s step-start 8.0s infinite; }
+
+      @keyframes fadein {
+        from { opacity: 0; transform: translateY(2px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0; }
+      }
+    </style>
+  </defs>
+
+  <!-- Window background -->
+  <rect width="700" height="340" rx="10" ry="10" class="term-bg"/>
+
+  <!-- Title bar -->
+  <rect width="700" height="36" rx="10" ry="10" class="titlebar"/>
+  <rect y="18" width="700" height="18" class="titlebar"/>
+
+  <!-- Traffic lights -->
+  <circle cx="20" cy="18" r="6" class="dot-red"/>
+  <circle cx="40" cy="18" r="6" class="dot-yellow"/>
+  <circle cx="60" cy="18" r="6" class="dot-green"/>
+
+  <!-- Window title -->
+  <text x="350" y="23" text-anchor="middle" class="mono dim" font-size="12">zsh — 700×340</text>
+
+  <!-- Terminal content area -->
+  <!-- Line 1: prompt + curl command -->
+  <g class="line-1">
+    <text x="20" y="72" class="mono prompt">$</text>
+    <text x="34" y="72" class="mono cmd">curl -fsSL https://pilab.kr/install | sh</text>
+  </g>
+
+  <!-- Line 2: Downloading -->
+  <g class="line-2">
+    <text x="20" y="94" class="mono dim">  Downloading CQ...</text>
+  </g>
+
+  <!-- Line 3: Verifying -->
+  <g class="line-3">
+    <text x="20" y="114" class="mono dim">  Verifying checksum...</text>
+  </g>
+
+  <!-- Line 4: Success install -->
+  <g class="line-4">
+    <text x="20" y="134" class="mono">
+      <tspan class="success">  ✓ </tspan><tspan class="cmd">CQ installed </tspan><tspan class="dim">(v1.47.0)</tspan>
+    </text>
+  </g>
+
+  <!-- Spacer -->
+
+  <!-- Line 5: blank -->
+  <g class="line-5">
+    <text x="20" y="162" class="mono dim"> </text>
+  </g>
+
+  <!-- Line 6: prompt + cq serve -->
+  <g class="line-6">
+    <text x="20" y="184" class="mono prompt">$</text>
+    <text x="34" y="184" class="mono cmd">cq serve</text>
+  </g>
+
+  <!-- Line 7: relay connected -->
+  <g class="line-7">
+    <text x="20" y="206" class="mono">
+      <tspan class="dim">  cq: relay connected — </tspan><tspan class="url">https://cq-relay.fly.dev/w/my-gpu/mcp</tspan>
+    </text>
+  </g>
+
+  <!-- Line 8: GPU ready -->
+  <g class="line-8">
+    <text x="20" y="226" class="mono">
+      <tspan class="dim">  cq: </tspan><tspan class="success">1 GPU ready </tspan><tspan class="gpu">(RTX 4090)</tspan>
+    </text>
+  </g>
+
+  <!-- Line 9: blank -->
+  <g class="line-9">
+    <text x="20" y="246" class="mono"> </text>
+  </g>
+
+  <!-- Line 10: tagline -->
+  <g class="line-10">
+    <text x="20" y="266" class="mono dim">  Your GPU is now accessible from anywhere.</text>
+  </g>
+
+  <!-- Blinking cursor after all lines -->
+  <rect class="cursor cursor-blink" x="20" y="288" width="8" height="16" rx="1"/>
+
+  <!-- Bottom padding / branding -->
+  <text x="350" y="325" text-anchor="middle" class="mono dim" font-size="11">pilab.kr/install</text>
+</svg>
