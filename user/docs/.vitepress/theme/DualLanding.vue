@@ -157,6 +157,33 @@ function onTouchEnd(e) {
         </div>
       </section>
 
+      <!-- Without / With CQ -->
+      <section class="comparison">
+        <h2>Without CQ vs With CQ</h2>
+        <div class="compare-grid">
+          <div class="compare-col without">
+            <h3>Without CQ</h3>
+            <div class="compare-item">❌ SSH tunnel + VPN setup for remote GPU</div>
+            <div class="compare-item">❌ Every AI session starts from zero</div>
+            <div class="compare-item">❌ Switch AI tool = lose all context</div>
+            <div class="compare-item">❌ Experiments run manually, one at a time</div>
+            <div class="compare-item">❌ Results lost in terminal history</div>
+            <div class="compare-item">❌ Teammate's discovery stays in their head</div>
+            <div class="compare-item">❌ Slurm/K8s takes days to configure</div>
+          </div>
+          <div class="compare-col with">
+            <h3>With CQ</h3>
+            <div class="compare-item">✅ <code>cq serve</code> — one command, NAT traversal</div>
+            <div class="compare-item">✅ AI remembers your last 1,000 sessions</div>
+            <div class="compare-item">✅ Claude → ChatGPT → Cursor — knowledge follows</div>
+            <div class="compare-item">✅ AI runs experiments while you sleep</div>
+            <div class="compare-item">✅ Every result auto-recorded as knowledge</div>
+            <div class="compare-item">✅ Team knowledge auto-injected to everyone</div>
+            <div class="compare-item">✅ Install in 30 seconds, zero config</div>
+          </div>
+        </div>
+      </section>
+
       <!-- How it works -->
       <section class="how-it-works">
         <h2>How it works</h2>
@@ -368,6 +395,61 @@ function onTouchEnd(e) {
 .platform-row { margin-top: 16px; }
 .text-logo { font-size: 16px; font-weight: 600; color: var(--vp-c-text-1); }
 .text-sep { color: var(--vp-c-text-3); font-size: 16px; }
+
+/* Comparison */
+.comparison {
+  padding: 64px 0;
+  border-top: 1px solid var(--vp-c-divider);
+}
+.comparison h2 {
+  text-align: center;
+  font-size: 28px;
+  margin-bottom: 40px;
+}
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.compare-col {
+  border-radius: 12px;
+  padding: 28px 24px;
+}
+.compare-col.without {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+}
+.compare-col.with {
+  background: var(--vp-c-brand-soft);
+  border: 1px solid var(--vp-c-brand-1);
+}
+.compare-col h3 {
+  font-size: 18px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+.compare-item {
+  padding: 10px 0;
+  font-size: 14px;
+  line-height: 1.5;
+  border-bottom: 1px solid var(--vp-c-divider);
+  color: var(--vp-c-text-2);
+}
+.compare-item:last-child { border-bottom: none; }
+.compare-col.with .compare-item {
+  color: var(--vp-c-text-1);
+}
+.compare-item code {
+  font-size: 13px;
+  background: var(--vp-c-bg-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+@media (max-width: 768px) {
+  .compare-grid { grid-template-columns: 1fr; }
+}
 
 .how-it-works { padding: 64px 0; border-top: 1px solid var(--vp-c-divider); }
 .how-it-works h2 { text-align: center; font-size: 28px; margin-bottom: 48px; }
