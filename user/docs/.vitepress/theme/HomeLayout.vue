@@ -19,32 +19,24 @@ const { frontmatter } = useData()
         <section class="works-with">
           <h2>Works with any MCP-compatible AI</h2>
           <div class="logo-row">
-            <div class="logo-item">
-              <svg class="brand-icon" viewBox="0 0 24 24" fill="none"><path d="M16.5 3.5C14.76 3.5 13.09 4.26 12 5.6C10.91 4.26 9.24 3.5 7.5 3.5C4.42 3.5 2 5.92 2 9C2 12.78 5.4 15.89 10.55 20.54L12 21.85L13.45 20.54C18.6 15.89 22 12.78 22 9C22 5.92 19.58 3.5 16.5 3.5Z" fill="#D97706"/></svg>
-              <span>Claude Code</span>
-            </div>
-            <div class="logo-item">
-              <svg class="brand-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#10A37F"/><path d="M12 7v5l3 3" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
-              <span>ChatGPT</span>
-            </div>
-            <div class="logo-item">
-              <svg class="brand-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4" fill="#000"/><path d="M8 16V8l8 8V8" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <span>Cursor</span>
-            </div>
-            <div class="logo-item">
-              <svg class="brand-icon" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#4285F4" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <span>Gemini CLI</span>
-            </div>
-            <div class="logo-item">
-              <svg class="brand-icon" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="3" fill="#0D1117"/><path d="M7 10h10M7 14h6" stroke="#58A6FF" stroke-width="2" stroke-linecap="round"/></svg>
-              <span>Codex CLI</span>
-            </div>
+            <span class="text-logo">Claude Code</span>
+            <span class="text-sep">·</span>
+            <span class="text-logo">ChatGPT</span>
+            <span class="text-sep">·</span>
+            <span class="text-logo">Cursor</span>
+            <span class="text-sep">·</span>
+            <span class="text-logo">Gemini CLI</span>
+            <span class="text-sep">·</span>
+            <span class="text-logo">Codex CLI</span>
           </div>
           <div class="platform-row">
-            <div class="platform-item">🍎 Mac</div>
-            <div class="platform-item">🐧 Linux</div>
-            <div class="platform-item">🪟 Windows</div>
-            <div class="platform-item">📦 WSL2</div>
+            <span class="text-logo">Mac</span>
+            <span class="text-sep">·</span>
+            <span class="text-logo">Linux</span>
+            <span class="text-sep">·</span>
+            <span class="text-logo">Windows</span>
+            <span class="text-sep">·</span>
+            <span class="text-logo">WSL2</span>
           </div>
         </section>
 
@@ -150,36 +142,24 @@ const { frontmatter } = useData()
   font-weight: 400;
   margin-bottom: 32px;
 }
-.logo-row {
+.logo-row, .platform-row {
   display: flex;
   justify-content: center;
-  gap: 40px;
-  flex-wrap: wrap;
-}
-.logo-item {
-  display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--vp-c-text-1);
-}
-.brand-icon {
-  width: 24px;
-  height: 24px;
-  flex-shrink: 0;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .platform-row {
-  display: flex;
-  justify-content: center;
-  gap: 32px;
-  margin-top: 28px;
-  flex-wrap: wrap;
+  margin-top: 16px;
 }
-.platform-item {
-  font-size: 15px;
-  color: var(--vp-c-text-2);
-  font-weight: 500;
+.text-logo {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+.text-sep {
+  color: var(--vp-c-text-3);
+  font-size: 16px;
 }
 
 /* How it works */
