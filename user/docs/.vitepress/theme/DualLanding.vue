@@ -42,7 +42,7 @@ function onTouchEnd(e) {
     <!-- Header -->
     <div class="hero-section">
       <h1 class="title">CQ</h1>
-      <p class="subtitle">AI that knows you. GPU that works for you.</p>
+      <p class="subtitle">AI that knows you. Devices that work for you.</p>
     </div>
 
     <!-- Tabs -->
@@ -93,20 +93,20 @@ function onTouchEnd(e) {
         <!-- Panel 2: Researchers -->
         <div class="panel">
           <div class="panel-hero">
-            <h2>GPU Anywhere, Anytime, Anything.</h2>
-            <p>Your GPUs are idle 70% of the time. CQ connects them to AI — zero config, any OS, encrypted.</p>
-            <img :src="withBase('/demo.svg')" alt="CQ GPU Demo" class="panel-demo" />
+            <h2>Device Anywhere, Anytime, Anything.</h2>
+            <p>Your devices are idle most of the time. CQ connects them to AI — zero config, any OS, encrypted.</p>
+            <img :src="withBase('/demo.svg')" alt="CQ Device Demo" class="panel-demo" />
           </div>
           <div class="features">
             <div class="feature">
               <div class="feature-icon">🔌</div>
-              <h3>GPU from Anywhere</h3>
-              <p>Access your lab GPUs from home — no SSH, no VPN, no port forwarding. Relay traverses NAT and firewalls automatically.</p>
+              <h3>Device from Anywhere</h3>
+              <p>Access your lab machines from home — no SSH, no VPN, no port forwarding. Relay traverses NAT and firewalls automatically.</p>
             </div>
             <div class="feature">
               <div class="feature-icon">🔄</div>
               <h3>AI Runs Experiments</h3>
-              <p>Tell AI what to try. It distributes experiments across your GPUs, collects results, and designs the next round — while you sleep.</p>
+              <p>Tell AI what to try. It distributes experiments across your devices, collects results, and designs the next round — while you sleep.</p>
             </div>
             <div class="feature">
               <div class="feature-icon">🧠</div>
