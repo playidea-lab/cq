@@ -40,7 +40,12 @@ const { frontmatter } = useData()
               <span>Codex CLI</span>
             </div>
           </div>
-          <p class="works-sub">Mac · Linux · Windows · WSL2</p>
+          <div class="platform-row">
+            <div class="platform-item">🍎 Mac</div>
+            <div class="platform-item">🐧 Linux</div>
+            <div class="platform-item">🪟 Windows</div>
+            <div class="platform-item">📦 WSL2</div>
+          </div>
         </section>
 
         <!-- How it works -->
@@ -157,11 +162,17 @@ const { frontmatter } = useData()
   color: var(--vp-c-text-1);
 }
 .logo-emoji { font-size: 24px; }
-.works-sub {
-  margin-top: 24px;
-  font-size: 14px;
-  color: var(--vp-c-text-3);
-  letter-spacing: 0.05em;
+.platform-row {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 28px;
+  flex-wrap: wrap;
+}
+.platform-item {
+  font-size: 15px;
+  color: var(--vp-c-text-2);
+  font-weight: 500;
 }
 
 /* How it works */
