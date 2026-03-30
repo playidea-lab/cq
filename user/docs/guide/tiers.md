@@ -53,7 +53,7 @@ What you get:
 - Project-local knowledge base (SQLite, stays on your machine)
 - Knowledge Loop within a single project
 - E2E encrypted relay for NAT traversal
-- 1 device at a time
+- 1 GPU worker
 
 What you don't get:
 - Knowledge doesn't follow you to a second project
