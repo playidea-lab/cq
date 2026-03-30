@@ -1,0 +1,33 @@
+# GPU Worker — docker compose up
+#
+# 사전 조건:
+#   - NVIDIA Container Toolkit 설치 (nvidia-ctk)
+#   - .env 파일에 C5_HUB_URL, C5_API_KEY 설정
+#
+# 실행:
+#   docker compose up -d
+#   docker compose logs -f
+
+services:
+  gpu-worker:
+    build: .
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    env_file: .env
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      # JWT 인증 시 session.json 마운트
+      # - ~/.c4/session.json:/home/worker/.c4/session.json:ro
+      # 학습 데이터/체크포인트 영속화
+      - worker-data:/home/worker/data
+    restart: unless-stopped
+
+volumes:
+  worker-data:

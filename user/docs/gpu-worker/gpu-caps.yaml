@@ -1,0 +1,36 @@
+capabilities:
+  - name: gpu_status
+    description: "GPU 상태 조회 (nvidia-smi 파싱)"
+    command: scripts/gpu-status.sh
+    input_schema:
+      type: object
+      properties: {}
+    tags: [gpu, status]
+
+  - name: gpu_train
+    description: "GPU 학습 실행 (Python/PyTorch 스크립트)"
+    command: scripts/gpu-train.sh
+    input_schema:
+      type: object
+      properties:
+        script:
+          type: string
+          description: "실행할 Python 스크립트 경로"
+        args:
+          type: string
+          description: "스크립트에 전달할 추가 인수"
+    tags: [gpu, train, pytorch]
+
+  - name: gpu_infer
+    description: "GPU 추론 실행 (Python/PyTorch 스크립트)"
+    command: scripts/gpu-infer.sh
+    input_schema:
+      type: object
+      properties:
+        script:
+          type: string
+          description: "실행할 추론 스크립트 경로"
+        args:
+          type: string
+          description: "스크립트에 전달할 추가 인수"
+    tags: [gpu, infer, pytorch]
