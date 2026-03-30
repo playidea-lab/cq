@@ -3,26 +3,18 @@ layout: home
 
 hero:
   name: "CQ"
-  text: "GPU Anywhere, Anytime, Anything."
-  tagline: "당신의 GPU는 70% 시간 동안 놀고 있습니다. CQ가 AI에 연결합니다 — 설정 없이, 어떤 OS든, 암호화."
-  image:
-    src: /demo.svg
-    alt: CQ Demo
+  text: "나를 아는 AI.\n나를 위해 일하는 GPU."
+  tagline: "어떤 AI든 연결하세요. 모든 것을 기억합니다. 어디서든 실험을 실행합니다."
 
 features:
-  - icon: "\U0001F50C"
-    title: 어디서든 GPU
-    details: "집에서 연구실 GPU를 사용하세요 — SSH, VPN, 포트 포워딩 없이. Relay가 NAT과 방화벽을 자동 통과합니다."
-
-  - icon: "\U0001F504"
-    title: AI가 실험을 돌립니다
-    details: "AI에게 뭘 시도할지 말하세요. GPU에 분배하고, 결과를 수집하고, 다음 실험을 설계합니다 — 당신이 자는 동안."
-
-  - icon: "\U0001F9E0"
-    title: 지식이 쌓입니다
-    details: "모든 실험 결과가 자동 기록. 다음 세션에서 AI가 과거 결과를 참조. 6개월의 지식이 경쟁력이 됩니다."
-
-  - icon: "\U0001F512"
-    title: E2E 암호화
-    details: "X25519 + NaCl box 암호화. Relay 서버는 라우팅 정보만 봅니다 — 코드, 데이터, 결과는 절대 노출 안 됩니다."
+  - icon: "🧠"
+    title: "AI로 코딩합니다"
+    details: "크로스 플랫폼 메모리, 페르소나 학습, 자율 실험 — GPU 없어도 됩니다."
+    link: /cq/ko/for/developers
+    linkText: "연결, 적응, 진화 →"
+  - icon: "🔌"
+    title: "GPU가 있습니다"
+    details: "어디서든 연구실 GPU에 접근. NAT 통과, E2E 암호화, 설정 없음."
+    link: /cq/ko/for/researchers
+    linkText: "어디서든, 언제든, 무엇이든 →"
 ---

@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'CQ',
-  description: 'GPU Anywhere, Anytime, Anything',
+  description: 'AI that knows you. GPU that works for you.',
   base: '/cq/',
 
   ignoreDeadLinks: true,
@@ -54,53 +54,58 @@ export default defineConfig({
         sidebar: {
           '/ko/guide/': [
             {
-              text: '시작하기',
+              text: 'Getting Started',
               items: [
-                { text: '설치', link: '/ko/guide/install' },
-                { text: '빠른 시작', link: '/ko/guide/quickstart' },
-                { text: '가격 (Free/Pro/Team)', link: '/ko/guide/tiers' },
+                { text: 'Installation', link: '/ko/guide/install' },
+                { text: 'Quickstart', link: '/ko/guide/quickstart' },
               ],
             },
             {
-              text: 'GPU Anywhere',
+              text: 'Core Concepts',
               items: [
-                { text: 'Relay (NAT 통과)', link: '/ko/guide/relay' },
-                { text: 'GPU 워커 설정', link: '/ko/guide/worker' },
-                { text: '워커 구성', link: '/ko/guide/worker-setup' },
+                { text: 'Tiers', link: '/ko/guide/tiers' },
+                { text: 'Growth Loop', link: '/ko/guide/growth-loop' },
               ],
             },
             {
-              text: 'AI 워크스페이스',
+              text: 'Infrastructure',
               items: [
-                { text: '지식 루프', link: '/ko/guide/growth-loop' },
-                { text: '원격 AI 워크스페이스', link: '/ko/guide/remote-brain' },
-                { text: 'Craft (스킬 & 에이전트)', link: '/ko/guide/craft' },
+                { text: 'Worker Setup', link: '/ko/guide/worker' },
+                { text: 'Remote Brain', link: '/ko/guide/relay' },
+              ],
+            },
+            {
+              text: 'Advanced',
+              items: [
+                { text: 'Craft', link: '/ko/guide/craft' },
                 { text: 'DAG & Cron', link: '/ko/guide/dag-cron' },
+                { text: 'Relay', link: '/ko/guide/relay' },
+                { text: 'Worker', link: '/ko/guide/worker' },
               ],
             },
           ],
           '/ko/examples/': [
             {
-              text: '워크플로우',
+              text: 'Workflow',
               items: [
-                { text: '첫 태스크', link: '/ko/examples/first-task' },
-                { text: '버그 수정', link: '/ko/examples/bug-fix' },
-                { text: '기능 기획', link: '/ko/examples/feature-planning' },
+                { text: 'First Task', link: '/ko/examples/first-task' },
+                { text: 'Bug Fix', link: '/ko/examples/bug-fix' },
+                { text: 'Feature Planning', link: '/ko/examples/feature-planning' },
               ],
             },
             {
-              text: '지식',
+              text: 'Brain',
               items: [
                 { text: 'Remote MCP 연결', link: '/ko/examples/remote-mcp' },
                 { text: 'ChatGPT → Claude', link: '/ko/examples/chatgpt-to-claude' },
                 { text: '아이디어 세션', link: '/ko/examples/idea-sessions' },
-                { text: '지식 루프', link: '/ko/examples/growth-loop-in-action' },
+                { text: 'Growth Loop', link: '/ko/examples/growth-loop-in-action' },
               ],
             },
             {
-              text: '연구',
+              text: 'Research',
               items: [
-                { text: '연구 루프', link: '/ko/examples/research-loop' },
+                { text: 'Research Loop', link: '/ko/examples/research-loop' },
               ],
             },
           ],
@@ -142,24 +147,29 @@ export default defineConfig({
           items: [
             { text: 'Installation', link: '/guide/install' },
             { text: 'Quickstart', link: '/guide/quickstart' },
-            { text: 'Pricing (Free/Pro/Team)', link: '/guide/tiers' },
           ],
         },
         {
-          text: 'GPU Anywhere',
+          text: 'Core Concepts',
           items: [
-            { text: 'Relay (NAT Traversal)', link: '/guide/relay' },
-            { text: 'GPU Worker Setup', link: '/guide/worker' },
-            { text: 'Worker Configuration', link: '/guide/worker-setup' },
+            { text: 'Tiers', link: '/guide/tiers' },
+            { text: 'Growth Loop', link: '/guide/growth-loop' },
           ],
         },
         {
-          text: 'AI Workspace',
+          text: 'Infrastructure',
           items: [
-            { text: 'Knowledge Loop', link: '/guide/growth-loop' },
-            { text: 'Remote AI Workspace', link: '/guide/remote-brain' },
-            { text: 'Craft (Skills & Agents)', link: '/guide/craft' },
+            { text: 'Worker Setup', link: '/guide/worker' },
+            { text: 'Remote Brain', link: '/guide/relay' },
+          ],
+        },
+        {
+          text: 'Advanced',
+          items: [
+            { text: 'Craft', link: '/guide/craft' },
             { text: 'DAG & Cron', link: '/guide/dag-cron' },
+            { text: 'Relay', link: '/guide/relay' },
+            { text: 'Worker', link: '/guide/worker' },
           ],
         },
       ],
@@ -173,12 +183,12 @@ export default defineConfig({
           ],
         },
         {
-          text: 'Knowledge',
+          text: 'Brain',
           items: [
-            { text: 'Remote MCP Connection', link: '/examples/remote-mcp' },
+            { text: 'Connect Remote MCP', link: '/examples/remote-mcp' },
             { text: 'ChatGPT → Claude', link: '/examples/chatgpt-to-claude' },
             { text: 'Idea Sessions', link: '/examples/idea-sessions' },
-            { text: 'Knowledge Loop', link: '/examples/growth-loop-in-action' },
+            { text: 'Growth Loop', link: '/examples/growth-loop-in-action' },
           ],
         },
         {

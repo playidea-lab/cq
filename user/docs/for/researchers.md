@@ -1,0 +1,30 @@
+---
+layout: home
+
+hero:
+  name: "CQ"
+  text: "GPU Anywhere, Anytime, Anything."
+  tagline: "Your GPUs are idle 70% of the time. CQ connects them to AI — zero config, any OS, encrypted."
+  image:
+    src: /demo.svg
+    alt: CQ Demo
+
+features:
+  - icon: "🔌"
+    title: GPU from Anywhere
+    details: "Access your lab GPUs from home — no SSH, no VPN, no port forwarding. Relay traverses NAT and firewalls automatically."
+
+  - icon: "🔄"
+    title: AI Runs Experiments
+    details: "Tell AI what to try. It distributes experiments across your GPUs, collects results, and designs the next round — while you sleep."
+
+  - icon: "🧠"
+    title: Knowledge Compounds
+    details: "Every experiment result is recorded. Next session, AI references past findings. 6 months of knowledge becomes your moat."
+
+  - icon: "🔒"
+    title: End-to-End Encrypted
+    details: "X25519 + NaCl box encryption. The relay server sees only routing metadata — never your code, data, or results."
+---
+
+> Building without GPUs? [Connect, Adapt, Evolve →](/cq/for/developers)
