@@ -169,36 +169,33 @@ function onTouchEnd(e) {
             <h3>Free</h3>
             <div class="price">$0</div>
             <ul>
+              <li>Project-local memory</li>
               <li>1 GPU connected</li>
-              <li>10 GB Drive storage</li>
-              <li>Unlimited knowledge records</li>
-              <li>E2E encrypted relay</li>
               <li>All MCP tools</li>
+              <li>E2E encrypted relay</li>
             </ul>
           </div>
           <div class="plan featured">
             <h3>Pro</h3>
-            <div class="price coming-soon">—</div>
+            <div class="price">$36<span>/yr</span></div>
             <ul>
+              <li>Cross-project memory</li>
+              <li>Cross-platform sync (Claude↔ChatGPT↔Cursor)</li>
               <li>Unlimited GPUs</li>
-              <li>50 GB Drive storage</li>
               <li>AI autonomous experiment loop</li>
-              <li>AI experiment recommendations</li>
-              <li>Priority support</li>
+              <li>Persona learning</li>
             </ul>
-            <div class="plan-badge">Coming Soon</div>
+            <div class="plan-badge">Early Bird — first 1,000 users, locked forever</div>
           </div>
           <div class="plan">
             <h3>Team</h3>
-            <div class="price coming-soon">—</div>
+            <div class="price">$36<span>/seat/yr</span></div>
             <ul>
               <li>Everything in Pro</li>
-              <li>200 GB shared Drive</li>
+              <li>Team knowledge auto-sharing</li>
               <li>Team GPU pooling</li>
-              <li>Shared knowledge base</li>
-              <li>Team dashboard</li>
+              <li>Privacy isolation between orgs</li>
             </ul>
-            <div class="plan-badge">Coming Soon</div>
           </div>
         </div>
       </section>
