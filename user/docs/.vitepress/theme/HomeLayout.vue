@@ -123,7 +123,7 @@ const { frontmatter } = useData()
           <h2>Your GPUs are waiting.</h2>
           <p>Get started in 30 seconds.</p>
           <a href="/cq/guide/quickstart" class="cta-btn">Quick Start →</a>
-          <p class="contact-line">Enterprise or team inquiry? <a href="mailto:playidealab@gmail.com">playidealab@gmail.com</a></p>
+          <p class="contact-line">Enterprise or team inquiry? <a href="mailto:cm@playidealab.com">cm@playidealab.com</a></p>
         </section>
 
       </div>
