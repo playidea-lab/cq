@@ -76,7 +76,7 @@ const { frontmatter } = useData()
               <h3>Free</h3>
               <div class="price">$0</div>
               <ul>
-                <li>1 GPU connected</li>
+                <li>1 device at a time</li>
                 <li>10 GB Drive storage</li>
                 <li>Unlimited knowledge records</li>
                 <li>E2E encrypted relay</li>
