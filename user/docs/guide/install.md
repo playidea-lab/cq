@@ -1,6 +1,6 @@
 # Installation Guide
 
-Get CQ running in under 2 minutes.
+Get CQ — the GPU orchestration platform — running in under 2 minutes.
 
 ## One-Line Install
 
@@ -79,7 +79,7 @@ cq doctor
 Expected output:
 
 ```
-[✓] cq binary: v1.45
+[✓] cq binary: v1.48
 [✓] Claude Code: installed
 [✓] MCP server: .mcp.json connected
 [✓] .c4/ directory: initialized
@@ -89,7 +89,7 @@ Fix any `[✗]` items before proceeding.
 
 ## Login
 
-Cloud sync, the Growth Loop, and the Research Loop all require authentication:
+Cloud sync, the Knowledge Loop, and the Research Loop all require authentication:
 
 ```sh
 cq auth login      # GitHub OAuth via browser
@@ -182,4 +182,4 @@ rm -rf /path/to/cq
 ## Next Steps
 
 - [Quick Start](quickstart.md) — run your first plan in 5 minutes
-- [Tiers](tiers.md) — solo vs connected vs full
+- [Tiers](tiers.md) — Free vs Pro vs Team

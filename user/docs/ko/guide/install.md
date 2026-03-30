@@ -1,6 +1,6 @@
 # 설치 가이드
 
-2분 안에 CQ를 실행해보세요.
+2분 안에 CQ GPU 오케스트레이션 플랫폼을 실행해보세요.
 
 ## 한 줄 설치
 
@@ -79,7 +79,7 @@ cq doctor
 예상 출력:
 
 ```
-[✓] cq binary: v1.45
+[✓] cq binary: v1.48
 [✓] Claude Code: installed
 [✓] MCP server: .mcp.json connected
 [✓] .c4/ directory: initialized
@@ -89,7 +89,7 @@ cq doctor
 
 ## 로그인
 
-클라우드 동기화, Growth Loop, Research Loop를 사용하려면 인증이 필요합니다:
+클라우드 동기화, Knowledge Loop, Research Loop를 사용하려면 인증이 필요합니다:
 
 ```sh
 cq auth login      # 브라우저를 통한 GitHub OAuth
@@ -182,4 +182,4 @@ rm -rf /path/to/cq
 ## 다음 단계
 
 - [빠른 시작](quickstart.md) — 5분 안에 첫 번째 계획 실행
-- [티어](tiers.md) — solo, connected, full 비교
+- [티어](tiers.md) — Free, Pro, Team 비교

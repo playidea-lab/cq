@@ -1,6 +1,6 @@
 # DAG & Cron Guide
 
-Schedule recurring jobs and orchestrate multi-step pipelines on the Hub.
+Schedule recurring GPU jobs and orchestrate multi-step experiment pipelines on the Hub — the backbone of autonomous AI-driven training.
 
 ---
 

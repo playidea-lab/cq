@@ -1,10 +1,10 @@
-# Growth Loop
+# Knowledge Loop
 
-CQ learns how you work and permanently changes AI behavior to match your preferences.
+CQ learns how you work — and how your GPU experiments perform — and permanently changes AI behavior to match your preferences and findings.
 
 ## The Problem It Solves
 
-Every AI session starts from zero. You explain your conventions, correct the same mistakes, re-state the same constraints — session after session. Growth Loop closes that loop.
+Every AI session starts from zero. You explain your conventions, correct the same mistakes, re-state the same constraints — session after session. The Knowledge Loop closes that loop.
 
 ## How It Works
 
@@ -44,7 +44,7 @@ These rules are injected into `CLAUDE.md` and `.claude/rules/` — loaded into e
 
 Preferences are extracted when a session closes. Sources:
 - Corrections you made to AI output
-- Patterns in how you reviewed code
+- Patterns in how you reviewed code or experiment results
 - Commands you ran repeatedly
 - Explicit instructions you gave during the session
 
@@ -120,7 +120,7 @@ Community patterns are available to all users. If many users independently disco
 
 ## Interaction with Sessions
 
-The Growth Loop is triggered automatically on session close:
+The Knowledge Loop is triggered automatically on session close:
 
 ```sh
 cq session close    # Triggers summary + preference extraction
@@ -128,15 +128,15 @@ cq session close    # Triggers summary + preference extraction
 
 Or configure it to run on every `cq claude` exit. Preferences extracted from the session are merged into the ledger and count increments happen atomically.
 
-## Connected and Full Tiers
+## Pro and Team Tiers
 
-In **connected** and **full** tiers, the PreferenceLedger lives in Supabase — shared across:
+In **Pro** and **Team** tiers, the PreferenceLedger lives in Supabase — shared across:
 - All your devices
 - All AI tools (Claude Code, ChatGPT, Cursor, Gemini)
 
-A preference observed in a Claude Code session is available in your ChatGPT session the next day. The Growth Loop accumulates across your entire AI usage, not just one tool.
+A preference observed in a Claude Code session is available in your ChatGPT session the next day. The Knowledge Loop accumulates across your entire AI usage, not just one tool.
 
-In **solo** tier, the ledger is local SQLite. Preferences accumulate but don't sync across devices or tools.
+In **Free** tier, the ledger is local SQLite. Preferences accumulate but don't sync across devices or tools.
 
 ## Opt Out
 

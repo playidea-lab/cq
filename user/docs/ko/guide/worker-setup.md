@@ -1,6 +1,6 @@
-# Worker 설정
+# GPU Worker 설정
 
-GPU 서버, 클라우드 VM, 또는 로컬 워크스테이션을 CQ Hub에 작업 Worker로 연결하세요.
+GPU 서버, 클라우드 VM, 또는 로컬 워크스테이션을 CQ Hub에 GPU 작업 Worker로 연결하세요. 설정 없이, 어떤 OS에서도, 종단간 암호화 relay — GPU Anywhere의 토대입니다.
 
 ## 아키텍처
 
@@ -238,5 +238,5 @@ cq hub worker start     # Worker 재시작
 
 ## 다음 단계
 
-- [Remote Brain](remote-brain.md) — 다른 AI 도구에서 CQ 지식 접근
-- [티어](tiers.md) — 전체 티어 기능 이해
+- [Knowledge Loop](growth-loop.md) — 실험 결과를 재사용 가능한 AI 지식으로 축적
+- [티어](tiers.md) — Free/Pro/Team 기능 이해

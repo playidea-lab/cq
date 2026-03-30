@@ -1,10 +1,10 @@
 # Relay MCP 서버 가이드
 
-NAT 뒤에 있는 Worker에도 클라우드 WebSocket 브릿지를 통해 원격 MCP 접근이 가능합니다.
+어디서나 GPU 접근 — NAT 뒤에 있는 Worker에도 종단간 암호화된 클라우드 WebSocket 브릿지를 통해 원격 MCP 접근이 가능합니다.
 
 ## Relay란?
 
-`cq serve`를 실행하면 Worker가 릴레이 서버에 WebSocket 연결을 엽니다. 원격 MCP 클라이언트는 HTTPS로 연결하고, 릴레이가 둘을 중계합니다. Worker 측에서 인바운드 포트나 방화벽 변경이 필요 없습니다.
+GPU Anywhere를 가능하게 하는 NAT 통과 레이어입니다. `cq serve`를 실행하면 Worker가 릴레이 서버에 WebSocket 연결을 엽니다. 원격 MCP 클라이언트는 HTTPS로 연결하고, 릴레이가 둘을 중계합니다. Worker 측에서 인바운드 포트나 방화벽 변경이 필요 없습니다 — 설정 없이, 어떤 네트워크에서도.
 
 ```
 Claude Code / Client
@@ -87,9 +87,10 @@ WebRTC P2P 기반 — 릴레이를 거치지 않고 직접 전송.
 
 ## 보안
 
-- 모든 릴레이 요청에 Bearer JWT 필요
+- 종단간 암호화: 모든 릴레이 요청에 Bearer JWT 필요
 - 릴레이 서버가 Supabase Auth API로 매 요청 검증
 - Worker 격리: 각 Worker ID는 소유자 계정에 바인딩
+- 어떤 OS, 어떤 네트워크에서도 동작 — 홈 랩, 클라우드 VM, NAT 뒤 기업 네트워크
 
 ---
 

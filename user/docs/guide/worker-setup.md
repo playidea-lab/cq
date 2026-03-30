@@ -1,6 +1,6 @@
-# Worker Setup
+# GPU Worker Setup
 
-Connect a GPU server, cloud VM, or local workstation to the CQ Hub as a job worker.
+Connect a GPU server, cloud VM, or local workstation to the CQ Hub as a job worker. This is the foundation of GPU Anywhere — zero config, any OS, encrypted relay.
 
 ## Architecture
 
@@ -238,5 +238,5 @@ Key prefixes:
 
 ## Next Steps
 
-- [Remote Brain](remote-brain.md) — access CQ knowledge from other AI tools
-- [Tiers](tiers.md) — understand the full tier feature set
+- [Knowledge Loop](growth-loop.md) — accumulate experiment results into reusable AI knowledge
+- [Tiers](tiers.md) — understand Free/Pro/Team feature sets

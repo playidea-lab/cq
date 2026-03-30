@@ -5,13 +5,9 @@ hero:
   name: "CQ"
   text: "GPU Anywhere, Anytime, Anything."
   tagline: "당신의 GPU는 70% 시간 동안 놀고 있습니다. CQ가 AI에 연결합니다 — 설정 없이, 어떤 OS든, 암호화."
-  actions:
-    - theme: brand
-      text: 빠른 시작
-      link: /ko/guide/quickstart
-    - theme: alt
-      text: 설치 가이드
-      link: /ko/guide/install
+  image:
+    src: /demo.svg
+    alt: CQ Demo
 
 features:
   - icon: "\U0001F50C"
@@ -30,9 +26,3 @@ features:
     title: E2E 암호화
     details: "X25519 + NaCl box 암호화. Relay 서버는 라우팅 정보만 봅니다 — 코드, 데이터, 결과는 절대 노출 안 됩니다."
 ---
-
-## 설치
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
-```

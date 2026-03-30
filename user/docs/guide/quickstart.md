@@ -1,6 +1,6 @@
 # Quick Start
 
-From install to your first result in 2 minutes.
+From install to your first GPU-connected result in 2 minutes.
 
 ## 1. Install
 
@@ -51,7 +51,7 @@ CQ brainstorms → plans → spawns parallel workers → polishes → commits. Y
 There's no step 4. CQ figures out the right workflow for each request.
 
 **What happens behind the scenes:**
-- Every session, CQ captures your decisions and preferences
+- Every session, CQ captures your decisions and experiment results
 - By session 5, it knows how you work without being told
 - Knowledge flows across AI tools — learn in ChatGPT, use in Claude
 
@@ -61,11 +61,11 @@ There's no step 4. CQ figures out the right workflow for each request.
 
 | I want to... | Go to |
 |-------------|-------|
-| Understand the 4 pillars (Distribute/Connect/Mimic/Evolve) | [Home](/) |
+| Connect a GPU server for remote training | [Worker Setup](/guide/worker-setup) |
+| Understand Free/Pro/Team tiers | [Tiers](/guide/tiers) |
 | See a real bug fix walkthrough | [Bug Fix Example](/examples/bug-fix) |
 | Build a large feature with planning | [Feature Planning](/examples/feature-planning) |
-| Connect ChatGPT to my CQ brain | [Remote MCP](/examples/remote-mcp) |
-| Watch CQ learn my preferences | [Growth Loop](/examples/growth-loop-in-action) |
+| Connect ChatGPT to my CQ workspace | [Remote MCP](/examples/remote-mcp) |
 | Run GPU experiments autonomously | [Research Loop](/examples/research-loop) |
 
 ## Troubleshooting

@@ -2,7 +2,7 @@ import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   title: 'CQ',
-  description: 'External Brain for AI',
+  description: 'GPU Anywhere, Anytime, Anything',
   base: '/cq/',
 
   ignoreDeadLinks: true,

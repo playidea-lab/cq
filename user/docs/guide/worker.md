@@ -1,6 +1,6 @@
 # C5 Hub Worker Guide
 
-Connect any machine — GPU server, cloud VM, or local workstation — to the C5 Hub as a stateless job worker.
+Connect any machine — GPU server, cloud VM, or local workstation — to the C5 Hub as a stateless GPU job worker. This is how CQ delivers GPU Anywhere: submit from your laptop, execute on any GPU, anywhere.
 
 ## Overview
 

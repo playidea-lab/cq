@@ -1,14 +1,14 @@
-# Remote Brain
+# Remote AI 워크스페이스
 
 [mcp.pilab.kr](https://mcp.pilab.kr)을 통해 ChatGPT, Claude Desktop, Cursor 등 MCP 호환 AI를 CQ 지식 베이스에 연결하세요.
 
-## Remote Brain이 필요한 이유
+## Remote AI 워크스페이스가 필요한 이유
 
-로컬에 설치된 CQ는 169개의 MCP 도구를 제공합니다. Remote Brain은 **지식 레이어**를 제공합니다 — 로컬 설치 없이 어떤 AI 도구에서도, 어떤 디바이스에서도 접근 가능합니다.
+로컬에 설치된 CQ는 169개의 MCP 도구와 GPU 접근을 제공합니다. Remote AI 워크스페이스는 **지식 레이어**를 제공합니다 — 로컬 설치 없이 어떤 AI 도구에서도, 어떤 디바이스에서도 접근 가능합니다.
 
 - Claude Code에서 기록한 지식이 ChatGPT에서 사용 가능
-- 노트북의 선호도가 데스크톱에 동기화
-- 어떤 AI든 당신의 두뇌를 읽고 쓸 수 있음
+- GPU 서버의 실험 결과가 데스크톱에 동기화
+- 어떤 AI든 공유 워크스페이스를 읽고 쓸 수 있음
 
 ## 2단계로 연결
 
@@ -75,13 +75,13 @@ Auth: OAuth 2.1 (GitHub)
 }
 ```
 
-## Remote Brain의 기능
+## Remote AI 워크스페이스의 기능
 
 Remote MCP 서버는 지식에 집중된 CQ 도구의 하위 집합을 노출합니다:
 
 | 도구 | 설명 |
 |------|------|
-| `cq_knowledge_record` | 발견이나 결정 저장 |
+| `cq_knowledge_record` | 발견, 실험 결과, 결정 저장 |
 | `cq_knowledge_search` | 지식 베이스 검색 |
 | `cq_session_summary` | 최근 세션 요약 가져오기 |
 | `cq_preferences_list` | 쌓인 선호도 보기 |
@@ -90,7 +90,7 @@ Remote MCP 서버는 지식에 집중된 CQ 도구의 하위 집합을 노출합
 
 ## AI 자동 캡처
 
-Remote Brain은 AI 도구가 당신이 요청하지 않아도 **자발적으로** 지식을 저장하도록 설계되었습니다.
+Remote AI 워크스페이스는 AI 도구가 당신이 요청하지 않아도 **자발적으로** 지식을 저장하도록 설계되었습니다.
 
 도구 설명이 자동 저장을 트리거하도록 작성되어 있습니다:
 
@@ -109,7 +109,7 @@ Remote Brain은 AI 도구가 당신이 요청하지 않아도 **자발적으로*
 - 해결한 문제와 방법
 - 변경된 파일과 이유
 
-이것이 [Growth Loop](growth-loop.md)에 직접 반영됩니다 — 요약에서 추출된 선호도가 hint와 rule로 쌓입니다.
+이것이 [Knowledge Loop](growth-loop.md)에 직접 반영됩니다 — 요약에서 추출된 선호도가 hint와 rule로 쌓입니다.
 
 ## OAuth 플로우
 
@@ -147,24 +147,24 @@ Claude Code 세션:  캐싱 버그 근본 원인 발견
 - OAuth용 GitHub 계정
 - MCP 호환 AI 도구
 
-Remote Brain 연결에 로컬 CQ 설치가 필요하지 않습니다.
+Remote AI 워크스페이스 연결에 로컬 CQ 설치가 필요하지 않습니다.
 
 ## 로컬 설치와의 관계
 
-Remote Brain과 로컬 CQ는 **동일한 Supabase 백엔드**를 사용합니다. 별개의 시스템이 아닙니다:
+Remote AI 워크스페이스와 로컬 CQ는 **동일한 Supabase 백엔드**를 사용합니다. 별개의 시스템이 아닙니다:
 
-| 기능 | 로컬 CQ | Remote Brain |
-|------|---------|-------------|
+| 기능 | 로컬 CQ | Remote AI 워크스페이스 |
+|------|---------|----------------------|
 | 태스크 오케스트레이션 | 있음 | 없음 |
-| 코드 실행 | 있음 | 없음 |
+| GPU 작업 실행 | 있음 | 없음 |
 | 파일 접근 | 있음 | 없음 |
 | 지식 읽기/쓰기 | 있음 | 있음 |
-| Growth Loop | 있음 | 있음 (요약 경유) |
+| Knowledge Loop | 있음 | 있음 (요약 경유) |
 | 필요한 설정 | 설치 + 빌드 | OAuth 로그인 |
 
-개발에는 로컬 CQ를 사용하세요. 소프트웨어를 설치할 수 없는 도구에서 지식 접근에는 Remote Brain을 사용하세요.
+GPU 실험과 개발에는 로컬 CQ를 사용하세요. 소프트웨어를 설치할 수 없는 도구에서 지식 접근에는 Remote AI 워크스페이스를 사용하세요.
 
 ## 다음 단계
 
-- [Growth Loop](growth-loop.md) — 지식이 선호도와 규칙으로 쌓이는 방법
-- [티어](tiers.md) — Remote Brain은 connected와 full 티어에서 사용 가능
+- [Knowledge Loop](growth-loop.md) — 지식이 선호도와 규칙으로 쌓이는 방법
+- [티어](tiers.md) — Remote AI 워크스페이스는 Pro와 Team 티어에서 사용 가능

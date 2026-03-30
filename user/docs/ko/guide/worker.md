@@ -1,6 +1,6 @@
 # Hub Worker 가이드
 
-GPU 서버, 클라우드 VM, 로컬 워크스테이션 — 어떤 머신이든 Hub Worker로 연결합니다.
+GPU 서버, 클라우드 VM, 로컬 워크스테이션 — 어떤 머신이든 Hub GPU Worker로 연결합니다. 노트북에서 제출하고, 어디서든 GPU로 실행하는 GPU Anywhere의 핵심입니다.
 
 ## 개요
 

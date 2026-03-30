@@ -5,13 +5,9 @@ hero:
   name: "CQ"
   text: "GPU Anywhere, Anytime, Anything."
   tagline: "Your GPUs are idle 70% of the time. CQ connects them to AI — zero config, any OS, encrypted."
-  actions:
-    - theme: brand
-      text: Quick Start
-      link: /guide/quickstart
-    - theme: alt
-      text: Installation
-      link: /guide/install
+  image:
+    src: /demo.svg
+    alt: CQ Demo
 
 features:
   - icon: "\U0001F50C"
@@ -30,9 +26,3 @@ features:
     title: End-to-End Encrypted
     details: "X25519 + NaCl box encryption. The relay server sees only routing metadata — never your code, data, or results."
 ---
-
-## Install
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
-```

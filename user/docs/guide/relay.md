@@ -1,10 +1,10 @@
 # Relay MCP Server Guide
 
-Relay enables remote MCP access to any worker — even behind NAT — via a cloud WebSocket bridge.
+Relay enables GPU Anywhere access — remote MCP connections to any worker, even behind NAT — via an E2E encrypted cloud WebSocket bridge.
 
 ## What is Relay?
 
-A worker running `cq serve` opens a persistent WebSocket connection to the relay server. Remote MCP clients (Claude Code, other agents) connect through HTTPS. The relay bridges the two without requiring inbound ports or firewall changes on the worker.
+Relay is the NAT traversal layer that makes GPU Anywhere possible. A worker running `cq serve` opens a persistent WebSocket connection to the relay server. Remote MCP clients (Claude Code, other agents) connect through HTTPS. The relay bridges the two without requiring inbound ports or firewall changes on the worker — zero config, any network.
 
 ```
 Claude Code / Client
@@ -23,8 +23,9 @@ Claude Code / Client
 **Key properties:**
 
 - No inbound ports needed on the worker — outbound WSS only.
-- JWT-authenticated: every request verified against Supabase Auth API.
+- E2E encrypted: JWT-authenticated, every request verified against Supabase Auth API.
 - MCP protocol is proxied transparently — all 118+ cq MCP tools are accessible remotely.
+- Works on any OS, any network — home lab, cloud VM, or corporate network behind NAT.
 
 ---
 

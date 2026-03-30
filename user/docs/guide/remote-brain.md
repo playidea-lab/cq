@@ -1,14 +1,14 @@
-# Remote Brain
+# Remote AI Workspace
 
 Connect any MCP-compatible AI — ChatGPT, Claude Desktop, Cursor — to your CQ knowledge base via [mcp.pilab.kr](https://mcp.pilab.kr).
 
-## Why Remote Brain
+## Why Remote AI Workspace
 
-CQ installed locally gives you 169 MCP tools. Remote Brain gives you the **knowledge layer** — accessible from any AI tool, on any device, without a local install.
+CQ installed locally gives you 169 MCP tools and GPU access. The Remote AI Workspace gives you the **knowledge layer** — accessible from any AI tool, on any device, without a local install.
 
 - Knowledge recorded in Claude Code is available in ChatGPT
-- Preferences from your laptop sync to your desktop
-- Any AI can read and write to your brain
+- Experiment results from your GPU server sync to your desktop
+- Any AI can read and write to your shared workspace
 
 ## Connect in 2 Steps
 
@@ -74,13 +74,13 @@ Add to `.cursor/mcp.json` in your project or `~/.cursor/mcp.json` globally:
 }
 ```
 
-## What Remote Brain Can Do
+## What the Remote AI Workspace Can Do
 
 The Remote MCP server exposes a subset of CQ tools focused on knowledge:
 
 | Tool | Description |
 |------|-------------|
-| `cq_knowledge_record` | Save a discovery or decision |
+| `cq_knowledge_record` | Save a discovery, experiment result, or decision |
 | `cq_knowledge_search` | Search your knowledge base |
 | `cq_session_summary` | Get a summary of recent sessions |
 | `cq_preferences_list` | View your accumulated preferences |
@@ -89,7 +89,7 @@ These tools work identically across Claude Code, ChatGPT, and Cursor — same da
 
 ## AI Self-Capture
 
-Remote Brain is engineered so AI tools **proactively** save knowledge without you asking.
+The Remote AI Workspace is engineered so AI tools **proactively** save knowledge without you asking.
 
 Tool descriptions are written to trigger automatic saves:
 
@@ -108,7 +108,7 @@ When a session ends, the AI can call `cq_session_summary` to capture:
 - Problems solved and how
 - Files changed and why
 
-This feeds directly into the [Growth Loop](growth-loop.md) — preferences extracted from summaries accumulate into hints and rules.
+This feeds directly into the [Knowledge Loop](growth-loop.md) — preferences extracted from summaries accumulate into hints and rules.
 
 ## OAuth Flow
 
@@ -146,24 +146,24 @@ No copy-paste. No re-explanation. Knowledge follows you.
 - GitHub account for OAuth
 - Any MCP-compatible AI tool
 
-No local CQ installation required for the Remote Brain connection.
+No local CQ installation required for the Remote AI Workspace connection.
 
 ## Relationship to Local Installation
 
-Remote Brain and local CQ use the **same Supabase backend**. They are not separate systems:
+The Remote AI Workspace and local CQ use the **same Supabase backend**. They are not separate systems:
 
-| Feature | Local CQ | Remote Brain |
-|---------|----------|--------------|
+| Feature | Local CQ | Remote AI Workspace |
+|---------|----------|---------------------|
 | Task orchestration | Yes | No |
-| Code execution | Yes | No |
+| GPU job execution | Yes | No |
 | File access | Yes | No |
 | Knowledge read/write | Yes | Yes |
-| Growth Loop | Yes | Yes (via summary) |
+| Knowledge Loop | Yes | Yes (via summary) |
 | Setup required | Install + build | OAuth login |
 
-Use local CQ for building. Use Remote Brain for knowledge access from tools where you can't install software.
+Use local CQ for building and GPU experiments. Use the Remote AI Workspace for knowledge access from tools where you can't install software.
 
 ## Next Steps
 
-- [Growth Loop](growth-loop.md) — how knowledge accumulates into preferences and rules
-- [Tiers](tiers.md) — Remote Brain is available in connected and full tiers
+- [Knowledge Loop](growth-loop.md) — how knowledge accumulates into preferences and rules
+- [Tiers](tiers.md) — Remote AI Workspace is available in Pro and Team tiers

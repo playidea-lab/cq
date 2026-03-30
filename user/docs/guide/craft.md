@@ -1,6 +1,6 @@
-# CQ Craft — 나만의 도구를 만들고 설치하는 시스템
+# CQ Craft — Build and Install Your Own AI Tools
 
-> AI 에이전트의 행동을 사용자가 직접 디자인한다.
+> Design your AI agent's behavior directly — from GPU experiment workflows to code review checklists.
 
 ---
 

@@ -1,6 +1,6 @@
 # Architecture Reference
 
-CQ is an **External Brain for AI** -- a system where every AI conversation becomes permanent knowledge, quality gates ensure code integrity, and distributed execution enables remote GPU training. This document describes the core components.
+CQ is a **GPU orchestration platform** — GPU Anywhere, Anytime, Anything. Every AI conversation becomes permanent knowledge, quality gates ensure code integrity, and E2E encrypted relay enables remote GPU training from any machine, any network. This document describes the core components.
 
 ---
 
@@ -26,9 +26,9 @@ Any AI (ChatGPT,   --- MCP -->|  +- Knowledge record/search |
  Claude, Gemini)              |  +- Session summary         |
                               +----------------------------+
 
-solo:       Everything local (SQLite + your API key)
-connected:  Brain in cloud + relay (login + serve)
-full:       Connected + GPU workers + research loop
+free:   Everything local (SQLite + your API key)
+pro:    AI workspace in cloud + E2E encrypted relay (login + serve)
+team:   Pro + shared GPU workers + autonomous research loop
 ```
 
 ---
@@ -37,13 +37,13 @@ full:       Connected + GPU workers + research loop
 
 | Tier | Data SSOT | LLM | Setup |
 |------|-----------|-----|-------|
-| **solo** | Local SQLite | User's API key | `config.yaml` required |
-| **connected** | Supabase (cloud-primary) | PI Lab LLM Proxy | `cq auth login` + `cq serve` |
-| **full** | Supabase (cloud-primary) | PI Lab LLM Proxy | Connected + GPU workers |
+| **Free** | Local SQLite | User's API key | `config.yaml` required |
+| **Pro** | Supabase (cloud-primary) | PI Lab LLM Proxy | `cq auth login` + `cq serve` |
+| **Team** | Supabase (cloud-primary) | PI Lab LLM Proxy | Pro + shared GPU workers |
 
 - Cloud failure falls back to SQLite (read-only)
 - ~70 tools cloud-primary, ~48 tools require local (files/git/build)
-- External Brain: ChatGPT/Claude/Gemini connect via OAuth MCP (no local install needed)
+- Remote AI Workspace: ChatGPT/Claude/Gemini connect via OAuth MCP (no local install needed)
 
 ---
 
@@ -128,7 +128,7 @@ cq doctor
 
 ---
 
-## Worker Survivability (v1.44-v1.46)
+## Worker Survivability (v1.44-v1.48)
 
 Workers are designed to self-heal from crashes, network failures, and overload without operator intervention.
 
@@ -177,9 +177,9 @@ The relay WebSocket connection monitors itself. On disconnect (network drop, rel
 
 ---
 
-## Growth Loop / Persona System (v1.40-v1.42)
+## Knowledge Loop (v1.40-v1.48)
 
-The persona system learns from user corrections and promotes stable patterns into shared knowledge.
+The Knowledge Loop learns from user corrections and experiment results, promoting stable patterns into shared knowledge.
 
 ```
 User correction / explicit feedback
@@ -427,11 +427,11 @@ Event types:
 
 ---
 
-## External Brain (Cloudflare Worker)
+## Remote AI Workspace (Cloudflare Worker)
 
 OAuth 2.1 MCP proxy. Any AI (ChatGPT, Claude web, Gemini) can access CQ knowledge without local install.
 
-Tools exposed via External Brain:
+Tools exposed via Remote AI Workspace:
 
 | Tool | Description |
 |------|-------------|
@@ -534,7 +534,7 @@ permission_reviewer:
 
 ---
 
-## Skills (v1.46)
+## Skills (v1.48)
 
 42 skills across research, ML, data, and orchestration domains. Skills are loaded from `.claude/skills/` and invoked via `/skill-name`.
 
