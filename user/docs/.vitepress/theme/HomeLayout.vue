@@ -123,6 +123,7 @@ const { frontmatter } = useData()
           <h2>Your GPUs are waiting.</h2>
           <p>Get started in 30 seconds.</p>
           <a href="/cq/guide/quickstart" class="cta-btn">Quick Start →</a>
+          <p class="contact-line">Enterprise or team inquiry? <a href="mailto:playidealab@gmail.com">playidealab@gmail.com</a></p>
         </section>
 
       </div>
@@ -345,6 +346,18 @@ const { frontmatter } = useData()
 }
 .cta-btn:hover {
   background: var(--vp-c-brand-2);
+}
+.contact-line {
+  margin-top: 24px;
+  font-size: 14px;
+  color: var(--vp-c-text-3);
+}
+.contact-line a {
+  color: var(--vp-c-brand-1);
+  text-decoration: none;
+}
+.contact-line a:hover {
+  text-decoration: underline;
 }
 
 /* Responsive */
