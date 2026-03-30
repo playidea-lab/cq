@@ -1,3 +1,12 @@
+/* Hero image — make demo SVG larger */
+.VPHero .VPImage {
+  max-width: 560px !important;
+  max-height: 420px !important;
+  width: 100% !important;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
 /* Center hero actions */
 .VPHero .actions {
   justify-content: center !important;
