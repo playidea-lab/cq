@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import { withBase } from 'vitepress'
 
 const activeTab = ref(0)
 const email = ref('')
@@ -63,7 +64,7 @@ function onTouchEnd(e) {
           <div class="panel-hero">
             <h2>Knowledge: Connect, Adapt, Evolve.</h2>
             <p>Switch AI. Keep everything. Your knowledge follows you across Claude, ChatGPT, Cursor, and beyond.</p>
-            <img src="/cq/demo-dev.svg" alt="CQ Knowledge Demo" class="panel-demo" />
+            <img :src="withBase('/demo-dev.svg')" alt="CQ Knowledge Demo" class="panel-demo" />
           </div>
           <div class="features">
             <div class="feature">
@@ -94,7 +95,7 @@ function onTouchEnd(e) {
           <div class="panel-hero">
             <h2>GPU Anywhere, Anytime, Anything.</h2>
             <p>Your GPUs are idle 70% of the time. CQ connects them to AI — zero config, any OS, encrypted.</p>
-            <img src="/cq/demo.svg" alt="CQ GPU Demo" class="panel-demo" />
+            <img :src="withBase('/demo.svg')" alt="CQ GPU Demo" class="panel-demo" />
           </div>
           <div class="features">
             <div class="feature">
