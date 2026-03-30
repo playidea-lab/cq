@@ -13,7 +13,7 @@ function copy() {
 </script>
 
 <template>
-  <div class="hero-version">v1.45.0</div>
+  <div class="hero-version">v1.48.0</div>
   <div class="hero-install">
     <button class="install-btn" @click="copy">
       <span class="cmd">{{ cmd }}</span>
