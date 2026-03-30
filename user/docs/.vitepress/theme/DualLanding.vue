@@ -40,8 +40,9 @@ function onTouchEnd(e) {
         <!-- Panel 1: Developers -->
         <div class="panel">
           <div class="panel-hero">
-            <h2>Connect, Adapt, Evolve.</h2>
+            <h2>Knowledge: Connect, Adapt, Evolve.</h2>
             <p>Switch AI. Keep everything. Your knowledge follows you across Claude, ChatGPT, Cursor, and beyond.</p>
+            <img src="/cq/demo-dev.svg" alt="CQ Knowledge Demo" class="panel-demo" />
           </div>
           <div class="features">
             <div class="feature">
@@ -72,6 +73,7 @@ function onTouchEnd(e) {
           <div class="panel-hero">
             <h2>GPU Anywhere, Anytime, Anything.</h2>
             <p>Your GPUs are idle 70% of the time. CQ connects them to AI — zero config, any OS, encrypted.</p>
+            <img src="/cq/demo.svg" alt="CQ GPU Demo" class="panel-demo" />
           </div>
           <div class="features">
             <div class="feature">
@@ -295,6 +297,14 @@ function onTouchEnd(e) {
   max-width: 560px;
   margin: 0 auto;
   line-height: 1.6;
+}
+.panel-demo {
+  max-width: 520px;
+  width: 100%;
+  margin: 32px auto 0;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  display: block;
 }
 
 /* Features */
