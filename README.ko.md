@@ -7,11 +7,11 @@
 **당신의 GPU는 70%의 시간 동안 유휴 상태입니다. CQ가 GPU를 AI에 연결합니다 — 설정 없이, 어떤 OS에서도, 암호화된 상태로.**
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
-![Version](https://img.shields.io/badge/version-v1.47-blue)
-![MCP Tools](https://img.shields.io/badge/MCP_Tools-217-blueviolet)
-![License](https://img.shields.io/badge/License-Personal_Study-orange)
+![Version](https://img.shields.io/badge/version-v1.55-blue)
+![MCP Tools](https://img.shields.io/badge/MCP_Tools-275+-blueviolet)
+![License](https://img.shields.io/badge/License-Non--Commercial-red)
 
-![Demo](docs/demo.gif)
+![Demo](docs/demo.svg)
 
 </div>
 
@@ -55,7 +55,7 @@ CQ는 NAT traversal을 위해 relay 서버를 사용합니다. 기기 간 트래
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
-cq               # 로그인 + 서비스 시작 (최초 1회)
+cq init          # 로그인 + 프로젝트 설정 (최초 1회)
 cq claude        # 개발 시작
 ```
 
@@ -92,13 +92,13 @@ cq claude        # 개발 시작
 
 | 구성요소 | 설명 |
 |-----------|-------------|
-| **Go MCP Server** | 217개 도구 (코어 + Hub + 조건부), Registry 기반 |
+| **Go MCP Server** | 275+개 도구 (코어 + Hub + 조건부), Registry 기반 |
 | **Knowledge** | FTS5 + pgvector (OpenAI 1536d) + 3-way RRF + 자동 증류 |
 | **Hub** | 분산 작업 큐, DAG 엔진, 아티팩트 저장소, cron, watchdog |
 | **Session** | LLM을 통한 자동 요약, 시작 시 컨텍스트 주입 |
 | **Research Loop** | 자율 ML 실험 사이클 (계획→학습→평가→반복) |
 | **Paper Mode** | knowledge DB 연동 구조화 논문/문서 학습 |
-| **70가지 Skills** | Claude Code 슬래시 커맨드 (/plan, /run, /finish, /pi, /paper 등) |
+| **42가지 Skills** | Claude Code 슬래시 커맨드 (/plan, /run, /finish, /pi, /paper 등) |
 
 ---
 
@@ -143,7 +143,7 @@ uv run pytest tests/                                   # Python 테스트
 cq doctor                                              # 헬스 체크
 ```
 
-[문서](https://cq.pilab.kr) | [설치](https://cq.pilab.kr/guide/install) | [빠른 시작](https://cq.pilab.kr/guide/quickstart) | [아키텍처](https://cq.pilab.kr/reference/architecture)
+[문서](https://playidea-lab.github.io/cq) | [설치](https://playidea-lab.github.io/cq/guide/install) | [빠른 시작](https://playidea-lab.github.io/cq/guide/quickstart) | [아키텍처](https://playidea-lab.github.io/cq/reference/architecture)
 
 ---
 

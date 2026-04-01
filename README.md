@@ -7,8 +7,8 @@
 **Your GPUs are idle 70% of the time. CQ connects them to AI — zero config, any OS, encrypted.**
 
 ![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white)
-![Version](https://img.shields.io/badge/version-v1.47-blue)
-![MCP Tools](https://img.shields.io/badge/MCP_Tools-217-blueviolet)
+![Version](https://img.shields.io/badge/version-v1.55-blue)
+![MCP Tools](https://img.shields.io/badge/MCP_Tools-275+-blueviolet)
 ![License](https://img.shields.io/badge/License-Non--Commercial-red)
 
 ![Demo](docs/demo.svg)
@@ -55,7 +55,7 @@ CQ uses a relay server for NAT traversal. Traffic between your machines is end-t
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/PlayIdea-Lab/cq/main/install.sh | sh
-cq               # Login + start service (one-time)
+cq init          # Login + project setup (one-time)
 cq claude        # Start building
 ```
 
@@ -92,13 +92,13 @@ Update anytime: `cq update`
 
 | Component | Description |
 |-----------|-------------|
-| **Go MCP Server** | 217 tools (core + Hub + conditional), Registry-based |
+| **Go MCP Server** | 275+ tools (core + Hub + conditional), Registry-based |
 | **Knowledge** | FTS5 + pgvector (OpenAI 1536d) + 3-way RRF + auto-distill |
 | **Hub** | Distributed job queue, DAG engine, artifact store, cron, watchdog |
 | **Session** | Auto-summarize via LLM, context injection on startup |
 | **Research Loop** | Autonomous ML experiment cycle (plan→train→evaluate→iterate) |
 | **Paper Mode** | Structured paper/document learning with knowledge DB integration |
-| **70 Skills** | Claude Code slash commands (/plan, /run, /finish, /pi, /paper, etc.) |
+| **42 Skills** | Claude Code slash commands (/plan, /run, /finish, /pi, /paper, etc.) |
 
 ---
 
@@ -143,7 +143,7 @@ uv run pytest tests/                                   # Python tests
 cq doctor                                              # Health check
 ```
 
-[Documentation](https://cq.pilab.kr) | [Installation](https://cq.pilab.kr/guide/install) | [Quick Start](https://cq.pilab.kr/guide/quickstart) | [Architecture](https://cq.pilab.kr/reference/architecture)
+[Documentation](https://playidea-lab.github.io/cq) | [Installation](https://playidea-lab.github.io/cq/guide/install) | [Quick Start](https://playidea-lab.github.io/cq/guide/quickstart) | [Architecture](https://playidea-lab.github.io/cq/reference/architecture)
 
 ---
 
