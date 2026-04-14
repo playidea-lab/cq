@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="340" viewBox="0 0 700 340" role="img" aria-label="CQ knowledge demo">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;display=swap');
+      .term-bg    { fill: #0d1117; }
+      .titlebar   { fill: #161b22; }
+      .dot-red    { fill: #ff5f56; }
+      .dot-yellow { fill: #ffbd2e; }
+      .dot-green  { fill: #27c93f; }
+      .prompt     { fill: #7ee787; font-weight: 700; }
+      .cmd        { fill: #e6edf3; }
+      .dim        { fill: #8b949e; }
+      .success    { fill: #3fb950; }
+      .url        { fill: #79c0ff; }
+      .know       { fill: #d2a8ff; }
+      .persona    { fill: #ffa657; }
+      .mono       { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace; font-size: 13px; }
+      .cursor     { fill: #7ee787; }
+    </style>
+    <style>
+      .line-1  { opacity: 0; animation: fadein 0.2s 0.6s forwards; }
+      .line-2  { opacity: 0; animation: fadein 0.2s 1.4s forwards; }
+      .line-3  { opacity: 0; animation: fadein 0.2s 2.0s forwards; }
+      .line-4  { opacity: 0; animation: fadein 0.2s 2.6s forwards; }
+      .line-5  { opacity: 0; animation: fadein 0.2s 3.4s forwards; }
+      .line-6  { opacity: 0; animation: fadein 0.2s 4.2s forwards; }
+      .line-7  { opacity: 0; animation: fadein 0.2s 5.0s forwards; }
+      .line-8  { opacity: 0; animation: fadein 0.2s 5.8s forwards; }
+      .line-9  { opacity: 0; animation: fadein 0.2s 6.6s forwards; }
+      .line-10 { opacity: 0; animation: fadein 0.2s 7.4s forwards; }
+      .cursor-blink { animation: blink 1s step-start 8.0s infinite; }
+
+      @keyframes fadein {
+        from { opacity: 0; transform: translateY(2px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0; }
+      }
+    </style>
+  </defs>
+
+  <!-- Window background -->
+  <rect width="700" height="340" rx="10" ry="10" class="term-bg"/>
+
+  <!-- Title bar -->
+  <rect width="700" height="36" rx="10" ry="10" class="titlebar"/>
+  <rect y="18" width="700" height="18" class="titlebar"/>
+
+  <!-- Traffic lights -->
+  <circle cx="20" cy="18" r="6" class="dot-red"/>
+  <circle cx="40" cy="18" r="6" class="dot-yellow"/>
+  <circle cx="60" cy="18" r="6" class="dot-green"/>
+
+  <!-- Window title -->
+  <text x="350" y="23" text-anchor="middle" class="mono dim" font-size="12">Claude Code — my-project</text>
+
+  <!-- Line 1: Claude finds a pattern -->
+  <g class="line-1">
+    <text x="20" y="72" class="mono">
+      <tspan class="dim">claude:</tspan><tspan class="cmd"> Found race condition in auth middleware</tspan>
+    </text>
+  </g>
+
+  <!-- Line 2: Knowledge saved -->
+  <g class="line-2">
+    <text x="20" y="94" class="mono">
+      <tspan class="success">  ✓ </tspan><tspan class="know">knowledge saved</tspan><tspan class="dim"> — "mutex required for token refresh"</tspan>
+    </text>
+  </g>
+
+  <!-- Line 3: spacer -->
+  <g class="line-3">
+    <text x="20" y="122" class="mono dim">  — next day, different AI —</text>
+  </g>
+
+  <!-- Line 4: ChatGPT session -->
+  <g class="line-4">
+    <text x="20" y="150" class="mono">
+      <tspan class="dim">chatgpt:</tspan><tspan class="cmd"> Reviewing auth module...</tspan>
+    </text>
+  </g>
+
+  <!-- Line 5: Auto context -->
+  <g class="line-5">
+    <text x="20" y="172" class="mono">
+      <tspan class="success">  ↳ </tspan><tspan class="know">CQ context injected</tspan><tspan class="dim"> — 3 related discoveries</tspan>
+    </text>
+  </g>
+
+  <!-- Line 6: ChatGPT uses it -->
+  <g class="line-6">
+    <text x="20" y="194" class="mono">
+      <tspan class="dim">chatgpt:</tspan><tspan class="cmd"> Applied mutex pattern from previous session</tspan>
+    </text>
+  </g>
+
+  <!-- Line 7: spacer -->
+  <g class="line-7">
+    <text x="20" y="222" class="mono dim">  — persona adapting —</text>
+  </g>
+
+  <!-- Line 8: Persona -->
+  <g class="line-8">
+    <text x="20" y="248" class="mono">
+      <tspan class="success">  ✓ </tspan><tspan class="persona">persona updated</tspan><tspan class="dim"> — prefers explicit error handling</tspan>
+    </text>
+  </g>
+
+  <!-- Line 9: tagline -->
+  <g class="line-9">
+    <text x="20" y="276" class="mono dim">  Switch AI. Keep everything.</text>
+  </g>
+
+  <!-- Blinking cursor -->
+  <rect class="cursor cursor-blink" x="20" y="290" width="8" height="16" rx="1"/>
+
+  <!-- Bottom branding -->
+  <text x="350" y="325" text-anchor="middle" class="mono dim" font-size="11">Connect, Adapt, Evolve.</text>
+</svg>
